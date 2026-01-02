@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { Select } from "../components/ui/select";
 import { Label } from "../components/ui/label";
 
-const API_BASE_URL = import.meta.env?.VITE_API_URL || "http://localhost:5000";
+const API_BASE_URL = "";
 
 // Options for dropdowns
 const GROUP_BY_OPTIONS = [

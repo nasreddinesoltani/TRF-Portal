@@ -9,7 +9,7 @@ import { Label } from "../components/ui/label";
 import { Select } from "../components/ui/select";
 import { DataGrid } from "../components/DataGrid";
 
-const API_BASE_URL = import.meta.env?.VITE_API_URL || "http://localhost:5000";
+const API_BASE_URL = "";
 
 const CATEGORY_TYPE_OPTIONS = [
   { value: "national", label: "National" },

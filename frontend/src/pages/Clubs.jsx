@@ -38,7 +38,7 @@ const TYPE_LABELS = TYPE_OPTIONS.reduce((accumulator, option) => {
   return accumulator;
 }, {});
 
-const apiBase = "http://localhost:5000/api/clubs";
+const apiBase = "/api/clubs";
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -635,7 +635,7 @@ const Clubs = () => {
 
       try {
         const response = await fetch(
-          `http://localhost:5000/api/users/${id}/reset-password`,
+          `/api/users/${id}/reset-password`,
           {
             method: "POST",
             headers: {

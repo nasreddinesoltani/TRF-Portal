@@ -10,7 +10,7 @@ import { DataGrid } from "../components/DataGrid";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const API_BASE_URL = import.meta.env?.VITE_API_URL || "http://localhost:5000";
+const API_BASE_URL = "";
 const ENTRY_SEARCH_LIMIT = 25;
 const DEFAULT_LANES_PER_RACE = 6;
 

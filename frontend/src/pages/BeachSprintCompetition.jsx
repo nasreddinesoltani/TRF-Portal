@@ -7,7 +7,7 @@ import { Input } from "../components/ui/input";
 import { Select } from "../components/ui/select";
 import { Label } from "../components/ui/label";
 
-const API_BASE_URL = import.meta.env?.VITE_API_URL || "http://localhost:5000";
+const API_BASE_URL = "";
 
 // Phase display names
 const PHASE_NAMES = {

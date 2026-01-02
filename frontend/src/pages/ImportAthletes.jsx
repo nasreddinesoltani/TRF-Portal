@@ -3,7 +3,7 @@ import { toast } from "react-toastify";
 import { Button } from "../components/ui/button";
 import { useAuth } from "../contexts/AuthContext";
 
-const API_BASE_URL = import.meta.env?.VITE_API_URL || "http://localhost:5000";
+const API_BASE_URL = "";
 
 const templateHeaders = [
   "licenseNumber",

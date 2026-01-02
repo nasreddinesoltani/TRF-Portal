@@ -109,7 +109,7 @@ export default function EditUserModal({ user, onClose, onSave }) {
       console.log("Sending update data:", updateData);
 
       const response = await fetch(
-        `http://localhost:5000/api/users/${user.id}`,
+        `/api/users/${user.id}`,
         {
           method: "PUT",
           headers: {

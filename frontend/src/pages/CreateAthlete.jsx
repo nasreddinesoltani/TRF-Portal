@@ -21,7 +21,7 @@ import {
   getAthleteLicenseLabel,
 } from "../lib/athlete";
 
-const API_BASE_URL = import.meta.env?.VITE_API_URL || "http://localhost:5000";
+const API_BASE_URL = "";
 
 const LICENSE_STATUS_BADGE_STYLES = {
   active: "bg-emerald-50 text-emerald-700 border border-emerald-200",
