@@ -1,0 +1,493 @@
+/* Global Syncfusion Grid Overrides for a Modern Look */
+
+/* -------------------------------------------------------------------------- */
+/*                                 Main Grid                                  */
+/* -------------------------------------------------------------------------- */
+
+/* Remove default borders and make it cleaner */
+.e-grid {
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7eb !important; /* tailwind gray-200 */
+  font-family: inherit !important;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+/* Header Styling */
+.e-grid .e-headercelldiv {
+  font-weight: 600 !important;
+  color: #374151 !important; /* gray-700 */
+  font-size: 0.875rem !important; /* text-sm */
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.e-grid .e-headercontent {
+  background-color: #f9fafb !important; /* gray-50 */
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+/* Row Styling */
+.e-grid .e-rowcell {
+  font-size: 0.875rem !important; /* text-sm */
+  color: #4b5563 !important; /* gray-600 */
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+.e-grid .e-row:hover .e-rowcell {
+  background-color: #f3f4f6 !important; /* gray-100 */
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 Pagination                                 */
+/* -------------------------------------------------------------------------- */
+
+/* Pager Container */
+.e-grid .e-pager {
+  padding: 1rem !important;
+  background-color: #ffffff !important;
+  border-top: 1px solid #e5e7eb !important;
+}
+
+/* The main container for buttons */
+.e-grid .e-pager .e-pagercontainer {
+  margin: 0 !important;
+  border: none !important;
+  background-color: transparent !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.25rem !important;
+}
+
+/* The container for numbers specifically */
+.e-grid .e-pager .e-numericcontainer {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.25rem !important;
+}
+
+/* Common style for ALL pager items (numbers, nav buttons) */
+.e-grid .e-pager .e-numericitem,
+.e-grid .e-pager .e-firstpage,
+.e-grid .e-pager .e-prevpage,
+.e-grid .e-pager .e-nextpage,
+.e-grid .e-pager .e-lastpage,
+.e-grid .e-pager .e-firstpagedisabled,
+.e-grid .e-pager .e-prevpagedisabled,
+.e-grid .e-pager .e-nextpagedisabled,
+.e-grid .e-pager .e-lastpagedisabled {
+  border-radius: 0.375rem !important; /* rounded-md */
+  min-width: 2rem !important;
+  height: 2rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 1px solid #e5e7eb !important;
+  background-color: #ffffff !important;
+  color: #374151 !important; /* gray-700 */
+  font-weight: 500 !important;
+  text-decoration: none !important;
+  cursor: pointer !important;
+  transition: all 0.2s;
+  box-sizing: border-box !important;
+}
+
+/* Hover state for active items */
+.e-grid .e-pager .e-numericitem:hover:not(.e-active),
+.e-grid .e-pager .e-firstpage:hover,
+.e-grid .e-pager .e-prevpage:hover,
+.e-grid .e-pager .e-nextpage:hover,
+.e-grid .e-pager .e-lastpage:hover {
+  background-color: #f3f4f6 !important; /* gray-100 */
+  color: #111827 !important; /* gray-900 */
+  border-color: #d1d5db !important;
+}
+
+/* Active State */
+.e-grid .e-pager .e-numericitem.e-active,
+.e-grid .e-pager .e-currentitem {
+  background-color: #2563eb !important; /* blue-600 */
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+  opacity: 1 !important;
+}
+
+/* Disabled State */
+.e-grid .e-pager .e-firstpagedisabled,
+.e-grid .e-pager .e-prevpagedisabled,
+.e-grid .e-pager .e-nextpagedisabled,
+.e-grid .e-pager .e-lastpagedisabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  background-color: #f9fafb !important;
+  border-color: #e5e7eb !important;
+}
+
+/* Explicit Icons using ::before to ensure visibility */
+.e-grid .e-pager .e-firstpage::before,
+.e-grid .e-pager .e-firstpagedisabled::before {
+  content: "«";
+  font-size: 1.25rem;
+  line-height: 1;
+  margin-top: -2px;
+}
+
+.e-grid .e-pager .e-prevpage::before,
+.e-grid .e-pager .e-prevpagedisabled::before {
+  content: "‹";
+  font-size: 1.25rem;
+  line-height: 1;
+  margin-top: -2px;
+}
+
+.e-grid .e-pager .e-nextpage::before,
+.e-grid .e-pager .e-nextpagedisabled::before {
+  content: "›";
+  font-size: 1.25rem;
+  line-height: 1;
+  margin-top: -2px;
+}
+
+.e-grid .e-pager .e-lastpage::before,
+.e-grid .e-pager .e-lastpagedisabled::before {
+  content: "»";
+  font-size: 1.25rem;
+  line-height: 1;
+  margin-top: -2px;
+}
+
+/* Hide original icons */
+.e-grid .e-pager .e-icon-first,
+.e-grid .e-pager .e-icon-prev,
+.e-grid .e-pager .e-icon-next,
+.e-grid .e-pager .e-icon-last {
+  display: none !important;
+}
+
+/* Ellipsis (...) styling */
+.e-grid .e-pager .e-pp,
+.e-grid .e-pager .e-np {
+  border: none !important;
+  background: transparent !important;
+  font-size: 1rem !important;
+  letter-spacing: 2px;
+  padding: 0 0.5rem !important;
+  color: #6b7280 !important;
+}
+
+/* Page Info Text (e.g., "1 of 5 pages") */
+.e-grid .e-pager .e-parentmsgbar {
+  font-size: 0.875rem !important;
+  color: #6b7280 !important; /* gray-500 */
+  margin-left: auto !important; /* Push to the right */
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  font-weight: normal !important;
+}
+
+/* Page Size Dropdown (if present) */
+.e-grid .e-pager .e-pagesizes {
+  margin-left: 1rem !important;
+  font-size: 0.875rem !important;
+}
+
+.e-grid .e-pager .e-pagerdropdown {
+  height: 2rem !important;
+  border-radius: 0.375rem !important;
+  border-color: #e5e7eb !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 Toolbar                                    */
+/* -------------------------------------------------------------------------- */
+
+.e-grid .e-toolbar {
+  border-bottom: 1px solid #e5e7eb !important;
+  background-color: #ffffff !important;
+  padding: 0.75rem 1rem !important;
+  height: auto !important;
+}
+
+/* Flex container for toolbar items */
+.e-grid .e-toolbar .e-toolbar-items {
+  background-color: transparent !important;
+  display: flex !important;
+  flex-direction: row !important; /* Force row direction */
+  flex-wrap: nowrap !important; /* Prevent wrapping */
+  align-items: center !important;
+  width: 100% !important;
+  gap: 0.75rem !important;
+}
+
+/* Ensure individual items are not block-level */
+.e-grid .e-toolbar .e-toolbar-item {
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+}
+
+/* 
+   FORCE SEPARATION & ORDERING:
+   1. Excel Export (Green) -> Left
+   2. Search -> Right
+   3. Columns (Blue) -> Right (after Search)
+*/
+
+/* Excel Export: Force to be first */
+.e-grid .e-toolbar .e-toolbar-item:has(button[id*="_excelexport"]) {
+  order: -1 !important;
+  margin-right: auto !important; /* Push everything else to the right */
+}
+
+/* Search: Force to be second (after Excel Export, but pushed right by Excel's margin) */
+.e-grid .e-toolbar .e-toolbar-item:has(.e-search-wrapper) {
+  order: 2 !important;
+  margin-left: 0 !important; /* Reset margin since Excel is pushing */
+}
+
+/* Column Chooser: Force to be last */
+.e-grid .e-toolbar .e-toolbar-item:has(button[id*="_columnchooser"]) {
+  order: 3 !important;
+}
+
+/* Toolbar Buttons (Excel Export, Columns, etc.) */
+.e-grid .e-toolbar .e-tbar-btn {
+  background-color: #f3f4f6 !important; /* gray-100 */
+  border: 1px solid #d1d5db !important; /* gray-300 */
+  border-radius: 0.5rem !important;
+  color: #1f2937 !important; /* gray-800 */
+  font-weight: 600 !important;
+  font-size: 0.875rem !important;
+  padding: 0.5rem 1rem !important;
+  margin-right: 0 !important;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 2.5rem !important;
+}
+
+.e-grid .e-toolbar .e-tbar-btn:hover {
+  background-color: #e5e7eb !important; /* gray-200 */
+  border-color: #9ca3af !important; /* gray-400 */
+  color: #000000 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.05);
+}
+
+.e-grid .e-toolbar .e-tbar-btn:active {
+  background-color: #d1d5db !important;
+  transform: translateY(0);
+}
+
+/* Specific styling for icons inside toolbar buttons */
+.e-grid .e-toolbar .e-tbar-btn .e-btn-icon {
+  font-size: 1.125rem !important; /* Larger icon */
+  margin-right: 0.5rem !important;
+  color: #4b5563 !important; /* gray-600 */
+}
+
+.e-grid .e-toolbar .e-tbar-btn:hover .e-btn-icon {
+  color: #1f2937 !important;
+}
+
+/* --- SPECIAL BUTTON COLORS --- */
+
+/* Excel Export Button (Green) */
+.e-grid .e-toolbar .e-tbar-btn[id*="_excelexport"] {
+  background-color: #10b981 !important; /* emerald-500 */
+  border-color: #059669 !important; /* emerald-600 */
+  color: #ffffff !important;
+}
+
+.e-grid .e-toolbar .e-tbar-btn[id*="_excelexport"]:hover {
+  background-color: #059669 !important; /* emerald-600 */
+  border-color: #047857 !important; /* emerald-700 */
+}
+
+.e-grid .e-toolbar .e-tbar-btn[id*="_excelexport"] .e-btn-icon {
+  color: #ffffff !important;
+}
+
+/* Column Chooser Button (Blue) */
+.e-grid .e-toolbar .e-tbar-btn[id*="_columnchooser"] {
+  background-color: #3b82f6 !important; /* blue-500 */
+  border-color: #2563eb !important; /* blue-600 */
+  color: #ffffff !important;
+}
+
+.e-grid .e-toolbar .e-tbar-btn[id*="_columnchooser"]:hover {
+  background-color: #2563eb !important; /* blue-600 */
+  border-color: #1d4ed8 !important; /* blue-700 */
+}
+
+.e-grid .e-toolbar .e-tbar-btn[id*="_columnchooser"] .e-btn-icon {
+  color: #ffffff !important;
+}
+
+/* Search Box in Toolbar */
+.e-grid .e-search-wrapper {
+  border: 1px solid #d1d5db !important;
+  border-radius: 0.5rem !important;
+  padding: 0 !important;
+  max-width: 280px !important; /* Strictly limit width */
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  background-color: #ffffff !important;
+  transition: all 0.2s;
+  height: 2.5rem !important; /* Match button height */
+  margin-left: 0 !important; /* Reset margin since parent handles positioning */
+}
+
+.e-grid .e-search-wrapper:focus-within {
+  border-color: #2563eb !important; /* blue-600 */
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
+}
+
+.e-grid .e-search-wrapper .e-input-group-icon.e-search-icon {
+  padding: 0 0.75rem !important;
+  color: #6b7280 !important;
+  border: none !important;
+  margin: 0 !important;
+  min-height: auto !important;
+  cursor: default !important;
+}
+
+.e-grid .e-search-wrapper .e-searchinput {
+  padding: 0.25rem 0.5rem 0.25rem 0 !important;
+  font-size: 1rem !important; /* Increased from 0.875rem to 1rem (16px) */
+  color: #111827 !important;
+  height: 100% !important;
+  font-family: inherit !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 Column Chooser                             */
+/* -------------------------------------------------------------------------- */
+
+/* The Dialog Container - CENTERED */
+.e-dialog.e-ccdlg {
+  border-radius: 0.75rem !important;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1),
+    0 8px 10px -6px rgb(0 0 0 / 0.1) !important;
+  border: 1px solid #e5e7eb !important;
+  overflow: hidden !important;
+
+  /* Force Centering */
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  position: fixed !important;
+  max-height: 85vh !important;
+  width: 320px !important; /* Fixed width for better look */
+}
+
+/* Header */
+.e-dialog.e-ccdlg .e-dlg-header-content {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #f3f4f6 !important;
+  padding: 1.25rem !important;
+}
+
+.e-dialog.e-ccdlg .e-dlg-header {
+  font-size: 1.125rem !important;
+  font-weight: 600 !important;
+  color: #111827 !important;
+}
+
+/* Content (Checkbox list) */
+.e-dialog.e-ccdlg .e-dlg-content {
+  padding: 0 !important;
+  background-color: #ffffff !important;
+}
+
+.e-dialog.e-ccdlg .e-cc-searchdiv {
+  padding: 1rem !important;
+  border-bottom: 1px solid #f3f4f6 !important;
+  margin-bottom: 0 !important;
+}
+
+.e-dialog.e-ccdlg .e-cc-searchdiv .e-input-group {
+  border-radius: 0.5rem !important;
+  border: 1px solid #e5e7eb !important;
+  padding: 0.5rem !important;
+  background-color: #f9fafb !important;
+}
+
+.e-dialog.e-ccdlg .e-cc-list {
+  padding: 0.5rem !important;
+  max-height: 300px !important;
+  overflow-y: auto !important;
+}
+
+.e-dialog.e-ccdlg .e-cc-list .e-list-item {
+  padding: 0.625rem 1rem !important;
+  border-radius: 0.375rem !important;
+  font-size: 0.875rem !important;
+  color: #374151 !important;
+  margin-bottom: 2px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.e-dialog.e-ccdlg .e-cc-list .e-list-item:hover {
+  background-color: #f3f4f6 !important;
+}
+
+.e-dialog.e-ccdlg .e-cc-list .e-list-item.e-active {
+  background-color: #eff6ff !important; /* blue-50 */
+  color: #1d4ed8 !important; /* blue-700 */
+}
+
+/* Checkbox styling inside list */
+.e-dialog.e-ccdlg .e-cc-list .e-list-item .e-checkbox-wrapper {
+  margin-right: 0.75rem !important;
+}
+
+/* Footer (Buttons) */
+.e-dialog.e-ccdlg .e-footer-content {
+  padding: 1rem 1.25rem !important;
+  border-top: 1px solid #f3f4f6 !important;
+  background-color: #f9fafb !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 0.75rem !important;
+}
+
+.e-dialog.e-ccdlg .e-footer-content .e-btn {
+  border-radius: 0.5rem !important;
+  padding: 0.5rem 1rem !important;
+  font-weight: 500 !important;
+  font-size: 0.875rem !important;
+  text-transform: none !important;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+/* OK Button */
+.e-dialog.e-ccdlg .e-footer-content .e-btn.e-primary {
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+.e-dialog.e-ccdlg .e-footer-content .e-btn.e-primary:hover {
+  background-color: #1d4ed8 !important;
+}
+
+/* Cancel Button */
+.e-dialog.e-ccdlg .e-footer-content .e-btn.e-flat {
+  background-color: #ffffff !important;
+  border: 1px solid #d1d5db !important;
+  color: #374151 !important;
+}
+
+.e-dialog.e-ccdlg .e-footer-content .e-btn.e-flat:hover {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
