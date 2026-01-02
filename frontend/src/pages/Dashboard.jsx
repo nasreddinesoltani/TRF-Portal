@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "react-toastify";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_BASE_URL = "";
 
 // Modern stat card component
 const StatCard = ({ title, value, subtitle, icon, color = "blue", trend }) => {
