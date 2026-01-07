@@ -30,3 +30,7 @@ Thumbs.db
 
 # Temporary files
 temp-import.csv
+
+# Uploads
+backend/uploads/
+

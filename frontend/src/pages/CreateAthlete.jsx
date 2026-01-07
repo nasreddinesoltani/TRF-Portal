@@ -2120,6 +2120,26 @@ const CreateAthlete = () => {
                 className="mt-6 grid gap-4 md:grid-cols-2"
                 onSubmit={handleUpdateAthlete}
               >
+                <div className="md:col-span-2 flex justify-center mb-4">
+                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-3xl font-medium text-slate-500">
+                    {getAthletePhotoUrl(selectedAthlete) ? (
+                      <img
+                        src={getAthletePhotoUrl(selectedAthlete)}
+                        alt="Profile"
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                          // Show fallback (span)
+                          const span = e.currentTarget.parentNode.querySelector("span");
+                          if (span) span.style.display = "block";
+                        }}
+                      />
+                    ) : null}
+                    <span style={{ display: getAthletePhotoUrl(selectedAthlete) ? 'none' : 'block' }}>
+                        {getAthleteInitials(selectedAthlete)}
+                    </span>
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="editFirstName">First name (Latin)</Label>
                   <Input

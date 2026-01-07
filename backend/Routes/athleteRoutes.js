@@ -23,6 +23,7 @@ import {
   addSecondaryMembership,
   removeSecondaryMembership,
   getCentreAthletes,
+  triggerPhotoImport,
 } from "../Controllers/athleteController.js";
 import { allowRoles, protect } from "../Middleware/authMiddleware.js";
 import { documentUpload } from "../config/upload.js";
@@ -150,6 +151,12 @@ router.delete(
   protect,
   allowRoles("admin"),
   removeAthleteDocument
+);
+router.post(
+  "/import-photos",
+  protect,
+  allowRoles("admin"),
+  triggerPhotoImport
 );
 router.delete("/:id", protect, allowRoles("admin"), deleteAthlete);
 

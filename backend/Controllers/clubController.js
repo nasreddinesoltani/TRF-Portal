@@ -14,6 +14,7 @@ import {
 import {
   evaluateDocumentStatuses,
   serialiseDocuments,
+  applyDocumentStatusToAthlete,
 } from "../Services/documentStatusService.js";
 
 const ALLOWED_CLUB_TYPES = [
@@ -614,7 +615,7 @@ export const getClubSummary = asyncHandler(async (req, res) => {
   });
 });
 
-const normalizeClubMembership = (athlete, clubId) => {
+const normalizeClubMembership = (athlete, clubId, seasonYear = null) => {
   if (!athlete?.memberships?.length) {
     return null;
   }
@@ -644,13 +645,16 @@ const normalizeClubMembership = (athlete, clubId) => {
         return undefined;
       })();
 
-      return membershipClubId === targetId;
+      const clubMatch = membershipClubId === targetId;
+      const seasonMatch = !seasonYear || membership.season === seasonYear;
+      
+      return clubMatch && seasonMatch;
     }) || null
   );
 };
 
 const buildAthleteClubView = (athlete, clubId, seasonYear) => {
-  const membership = normalizeClubMembership(athlete, clubId);
+  const membership = normalizeClubMembership(athlete, clubId, seasonYear);
 
   const membershipClub = membership?.club;
   const membershipClubId = (() => {
@@ -781,6 +785,8 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
       .lean();
   }
 
+  // Fetch all athletes associated with the club regardless of season
+  // They will be filtered/processed by normalizeClubMembership later
   const athletesRaw = await Athlete.find({ "memberships.club": id })
     .select(
       "firstName lastName firstNameAr lastNameAr licenseNumber cin passportNumber birthDate gender status licenseStatus documentsStatus documentsIssues memberships documents createdAt updatedAt categoryAssignments"
@@ -788,6 +794,7 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
     .populate("memberships.club", "name code");
 
   const seasonYear = getSeasonYear();
+
   const categoryCache = {};
   await ensureNationalCategoriesForAthletes(
     athletesRaw,
@@ -800,6 +807,7 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
     inactive: [],
     pending: [],
     transferred: [],
+    eligible: [], // New bucket for active license
   };
 
   const counts = {
@@ -807,25 +815,41 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
     inactive: 0,
     pending: 0,
     transferred: 0,
+    eligible: 0,
   };
 
   athletesRaw.forEach((athlete) => {
-    const membership = normalizeClubMembership(athlete, id);
+    // Re-evaluate document status to check for expired documents (e.g. medical certificate)
+    // This ensures licenseStatus reflects the current validity, not just the stored value
+    applyDocumentStatusToAthlete(athlete);
+
+    const membership = normalizeClubMembership(athlete, id, seasonYear);
     const status = membership?.status || "inactive";
+
+    // Enforce: Inactive Membership implies Inactive License
+    // User logic: "inactive athletes should be inactive license also not pending"
+    if (status === "inactive") {
+      athlete.licenseStatus = "inactive";
+    }
+
     const view = buildAthleteClubView(athlete, id, seasonYear);
 
-    if (status === "active") {
-      athletes.active.push(view);
-      counts.active += 1;
-    } else if (status === "pending") {
-      athletes.pending.push(view);
-      counts.pending += 1;
-    } else if (status === "transferred") {
-      athletes.transferred.push(view);
-      counts.transferred += 1;
+    // Add to Membership Bucket
+    if (athletes[status]) {
+      athletes[status].push(view);
+      if (counts[status] !== undefined) {
+        counts[status] += 1;
+      }
     } else {
+      // Fallback
       athletes.inactive.push(view);
       counts.inactive += 1;
+    }
+
+    // Add to Eligible Bucket (Active License)
+    if (athlete.licenseStatus === "active") {
+        athletes.eligible.push(view);
+        counts.eligible += 1;
     }
   });
 
@@ -890,6 +914,7 @@ export const updateClubAthleteStatus = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Invalid membership status" });
   }
 
+  const seasonYear = getSeasonYear();
   const clubIdString = clubId.toString();
 
   if (
@@ -911,78 +936,84 @@ export const updateClubAthleteStatus = asyncHandler(async (req, res) => {
   }
 
   const clubObjectId = new mongoose.Types.ObjectId(clubId);
-
   const athlete = await Athlete.findById(athleteId).lean();
 
   if (!athlete) {
     return res.status(404).json({ message: "Athlete not found" });
   }
 
-  const membership = athlete.memberships?.find((entry) => {
-    if (!entry.club) {
-      return false;
-    }
-    if (typeof entry.club === "string") {
-      return entry.club === clubIdString;
-    }
-    if (
-      typeof entry.club === "object" &&
-      entry.club !== null &&
-      entry.club._id
-    ) {
-      return entry.club._id.toString() === clubIdString;
-    }
-    if (typeof entry.club.toString === "function") {
-      return entry.club.toString() === clubIdString;
-    }
-    return false;
+  // Check if there is ANY membership for this club (past or present)
+  const anyMembership = athlete.memberships?.find((entry) => {
+    return entry.club?.toString() === clubIdString || 
+           entry.club?._id?.toString() === clubIdString;
   });
 
-  if (!membership) {
+  if (!anyMembership) {
     return res
       .status(404)
       .json({ message: "Athlete does not belong to this club" });
   }
 
-  const updateQuery = {
-    _id: athleteId,
-    "memberships.club": clubObjectId,
-  };
+  // Check for CURRENT SEASON membership
+  const currentMembershipIndex = athlete.memberships?.findIndex((entry) => {
+    const isClub = entry.club?.toString() === clubIdString || 
+                   entry.club?._id?.toString() === clubIdString;
+    const isSeason = entry.season === seasonYear;
+    return isClub && isSeason;
+  });
 
-  const updateOperations = {
-    $set: {
-      "memberships.$.status": status,
-    },
-  };
+  const updateQuery = { _id: athleteId };
+  let updateOperations = {};
 
-  if (status === "inactive") {
-    updateOperations.$set.status = "inactive";
-    if (!membership.endDate) {
-      updateOperations.$set["memberships.$.endDate"] = new Date();
+  if (currentMembershipIndex >= 0) {
+    // Update existing current season membership
+    updateQuery[`memberships.${currentMembershipIndex}.club`] = clubObjectId;
+    updateOperations = {
+      $set: {
+        [`memberships.${currentMembershipIndex}.status`]: status,
+      }
+    };
+    
+    if (status === "inactive") {
+      updateOperations.$set[`memberships.${currentMembershipIndex}.endDate`] = new Date();
+    } else if (status === "active") {
+      updateOperations.$set[`memberships.${currentMembershipIndex}.endDate`] = undefined;
     }
-  } else if (status === "active") {
-    updateOperations.$set["memberships.$.endDate"] = undefined;
-  } else if (status === "transferred") {
-    updateOperations.$set["memberships.$.endDate"] = new Date();
+    
+  } else {
+    // Create NEW membership for current season
+    // Check if we effectively "reactivating" an old athlete
+    updateOperations = {
+      $push: {
+        memberships: {
+          club: clubObjectId,
+          season: seasonYear,
+          status: status,
+          startDate: new Date(),
+          membershipType: "primary"
+        }
+      }
+    };
   }
 
   const updateResult = await Athlete.updateOne(updateQuery, updateOperations);
 
-  if (!updateResult.matchedCount) {
-    return res.status(404).json({
-      message: "Athlete membership not found for this club",
+  if (!updateResult.modifiedCount) {
+    return res.status(400).json({
+      message: "Membership status update failed",
     });
   }
 
   const updatedAthlete = await Athlete.findById(athleteId)
-    .select("firstName lastName memberships")
-    .populate("memberships.club", "name code")
-    .lean();
+    .select("firstName lastName memberships documents birthDate licenseStatus documentsStatus documentsIssues")
+    .populate("memberships.club", "name code");
+
+  // Re-evaluate status to ensure it's fresh
+  applyDocumentStatusToAthlete(updatedAthlete);
+  await updatedAthlete.save(); // Persist the re-evaluation if it changed anything
 
   res.json({
-    message: updateResult.modifiedCount
-      ? "Membership status updated"
-      : "Membership status unchanged",
+    message: "Membership status updated",
     athlete: updatedAthlete,
   });
 });

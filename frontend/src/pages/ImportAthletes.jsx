@@ -126,6 +126,9 @@ const ImportAthletes = () => {
   const [statusResult, setStatusResult] = useState(null);
   const [statusSeason, setStatusSeason] = useState(new Date().getFullYear());
 
+  const [photoImportSubmitting, setPhotoImportSubmitting] = useState(false);
+  const [photoImportResult, setPhotoImportResult] = useState(null);
+
   const handleStatusFileChange = (event) => {
     setStatusFile(event.target.files?.[0] ?? null);
     setStatusResult(null);
@@ -184,6 +187,46 @@ const ImportAthletes = () => {
     link.download = "status-update-template.csv";
     link.click();
     URL.revokeObjectURL(link.href);
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const handlePhotoImport = async () => {
+    if (!token) {
+      toast.error("Authentication required");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "This will scan the import folder and attempt to link photos to athletes based on license numbers. Continue?"
+    );
+    if (!confirmed) return;
+
+    setPhotoImportSubmitting(true);
+    setPhotoImportResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/athletes/import-photos`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.message || "Import failed");
+      }
+
+      toast.success(data.message || "Photo import completed");
+      setPhotoImportResult(data.summary);
+    } catch (error) {
+      console.error("Photo import error", error);
+      toast.error(error.message || "Failed to run photo import");
+    } finally {
+      setPhotoImportSubmitting(false);
+    }
   };
 
   return (
@@ -352,6 +395,41 @@ const ImportAthletes = () => {
                 </ul>
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white p-6 rounded-lg shadow mb-6">
+        <h2 className="text-xl font-semibold mb-4">Bulk Photo Import</h2>
+        <p className="mb-4 text-gray-600">
+          Automatically scans the server's <code>uploads/photos_import</code> directory and assigns photos to athletes matching the license number in the filename.
+        </p>
+
+        <div className="mb-6">
+          <Button 
+            onClick={handlePhotoImport} 
+            disabled={photoImportSubmitting}
+          >
+            {photoImportSubmitting ? "Scanning & Importing..." : "Run Photo Import"}
+          </Button>
+        </div>
+
+        {photoImportResult && (
+          <div className="mt-4 p-4 bg-gray-50 rounded border">
+             <h3 className="font-semibold mb-2">Import Results</h3>
+             <div className="text-sm">
+                <p>Processed: <strong>{photoImportResult.processed}</strong> files</p>
+                {photoImportResult.errors && photoImportResult.errors.length > 0 && (
+                    <div className="mt-2 text-red-600">
+                        <p className="font-medium">Errors:</p>
+                        <ul className="list-disc list-inside max-h-40 overflow-y-auto">
+                            {photoImportResult.errors.map((err, i) => (
+                                <li key={i}>{err}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+             </div>
           </div>
         )}
       </div>

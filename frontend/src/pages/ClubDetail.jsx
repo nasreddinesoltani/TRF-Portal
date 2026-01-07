@@ -70,39 +70,40 @@ const CLUB_TYPE_LABELS = CLUB_TYPE_OPTIONS.reduce((accumulator, option) => {
 const ATHLETE_SECTIONS = [
   {
     key: "active",
-    label: "Active Athletes",
-    description: "Currently licensed and eligible to compete",
+    label: "Active Memberships",
+    description: "Athletes with active club affiliation",
     cardClasses: "border-emerald-200 bg-emerald-50",
     badgeClasses: "bg-emerald-500",
   },
   {
-    key: "pending",
-    label: "Pending Athletes",
-    description: "Registrations awaiting approval",
-    cardClasses: "border-amber-200 bg-amber-50",
-    badgeClasses: "bg-amber-500",
+    key: "eligible",
+    label: "Eligible to Compete",
+    description: "Licensed athletes ready for competition",
+    cardClasses: "border-blue-200 bg-blue-50",
+    badgeClasses: "bg-blue-500",
   },
   {
     key: "inactive",
-    label: "Inactive Athletes",
-    description: "Athletes without an active membership",
+    label: "Inactive / Expired",
+    description: "Athletes requiring renewal or activation",
     cardClasses: "border-slate-200 bg-white",
     badgeClasses: "bg-slate-500",
   },
   {
     key: "transferred",
-    label: "Transferred Athletes",
-    description: "Recently moved to another club",
+    label: "Transferred Out",
+    description: "Moved to another club",
     cardClasses: "border-indigo-200 bg-indigo-50",
     badgeClasses: "bg-indigo-500",
   },
 ];
 
 const ATHLETE_EMPTY_MESSAGES = {
-  active: "No active athletes",
-  pending: "No pending athletes",
-  inactive: "No inactive athletes",
-  transferred: "No transferred athletes",
+  active: "No active memberships found",
+  eligible: "No eligible athletes found",
+  pending: "No pending approval requests",
+  inactive: "No inactive athletes found",
+  transferred: "No transferred athletes found",
 };
 
 const ATHLETE_STATUS_OPTIONS = [
@@ -2777,6 +2778,25 @@ const ClubDetail = () => {
               className="mt-6 grid gap-4 md:grid-cols-2"
               onSubmit={handleEditSubmit}
             >
+              <div className="md:col-span-2 flex justify-center mb-4">
+                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-3xl font-medium text-slate-500">
+                    {getAthletePhotoUrl(editingAthlete) ? (
+                      <img
+                        src={getAthletePhotoUrl(editingAthlete)}
+                        alt="Profile"
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                          const span = e.currentTarget.parentNode.querySelector("span");
+                          if (span) span.style.display = "block";
+                        }}
+                      />
+                    ) : null}
+                    <span style={{ display: getAthletePhotoUrl(editingAthlete) ? 'none' : 'block' }}>
+                        {getAthleteInitials(editingAthlete)}
+                    </span>
+                  </div>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-first-name">First name</Label>
                 <Input

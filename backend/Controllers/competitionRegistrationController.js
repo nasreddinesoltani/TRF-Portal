@@ -745,7 +745,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
     _id: { $in: Array.from(allAthleteIds) },
   })
     .select(
-      "firstName lastName licenseNumber gender birthDate categoryAssignments memberships"
+      "firstName lastName licenseNumber gender birthDate categoryAssignments memberships licenseStatus documentsStatus documentsIssues"
     )
     .lean();
 
@@ -871,6 +871,16 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       ) {
         return res.status(400).json({
           message: `${athlete.firstName} ${athlete.lastName} does not have an active membership with this club for the season`,
+        });
+      }
+
+      // Validate license status - athlete must have all documents approved
+      if (athlete.licenseStatus !== "active") {
+        const issuesList = Array.isArray(athlete.documentsIssues) && athlete.documentsIssues.length > 0
+          ? ` (${athlete.documentsIssues.join(", ")})`
+          : "";
+        return res.status(400).json({
+          message: `${athlete.firstName} ${athlete.lastName} does not have an active license - documents incomplete${issuesList}`,
         });
       }
 

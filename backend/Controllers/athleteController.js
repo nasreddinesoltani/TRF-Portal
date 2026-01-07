@@ -9,6 +9,7 @@ import TransferRequest from "../Models/transferRequestModel.js";
 import AthleteDeletionRequest from "../Models/athleteDeletionRequestModel.js";
 import Club from "../Models/clubModel.js";
 import LicenseCounter from "../Models/licenseCounterModel.js";
+import { importPhotos } from "../scripts/organizeAndImportPhotos.mjs";
 import {
   getNextLicense,
   syncLicenseCounter,
@@ -2606,4 +2607,18 @@ export const updateAthleteMemberships = asyncHandler(async (req, res) => {
   return res
     .status(400)
     .json({ message: "Invalid request. Provide action or memberships array." });
+});
+
+export const triggerPhotoImport = asyncHandler(async (req, res) => {
+  try {
+      // Run synchronously to return summary
+      const result = await importPhotos({ useExistingConnection: true });
+      res.json({ 
+          message: "Photo import process completed",
+          summary: result 
+      });
+  } catch (error) {
+      res.status(500);
+      throw new Error(`Import failed: ${error.message}`);
+  }
 });

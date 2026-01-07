@@ -9,7 +9,7 @@ const DOCUMENT_TYPES = {
   birthCertificate: {
     key: "birthCertificate",
     label: "Birth Certificate",
-    required: true,
+    required: false, // Conditional
   },
   cin: {
     key: "cin",
@@ -224,18 +224,24 @@ export const evaluateDocumentStatuses = (
 
   checkPending(documentStates.photo, "photo", "photo_not_approved");
   checkPending(
-    documentStates.birthCertificate,
-    "birthCertificate",
-    "birth_certificate_not_approved"
-  );
-  checkPending(
     documentStates.medicalCertificate,
     "medicalCertificate",
     "medical_certificate_not_approved"
   );
+  
+  // Identity Verification Logic
+  const isOldAthlete = !!athlete.licenseNumber; // Proxies as "identified"
+  const hasBirthCertificate = documentStates.birthCertificate === APPROVED_STATUS;
+  const hasAdultIdentity = age >= 19 && (documentStates.cin === APPROVED_STATUS || documentStates.passport === APPROVED_STATUS);
+  
+  const isIdentityVerified = isOldAthlete || hasBirthCertificate || hasAdultIdentity;
 
-  if (!identityApproved) {
-    checkPending("missing", "identity", "identity_document_missing");
+  if (!isIdentityVerified) {
+     if (age >= 19) {
+        checkPending("missing", "identity", "identity_document_missing_adult");
+     } else {
+        checkPending("missing", "birthCertificate", "birth_certificate_required");
+     }
   }
 
   if (requiresParentalAuthorization) {
@@ -266,6 +272,16 @@ export const applyDocumentStatusToAthlete = (athlete) => {
   athlete.documentsStatus = evaluation.status;
   athlete.documentsIssues = evaluation.issues;
   athlete.documentsEvaluatedAt = new Date();
+
+  // Auto-update licenseStatus based on document evaluation
+  // License is active only when all required documents are approved
+  if (evaluation.status === "active") {
+    athlete.licenseStatus = "active";
+  } else if (athlete.licenseStatus !== "suspended") {
+    // If documents are pending/expired, set license to pending (unless manually suspended)
+    athlete.licenseStatus = "pending";
+  }
+
   return evaluation;
 };
 
