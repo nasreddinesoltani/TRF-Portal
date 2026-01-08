@@ -57,7 +57,14 @@ export const getAthletePhotoUrl = (athlete) => {
   // Ensure we don't double-append if API_BASE_URL ends with /uploads
   const cleanBaseUrl = API_BASE_URL.replace(/\/uploads\/?$/i, "");
 
-  return `${cleanBaseUrl}/uploads/${cleanPath}`;
+  // Use a modified timestamp as cache-buster if available, otherwise use a fixed one
+  const version = athlete.updatedAt 
+    ? new Date(athlete.updatedAt).getTime() 
+    : athlete.photo?.uploadedAt 
+      ? new Date(athlete.photo.uploadedAt).getTime() 
+      : "1";
+
+  return `${cleanBaseUrl}/uploads/${cleanPath}?v=${version}`;
 };
 
 export const getAthleteInitials = (athlete) => {

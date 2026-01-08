@@ -639,6 +639,11 @@ const ClubDetail = () => {
   const [licenseFilter, setLicenseFilter] = useState("all");
   const [genderFilter, setGenderFilter] = useState("all");
 
+  // Section-specific search terms
+  const [eligibleSearchTerm, setEligibleSearchTerm] = useState("");
+  const [inactiveSearchTerm, setInactiveSearchTerm] = useState("");
+  const [transferredSearchTerm, setTransferredSearchTerm] = useState("");
+
   const [transferDialog, setTransferDialog] = useState({
     open: false,
     athlete: null,
@@ -924,10 +929,13 @@ const ClubDetail = () => {
   const filteredBuckets = useMemo(() => {
     const needle = searchTerm.trim().toLowerCase();
 
-    const matchesSearchTerm = (athlete) => {
-      if (!needle) {
+    const matchesSearchTerm = (athlete, specificSearchTerm = "") => {
+      const combinedSearch = (searchTerm + " " + specificSearchTerm).trim().toLowerCase();
+      if (!combinedSearch) {
         return true;
       }
+
+      const needles = combinedSearch.split(/\s+/);
 
       const fields = [
         athlete.fullName,
@@ -941,10 +949,10 @@ const ClubDetail = () => {
         athlete.passportNumber,
         athlete.status,
         athlete.membershipStatus,
-      ];
+      ].map(v => v ? v.toString().toLowerCase() : "");
 
-      return fields.some((value) =>
-        value ? value.toString().toLowerCase().includes(needle) : false
+      return needles.every(needle => 
+        fields.some(field => field.includes(needle))
       );
     };
 
@@ -992,8 +1000,8 @@ const ClubDetail = () => {
       return licenseStatusKey === licenseFilter;
     };
 
-    const matchesAllFilters = (athlete) =>
-      matchesSearchTerm(athlete) &&
+    const matchesAllFilters = (athlete, specificSearchTerm = "") =>
+      matchesSearchTerm(athlete, specificSearchTerm) &&
       matchesGender(athlete) &&
       matchesLicenseStatus(athlete);
 
@@ -1005,16 +1013,19 @@ const ClubDetail = () => {
 
     return {
       active: bucketMatchesMembership("active")
-        ? filterList(athleteBuckets.active ?? [])
+        ? (Array.isArray(athleteBuckets.active) ? athleteBuckets.active.filter(a => matchesAllFilters(a, "")) : [])
+        : [],
+      eligible: bucketMatchesMembership("eligible")
+        ? (Array.isArray(athleteBuckets.eligible) ? athleteBuckets.eligible.filter(a => matchesAllFilters(a, eligibleSearchTerm)) : [])
         : [],
       pending: bucketMatchesMembership("pending")
-        ? filterList(athleteBuckets.pending ?? [])
+        ? (Array.isArray(athleteBuckets.pending) ? athleteBuckets.pending.filter(a => matchesAllFilters(a, "")) : [])
         : [],
       inactive: bucketMatchesMembership("inactive")
-        ? filterList(athleteBuckets.inactive ?? [])
+        ? (Array.isArray(athleteBuckets.inactive) ? athleteBuckets.inactive.filter(a => matchesAllFilters(a, inactiveSearchTerm)) : [])
         : [],
       transferred: bucketMatchesMembership("transferred")
-        ? filterList(athleteBuckets.transferred ?? [])
+        ? (Array.isArray(athleteBuckets.transferred) ? athleteBuckets.transferred.filter(a => matchesAllFilters(a, transferredSearchTerm)) : [])
         : [],
     };
   }, [
@@ -1023,6 +1034,9 @@ const ClubDetail = () => {
     licenseFilter,
     membershipFilter,
     searchTerm,
+    eligibleSearchTerm,
+    inactiveSearchTerm,
+    transferredSearchTerm,
   ]);
 
   const activeFilterTags = useMemo(() => {
@@ -1071,6 +1085,9 @@ const ClubDetail = () => {
     setMembershipFilter("all");
     setLicenseFilter("all");
     setGenderFilter("all");
+    setEligibleSearchTerm("");
+    setInactiveSearchTerm("");
+    setTransferredSearchTerm("");
   }, [setGenderFilter, setLicenseFilter, setMembershipFilter, setSearchTerm]);
 
   const allAthletes = useMemo(() => {
@@ -2409,8 +2426,8 @@ const ClubDetail = () => {
               key={section.key}
               className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
             >
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 space-y-1">
                   <h2 className="text-lg font-semibold text-slate-900">
                     {section.label}
                   </h2>
@@ -2422,6 +2439,25 @@ const ClubDetail = () => {
                       : ATHLETE_EMPTY_MESSAGES[section.key]}
                   </p>
                 </div>
+                {!useCards && (
+                  <div className="flex-1 max-w-sm">
+                    <Input
+                      placeholder={`Search in ${section.label?.toLowerCase()}...`}
+                      value={
+                        section.key === "eligible" ? eligibleSearchTerm :
+                        section.key === "inactive" ? inactiveSearchTerm :
+                        section.key === "transferred" ? transferredSearchTerm : ""
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (section.key === "eligible") setEligibleSearchTerm(val);
+                        else if (section.key === "inactive") setInactiveSearchTerm(val);
+                        else if (section.key === "transferred") setTransferredSearchTerm(val);
+                      }}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                )}
                 <span
                   className={`inline-flex h-12 w-12 items-center justify-center rounded-full text-sm font-semibold text-white ${section.badgeClasses}`}
                 >
@@ -2455,6 +2491,7 @@ const ClubDetail = () => {
                   emptyMessage={ATHLETE_EMPTY_MESSAGES[section.key]}
                   loading={loading}
                   gridId={`club-athletes-${section.key}`}
+                  showSearch={false}
                 />
               )}
             </section>

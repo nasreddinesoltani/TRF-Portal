@@ -555,10 +555,11 @@ export const AthleteDocumentsDialog = ({
                 const approvingState = Boolean(approving[docType]);
                 const rejectingState = Boolean(rejecting[docType]);
                 const removingState = Boolean(removing[docType]);
+                const docVersion = document?.uploadedAt ? new Date(document.uploadedAt).getTime() : "1";
                 const downloadPath = document?.storagePath
                   ? `${resolvedBaseUrl}/uploads/${normaliseStoragePath(
                       document.storagePath
-                    ).replace(/^(uploads\/)+/i, "")}`
+                    ).replace(/^(uploads\/)+/i, "")}?v=${docVersion}`
                   : null;
 
                 return (

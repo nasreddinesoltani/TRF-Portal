@@ -25,6 +25,7 @@ export const DataGrid = ({
   gridId,
   emptyMessage,
   loading = false,
+  showSearch = true,
   pageSize = DEFAULT_PAGE_SIZE,
   onRowSelected,
   onRowDeselected,
@@ -77,8 +78,12 @@ export const DataGrid = ({
   );
 
   const toolbarItems = useMemo(
-    () => ["Search", "ColumnChooser", "ExcelExport"],
-    []
+    () => {
+      const items = ["ColumnChooser", "ExcelExport"];
+      if (showSearch) items.unshift("Search");
+      return items;
+    },
+    [showSearch]
   );
 
   const emptyRecordTemplate = useMemo(
