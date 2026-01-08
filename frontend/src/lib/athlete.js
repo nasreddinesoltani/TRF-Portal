@@ -43,27 +43,21 @@ export const getAthletePhotoUrl = (athlete) => {
   }
   
   // If absolute URL, return as-is
-  if (storagePath.startsWith("http")) {
+  if (storagePath.toLowerCase().startsWith("http")) {
       return storagePath;
   }
 
   const normalized = normaliseStoragePath(storagePath);
   
-  // Avoid duplicating 'uploads/' if strictly using relative path
-  // If backend serves '/uploads', and path is 'uploads/foo.jpg', 
-  // joining them blindly might create '/uploads/uploads/foo.jpg' IF the base url includes it?
-  // But BASE_URL is just host. 
-  // Backend serves static at '/uploads'.
-  // So we want `${BASE_URL}/uploads/foo.jpg` IF file is at `root/uploads/foo.jpg`.
-  // My script stored `uploads/photos_organized/...` in storagePath.
-  // So `normalized` starts with `uploads/`.
-  // So we need `${BASE_URL}/${normalized}`.
+  // Remove all leading 'uploads/' segments (case-insensitive) to avoid duplication
+  // e.g. "uploads/uploads/foo.jpg" -> "foo.jpg"
+  // e.g. "Uploads/foo.jpg" -> "foo.jpg"
+  const cleanPath = normalized.replace(/^(uploads\/)+/i, "");
   
-  if (normalized.startsWith("uploads/")) {
-       return `${API_BASE_URL}/${normalized}`;
-  }
+  // Ensure we don't double-append if API_BASE_URL ends with /uploads
+  const cleanBaseUrl = API_BASE_URL.replace(/\/uploads\/?$/i, "");
 
-  return `${API_BASE_URL}/uploads/${normalized}`;
+  return `${cleanBaseUrl}/uploads/${cleanPath}`;
 };
 
 export const getAthleteInitials = (athlete) => {

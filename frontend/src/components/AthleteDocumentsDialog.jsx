@@ -558,7 +558,7 @@ export const AthleteDocumentsDialog = ({
                 const downloadPath = document?.storagePath
                   ? `${resolvedBaseUrl}/uploads/${normaliseStoragePath(
                       document.storagePath
-                    )}`
+                    ).replace(/^(uploads\/)+/i, "")}`
                   : null;
 
                 return (
