@@ -1005,12 +1005,24 @@ export const updateClubAthleteStatus = asyncHandler(async (req, res) => {
   }
 
   const updatedAthlete = await Athlete.findById(athleteId)
-    .select("firstName lastName memberships documents birthDate licenseStatus documentsStatus documentsIssues")
     .populate("memberships.club", "name code");
 
   // Re-evaluate status to ensure it's fresh
-  applyDocumentStatusToAthlete(updatedAthlete);
-  await updatedAthlete.save(); // Persist the re-evaluation if it changed anything
+  const evaluation = applyDocumentStatusToAthlete(updatedAthlete);
+  
+  // Use surgical update instead of .save() to bypass validation on missing legacy fields
+  await Athlete.updateOne(
+    { _id: athleteId },
+    {
+      $set: {
+        status: updatedAthlete.status,
+        licenseStatus: updatedAthlete.licenseStatus,
+        documentsStatus: updatedAthlete.documentsStatus,
+        documentsIssues: updatedAthlete.documentsIssues,
+        documentsEvaluatedAt: updatedAthlete.documentsEvaluatedAt,
+      }
+    }
+  );
 
   res.json({
     message: "Membership status updated",

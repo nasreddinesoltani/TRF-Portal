@@ -8,57 +8,59 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "react-toastify";
+import { 
+  Users, 
+  UserCheck, 
+  AlertCircle, 
+  ShieldAlert, 
+  RefreshCw,
+  TrendingUp,
+  Award,
+  ArrowRightLeft,
+  Trash2,
+  FileCheck,
+  Plus,
+  Search,
+  ChevronRight,
+  Clock
+} from "lucide-react";
 
 const API_BASE_URL = "";
 
 // Modern stat card component
 const StatCard = ({ title, value, subtitle, icon, color = "blue", trend }) => {
   const colorClasses = {
-    blue: "bg-blue-50 border-blue-200 text-blue-700",
-    green: "bg-emerald-50 border-emerald-200 text-emerald-700",
-    amber: "bg-amber-50 border-amber-200 text-amber-700",
-    red: "bg-rose-50 border-rose-200 text-rose-700",
-    purple: "bg-purple-50 border-purple-200 text-purple-700",
-    indigo: "bg-indigo-50 border-indigo-200 text-indigo-700",
-    slate: "bg-slate-50 border-slate-200 text-slate-700",
+    blue: "bg-white border-blue-100 text-blue-700 shadow-blue-50/50",
+    green: "bg-white border-emerald-100 text-emerald-700 shadow-emerald-50/50",
+    amber: "bg-white border-amber-100 text-amber-700 shadow-amber-50/50",
+    red: "bg-white border-rose-100 text-rose-700 shadow-rose-50/50",
+    purple: "bg-white border-purple-100 text-purple-700 shadow-purple-50/50",
+    indigo: "bg-white border-indigo-100 text-indigo-700 shadow-indigo-50/50",
+    slate: "bg-white border-slate-100 text-slate-700 shadow-slate-50/50",
   };
 
   const iconBgClasses = {
-    blue: "bg-blue-500",
-    green: "bg-emerald-500",
-    amber: "bg-amber-500",
-    red: "bg-rose-500",
-    purple: "bg-purple-500",
-    indigo: "bg-indigo-500",
-    slate: "bg-slate-500",
+    blue: "bg-blue-500 shadow-blue-200",
+    green: "bg-emerald-500 shadow-emerald-200",
+    amber: "bg-amber-500 shadow-amber-200",
+    red: "bg-rose-500 shadow-rose-200",
+    purple: "bg-purple-500 shadow-purple-200",
+    indigo: "bg-indigo-500 shadow-indigo-200",
+    slate: "bg-slate-500 shadow-slate-200",
   };
 
   return (
     <div
-      className={`rounded-2xl border p-5 ${colorClasses[color]} transition-all hover:shadow-md`}
+      className={`rounded-2xl border p-6 ${colorClasses[color]} transition-all hover:shadow-lg shadow-sm group`}
     >
       <div className="flex items-start justify-between">
         <div className="space-y-1">
-          <p className="text-sm font-medium opacity-80">{title}</p>
-          <p className="text-3xl font-bold">{value ?? 0}</p>
-          {subtitle && <p className="text-xs opacity-70">{subtitle}</p>}
-          {trend && (
-            <p
-              className={`text-xs font-medium ${
-                trend > 0
-                  ? "text-emerald-600"
-                  : trend < 0
-                  ? "text-rose-600"
-                  : "text-slate-500"
-              }`}
-            >
-              {trend > 0 ? "↑" : trend < 0 ? "↓" : "→"} {Math.abs(trend)}% vs
-              last month
-            </p>
-          )}
+          <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">{title}</p>
+          <p className="text-3xl font-black text-slate-900 group-hover:scale-105 transition-transform origin-left">{value ?? 0}</p>
+          {subtitle && <p className="text-xs text-slate-400 font-medium">{subtitle}</p>}
         </div>
         {icon && (
-          <div className={`rounded-xl p-3 ${iconBgClasses[color]} text-white`}>
+          <div className={`rounded-xl p-3 ${iconBgClasses[color]} text-white shadow-lg`}>
             {icon}
           </div>
         )}
@@ -202,7 +204,10 @@ function Dashboard() {
   // Admin analytics state
   const [athleteStats, setAthleteStats] = useState(null);
   const [clubsList, setClubsList] = useState([]);
+  const [pendingTransfers, setPendingTransfers] = useState([]);
+  const [pendingDeletions, setPendingDeletions] = useState([]);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   const { token, user } = useAuth();
   const navigate = useNavigate();
@@ -234,28 +239,45 @@ function Dashboard() {
     if (!token || !isAdmin) return;
 
     setStatsLoading(true);
+    setIsActionLoading(true);
     try {
-      // Load athlete statistics
-      const statsResponse = await fetch(`${API_BASE_URL}/api/athletes/stats`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (statsResponse.ok) {
-        const stats = await statsResponse.json();
-        setAthleteStats(stats);
-      }
+      // Parallel fetch for better performance
+      const [statsRes, clubsRes, transfersRes, deletionsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/athletes/stats`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${API_BASE_URL}/api/clubs`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${API_BASE_URL}/api/transfers`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${API_BASE_URL}/api/athlete-deletions`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ]);
 
-      // Load clubs list
-      const clubsResponse = await fetch(`${API_BASE_URL}/api/clubs`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (clubsResponse.ok) {
-        const clubs = await clubsResponse.json();
-        setClubsList(Array.isArray(clubs) ? clubs : []);
+      if (statsRes.ok) {
+        setAthleteStats(await statsRes.json());
+      }
+      if (clubsRes.ok) {
+        setClubsList(await clubsRes.json());
+      }
+      if (transfersRes.ok) {
+        const transfers = await transfersRes.json();
+        // Filter for pending status if necessary, or just store all
+        setPendingTransfers(transfers.filter(t => t.status === 'pending') || []);
+      }
+      if (deletionsRes.ok) {
+        const deletions = await deletionsRes.json();
+        setPendingDeletions(deletions.filter(d => d.status === 'pending') || []);
       }
     } catch (err) {
       console.error("Error loading analytics:", err);
+      toast.error("Failed to load administration data");
     } finally {
       setStatsLoading(false);
+      setIsActionLoading(false);
     }
   };
 
@@ -483,7 +505,6 @@ function Dashboard() {
     setGenderFilter("all");
     setSearchTerm("");
   };
-
   if (isClubManager) {
     const club = clubSummary?.club;
     const stats = clubSummary?.stats ?? {};
@@ -492,213 +513,176 @@ function Dashboard() {
     const formatDate = (value) =>
       value ? new Date(value).toLocaleDateString() : "-";
 
-    const statCards = [
-      { label: "Total Athletes", value: stats.totalAthletes },
-      { label: "Active Memberships", value: stats.activeMemberships },
-      { label: "Pending Memberships", value: stats.pendingMemberships },
-      { label: "Inactive Memberships", value: stats.inactiveMemberships },
-      { label: "Transferred Memberships", value: stats.transferredMemberships },
+    const clubStatCards = [
+      { label: "Total Athletes", value: stats.totalAthletes, icon: <Users className="h-5 w-5" />, color: "blue" },
+      { label: "Active Memb.", value: stats.activeMemberships, icon: <UserCheck className="h-5 w-5" />, color: "green" },
+      { label: "Pending", value: stats.pendingMemberships, icon: <Clock className="h-5 w-5" />, color: "amber" },
+      { label: "Inactive", value: stats.inactiveMemberships, icon: <AlertCircle className="h-5 w-5" />, color: "slate" },
+      { label: "Transfers", value: stats.transferredMemberships, icon: <ArrowRightLeft className="h-5 w-5" />, color: "purple" },
     ];
 
     return (
-      <div className="min-h-screen bg-white p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-black">
-            {club?.name ? `${club.name} Overview` : "Club Overview"}
-          </h1>
-          <Button onClick={handleRefresh} disabled={clubLoading}>
-            {clubLoading ? "Loading..." : "Refresh"}
-          </Button>
+      <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+              {club?.name ? `${club.name} Dashboard` : "Club Dashboard"}
+            </h1>
+            <p className="text-slate-500 mt-1 flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-emerald-500" />
+              Club Administration & Athlete Overview
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button 
+              onClick={handleRefresh} 
+              disabled={clubLoading}
+              variant="outline"
+              className="bg-white hover:bg-slate-50 shadow-sm border-slate-200"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${clubLoading ? 'animate-spin' : ''}`} />
+              Refresh Data
+            </Button>
+            <Button onClick={() => navigate(`/clubs/${clubId}`)}>Manage Club</Button>
+          </div>
         </div>
 
         {clubError && (
-          <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
-            Error: {clubError}
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center gap-3">
+             <AlertCircle className="h-5 w-5" />
+             <span>Error: {clubError}</span>
           </div>
         )}
 
         {clubLoading ? (
-          <div className="p-4 text-center text-gray-600">
-            Loading club data...
+          <div className="flex items-center justify-center py-20">
+             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
         ) : club ? (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-              {statCards.map((card) => (
-                <div
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+              {clubStatCards.map((card) => (
+                <StatCard
                   key={card.label}
-                  className="rounded-lg border border-gray-200 p-4 shadow-sm bg-white"
-                >
-                  <p className="text-sm text-gray-500">{card.label}</p>
-                  <p className="text-2xl font-semibold text-black mt-1">
-                    {card.value ?? 0}
-                  </p>
-                </div>
+                  title={card.label}
+                  value={card.value}
+                  icon={card.icon}
+                  color={card.color}
+                />
               ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              <div className="border border-gray-200 rounded-lg p-5 bg-white shadow-sm">
-                <h2 className="text-xl font-semibold text-black mb-3">
-                  Club Details
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-gray-500">Code</p>
-                    <p className="text-lg font-medium text-black">
-                      {club.code || "-"}
-                    </p>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+              <div className="lg:col-span-2 space-y-8">
+                {/* Recent Athletes Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+                    <h2 className="text-lg font-semibold text-slate-900">Recently Added Athletes</h2>
+                    <Button variant="ghost" size="sm" className="text-blue-600" onClick={() => navigate(`/clubs/${clubId}`)}>View All</Button>
                   </div>
-                  <div>
-                    <p className="text-gray-500">Type</p>
-                    <p className="text-lg font-medium text-black capitalize">
-                      {club.type || "-"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Email</p>
-                    <p className="text-lg font-medium text-black">
-                      {club.email || "-"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Phone</p>
-                    <p className="text-lg font-medium text-black">
-                      {club.phone || "-"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">City</p>
-                    <p className="text-lg font-medium text-black">
-                      {club.city || "-"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Status</p>
-                    <p className="text-lg font-medium text-black">
-                      {club.isActive ? "Active" : "Inactive"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Season From</p>
-                    <p className="text-lg font-medium text-black">
-                      {formatDate(club.seasonActivation?.from)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Season To</p>
-                    <p className="text-lg font-medium text-black">
-                      {formatDate(club.seasonActivation?.to)}
-                    </p>
-                  </div>
+                  {recentAthletes.length === 0 ? (
+                    <div className="p-10 text-center text-slate-400">
+                      No athletes found in your club yet.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50 border-b border-slate-200">
+                          <tr>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Athlete</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-center">License</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-center">Status</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-right">Added</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {recentAthletes.map((athlete) => (
+                            <tr key={athlete.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 font-medium text-slate-900">
+                                {`${athlete.firstName} ${athlete.lastName}`}
+                              </td>
+                              <td className="px-6 py-4 text-center text-slate-600">
+                                <span className="bg-slate-100 px-2 py-1 rounded text-xs font-mono">{athlete.licenseNumber || "N/A"}</span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                                  athlete.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 
+                                  athlete.status === 'pending_documents' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {athlete.status?.replace('_', ' ') || 'Pending'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right text-slate-500 text-sm">
+                                {formatDate(athlete.createdAt)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="border border-gray-200 rounded-lg p-5 bg-white shadow-sm">
-                <h2 className="text-xl font-semibold text-black mb-3">
-                  Club Manager
-                </h2>
-                {managerInfo ? (
-                  <div className="space-y-3 text-sm">
-                    <div>
-                      <p className="text-gray-500">Name</p>
-                      <p className="text-lg font-medium text-black">
-                        {`${managerInfo.firstName ?? ""} ${
-                          managerInfo.lastName ?? ""
-                        }`.trim() || "-"}
-                      </p>
+              <div className="space-y-6">
+                 {/* Club Details Card */}
+                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-200 bg-slate-50/50">
+                      <h2 className="text-lg font-semibold text-slate-900">Club Information</h2>
                     </div>
-                    <div>
-                      <p className="text-gray-500">Email</p>
-                      <p className="text-lg font-medium text-black">
-                        {managerInfo.email || "-"}
-                      </p>
+                    <div className="p-6 space-y-4">
+                       <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
+                          <span className="text-slate-500 font-medium whitespace-nowrap">Official Code</span>
+                          <span className="text-slate-900 font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded uppercase">{club.code || "-"}</span>
+                       </div>
+                       <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
+                          <span className="text-slate-500 font-medium">Organization Type</span>
+                          <span className="text-slate-900 font-semibold capitalize">{club.type?.replace(/_/g, " ") || "-"}</span>
+                       </div>
+                       <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
+                          <span className="text-slate-500 font-medium">Headquarters</span>
+                          <span className="text-slate-900 font-semibold">{club.city || "-"}</span>
+                       </div>
+                       <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
+                          <span className="text-slate-500 font-medium">Primary Email</span>
+                          <span className="text-slate-900 text-right truncate ml-4" title={club.email}>{club.email || "N/A"}</span>
+                       </div>
+                       <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500 font-medium">Season Activation</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${club.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {club.isActive ? "ACTIVE" : "EXPIRED"}
+                          </span>
+                       </div>
                     </div>
-                    <div>
-                      <p className="text-gray-500">Phone</p>
-                      <p className="text-lg font-medium text-black">
-                        {managerInfo.phone || "-"}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">
-                    No manager information available.
-                  </p>
-                )}
-              </div>
-            </div>
+                 </div>
 
-            <div className="border border-gray-200 rounded-lg p-5 bg-white shadow-sm">
-              <h2 className="text-xl font-semibold text-black mb-3">
-                Recent Athletes
-              </h2>
-              {recentAthletes.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  No athletes have been added yet.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Name
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          License
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          CIN
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Passport
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Athlete Status
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Membership Status
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Created
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {recentAthletes.map((athlete) => (
-                        <tr key={athlete.id}>
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                            {`${athlete.firstName} ${athlete.lastName}`.trim()}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {athlete.licenseNumber || "-"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {athlete.cin || "-"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {athlete.passportNumber || "-"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 capitalize">
-                            {athlete.status || "-"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 capitalize">
-                            {athlete.membershipStatus || "-"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {formatDate(athlete.createdAt)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                 {/* Manager Info Card */}
+                 <div className="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-2xl p-6 text-white shadow-lg shadow-blue-200">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm uppercase font-bold text-lg">
+                        {managerInfo?.firstName?.charAt(0)}{managerInfo?.lastName?.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-white/70 leading-none">Club Manager</p>
+                        <p className="font-bold text-lg mt-1">{managerInfo?.firstName} {managerInfo?.lastName}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-4 text-sm mt-8 border-t border-white/10 pt-4">
+                       <div className="flex items-center gap-3">
+                          <Plus className="h-4 w-4 text-white/60" />
+                          <span className="text-white/90">Email: {managerInfo?.email || "N/A"}</span>
+                       </div>
+                       <div className="flex items-center gap-3">
+                          <Plus className="h-4 w-4 text-white/60" />
+                          <span className="text-white/90">Joined: {formatDate(managerInfo?.createdAt)}</span>
+                       </div>
+                    </div>
+                 </div>
+              </div>
             </div>
           </>
         ) : (
-          <div className="p-4 text-center text-gray-600">
+          <div className="p-4 text-center text-slate-600 bg-white rounded-2xl p-10 shadow-sm border border-slate-200">
             No club is associated with your account yet.
           </div>
         )}
@@ -815,96 +799,107 @@ function Dashboard() {
           </div>
         </div>
       </div>
+      {/* Action Center - Urgent Tasks */}
+      {(seasonAttention.pendingDocuments > 0 || pendingTransfers.length > 0 || pendingDeletions.length > 0) && (
+        <div className="mb-8 p-6 bg-white rounded-2xl border border-red-100 shadow-sm shadow-red-50">
+          <div className="flex items-center gap-2 mb-4 text-red-600 font-bold uppercase tracking-wider text-xs">
+            <ShieldAlert className="h-4 w-4" />
+            Action Required
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {seasonAttention.pendingDocuments > 0 && (
+              <div 
+                className="flex items-center justify-between p-4 bg-amber-50 rounded-xl border border-amber-100 cursor-pointer hover:bg-amber-100 transition-colors"
+                onClick={() => navigate('/clubs')}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="bg-amber-500 text-white p-2 rounded-lg">
+                    <FileCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-amber-900">{seasonAttention.pendingDocuments} Athletes</p>
+                    <p className="text-xs text-amber-700 font-medium">Documents need verification</p>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-amber-400" />
+              </div>
+            )}
+            
+            {pendingTransfers.length > 0 && (
+              <div 
+                className="flex items-center justify-between p-4 bg-blue-50 rounded-xl border border-blue-100 cursor-pointer hover:bg-blue-100 transition-colors"
+                onClick={() => navigate('/clubs')}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-500 text-white p-2 rounded-lg">
+                    <ArrowRightLeft className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-blue-900">{pendingTransfers.length} Transfers</p>
+                    <p className="text-xs text-blue-700 font-medium">Pending approval</p>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-blue-400" />
+              </div>
+            )}
 
-      {/* Main Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+            {pendingDeletions.length > 0 && (
+              <div 
+                className="flex items-center justify-between p-4 bg-rose-50 rounded-xl border border-rose-100 cursor-pointer hover:bg-rose-100 transition-colors"
+                onClick={() => navigate('/clubs')}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="bg-rose-500 text-white p-2 rounded-lg">
+                    <Trash2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-rose-900">{pendingDeletions.length} Deletions</p>
+                    <p className="text-xs text-rose-700 font-medium">Requested removals</p>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-rose-400" />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Federation Overview - Primary Season Stats */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8">
         <StatCard
-          title="Current Season Athletes"
+          title="Total Athletes"
           value={currentSeasonActive}
-          subtitle={`${totalAthletes} total in database`}
+          subtitle={`Total for Season ${currentSeason}`}
           color="blue"
-          icon={
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-              />
-            </svg>
-          }
+          icon={<Users className="h-6 w-6" />}
         />
         <StatCard
-          title="Documents Complete"
+          title="Active Memb."
           value={seasonByStatus.active || 0}
-          subtitle={`${
-            currentSeasonActive - (seasonByStatus.active || 0)
-          } need attention`}
+          subtitle="Licensed & Verified"
           color="green"
-          icon={
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          }
+          icon={<UserCheck className="h-6 w-6" />}
+        />
+        <StatCard
+          title="Pending Docs"
+          value={seasonByStatus.pending_documents || 0}
+          subtitle="Awaiting Verification"
+          color="amber"
+          icon={<Clock className="h-6 w-6" />}
         />
         <StatCard
           title="Active Clubs"
           value={totalClubs}
-          subtitle={`${clubsByType.club || 0} clubs, ${
-            clubsByType.ecole_federale || 0
-          } écoles, ${clubsByType.centre_de_promotion || 0} centres`}
+          subtitle="Federation Entities"
           color="purple"
-          icon={
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-              />
-            </svg>
-          }
+          icon={<TrendingUp className="h-6 w-6" />}
         />
         <StatCard
-          title="Need Attention"
+          title="Attention"
           value={seasonAttention.total || 0}
-          subtitle="Active athletes with issues"
-          color="amber"
-          icon={
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
-          }
+          subtitle="Urgent Issues"
+          color="red"
+          icon={<AlertCircle className="h-6 w-6" />}
         />
       </div>
 
@@ -1121,40 +1116,45 @@ function Dashboard() {
       )}
 
       {/* Database Overview - Historical Data */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm mb-8">
-        <div className="p-6 border-b border-slate-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">
-                Database Overview
-              </h3>
-              <p className="text-sm text-slate-500">
-                Historical athlete records across all seasons
-              </p>
-            </div>
-            <span className="px-3 py-1 text-xs font-medium bg-slate-100 text-slate-600 rounded-full">
-              All Time
-            </span>
+      <div className="bg-gradient-to-br from-slate-900 to-indigo-950 rounded-2xl shadow-xl mb-8 overflow-hidden text-white border border-slate-800">
+        <div className="p-6 border-b border-white/10 flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-bold">Federation Historical Overview</h3>
+            <p className="text-slate-400 text-sm mt-1">Growth and data points since establishment</p>
+          </div>
+          <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg backdrop-blur-md border border-white/10">
+            <Clock className="h-4 w-4 text-indigo-400" />
+            <span className="text-xs font-bold uppercase tracking-wider">All-Time Statistics</span>
           </div>
         </div>
-        <div className="grid grid-cols-3 divide-x divide-slate-200">
-          <div className="p-5 text-center">
-            <p className="text-2xl font-bold text-slate-900">
-              {totalAthletes.toLocaleString()}
-            </p>
-            <p className="text-sm text-slate-500">Total Records</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/10">
+          <div className="p-8 group hover:bg-white/5 transition-colors">
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">Total Athletes</p>
+            <div className="flex items-end gap-3">
+              <span className="text-4xl font-black">{totalAthletes.toLocaleString()}</span>
+              <TrendingUp className="h-6 w-6 text-emerald-400 mb-1" />
+            </div>
+            <p className="text-slate-500 text-xs mt-3">Registered across all seasons and clubs</p>
           </div>
-          <div className="p-5 text-center">
-            <p className="text-2xl font-bold text-blue-600">
-              {byGender.male || 0}
-            </p>
-            <p className="text-sm text-slate-500">Male Athletes</p>
+          <div className="p-8 group hover:bg-white/5 transition-colors">
+            <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-2">Male Demographic</p>
+            <div className="flex items-end gap-3">
+              <span className="text-4xl font-black">{byGender.male || 0}</span>
+              <div className="h-2 w-24 bg-white/10 rounded-full mb-2 overflow-hidden">
+                <div className="h-full bg-blue-500" style={{ width: `${totalAthletes > 0 ? (byGender.male / totalAthletes) * 100 : 0}%` }}></div>
+              </div>
+            </div>
+            <p className="text-slate-500 text-xs mt-3">{totalAthletes > 0 ? Math.round((byGender.male/totalAthletes)*100) : 0}% of total distribution</p>
           </div>
-          <div className="p-5 text-center">
-            <p className="text-2xl font-bold text-pink-600">
-              {byGender.female || 0}
-            </p>
-            <p className="text-sm text-slate-500">Female Athletes</p>
+          <div className="p-8 group hover:bg-white/5 transition-colors">
+            <p className="text-pink-400 text-xs font-bold uppercase tracking-widest mb-2">Female Demographic</p>
+            <div className="flex items-end gap-3">
+              <span className="text-4xl font-black">{byGender.female || 0}</span>
+              <div className="h-2 w-24 bg-white/10 rounded-full mb-2 overflow-hidden">
+                <div className="h-full bg-pink-500" style={{ width: `${totalAthletes > 0 ? (byGender.female / totalAthletes) * 100 : 0}%` }}></div>
+              </div>
+            </div>
+            <p className="text-slate-500 text-xs mt-3">{totalAthletes > 0 ? Math.round((byGender.female/totalAthletes)*100) : 0}% of total distribution</p>
           </div>
         </div>
       </div>
