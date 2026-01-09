@@ -133,7 +133,7 @@ export const DataGrid = ({
         allowExcelExport
         showColumnChooser
         gridLines="Horizontal"
-        rowHeight={80}
+        rowHeight={100}
         toolbar={toolbarItems}
         toolbarClick={toolbarClick}
         pageSettings={pageSettings}

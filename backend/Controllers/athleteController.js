@@ -121,6 +121,7 @@ const ensureDocumentContainer = (athlete) => {
 
 const saveAthleteWithEvaluation = async (athlete) => {
   const evaluation = applyDocumentStatusToAthlete(athlete);
+  athlete.markModified("documents");
   await athlete.save();
   return evaluation;
 };
@@ -305,7 +306,24 @@ export const searchAthletes = asyncHandler(async (req, res) => {
 // @route   GET /api/athletes/stats
 // @access  Authenticated (roles: admin, club_manager, jury_president, umpire)
 export const getAthleteStatistics = asyncHandler(async (req, res) => {
-  const currentSeason = new Date().getFullYear();
+  const currentSeason = getSeasonYear();
+  let clubId = req.query.clubId;
+  let clubName = null;
+
+  // Enforce clubId for club managers
+  if (req.user?.role === "club_manager") {
+    clubId = req.user.clubId;
+  }
+
+  const filters = {};
+  if (clubId && mongoose.Types.ObjectId.isValid(clubId)) {
+    const clubObjectId = new mongoose.Types.ObjectId(clubId);
+    filters.memberships = { $elemMatch: { club: clubObjectId } };
+    
+    // Also fetch club name for UI context
+    const club = await Club.findById(clubObjectId).select("name").lean();
+    clubName = club?.name;
+  }
 
   const [
     total,
@@ -317,8 +335,9 @@ export const getAthleteStatistics = asyncHandler(async (req, res) => {
     // Current season stats - only athletes with active membership in current season
     currentSeasonAgg,
   ] = await Promise.all([
-    Athlete.countDocuments(),
+    Athlete.countDocuments(filters),
     Athlete.aggregate([
+      { $match: filters },
       {
         $group: {
           _id: {
@@ -333,6 +352,7 @@ export const getAthleteStatistics = asyncHandler(async (req, res) => {
       },
     ]),
     Athlete.aggregate([
+      { $match: filters },
       {
         $group: {
           _id: {
@@ -346,8 +366,9 @@ export const getAthleteStatistics = asyncHandler(async (req, res) => {
         },
       },
     ]),
-    Athlete.countDocuments({ licenseNumber: { $nin: [null, ""] } }),
+    Athlete.countDocuments({ ...filters, licenseNumber: { $nin: [null, ""] } }),
     Athlete.aggregate([
+      { $match: filters },
       {
         $unwind: {
           path: "$memberships",
@@ -368,15 +389,17 @@ export const getAthleteStatistics = asyncHandler(async (req, res) => {
         $count: "count",
       },
     ]),
-    Athlete.findOne({}, { updatedAt: 1 }).sort({ updatedAt: -1 }).lean(),
+    Athlete.findOne(filters, { updatedAt: 1 }).sort({ updatedAt: -1 }).lean(),
     // Current season aggregation - athletes with ACTIVE membership in current season
     Athlete.aggregate([
       {
         $match: {
+          ...filters,
           memberships: {
             $elemMatch: {
+              club: clubId ? new mongoose.Types.ObjectId(clubId) : { $ne: null },
               season: currentSeason,
-              status: "active",
+              status: { $in: ["active", "pending"] },
             },
           },
         },
@@ -514,6 +537,9 @@ export const getAthleteStatistics = asyncHandler(async (req, res) => {
     // New: current season specific stats
     currentSeason,
     season: currentSeasonStats,
+    // Context info
+    isClubFiltered: !!clubId,
+    clubName,
   });
 });
 

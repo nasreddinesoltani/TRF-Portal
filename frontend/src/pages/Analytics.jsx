@@ -32,7 +32,7 @@ const COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#64748b"
 export const Analytics = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   useEffect(() => {
     loadAnalyticsData();
@@ -42,7 +42,15 @@ export const Analytics = () => {
     setLoading(true);
     try {
       const API_BASE_URL = "";
-      const response = await fetch(`${API_BASE_URL}/api/athletes/stats`, {
+      let url = `${API_BASE_URL}/api/athletes/stats`;
+      
+      // Club managers always get their club's stats enforced by backend,
+      // but we can be explicit if we want to allow admins to filter too.
+      if (user?.role === 'club_manager' && user.clubId) {
+        url += `?clubId=${user.clubId}`;
+      }
+
+      const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -63,11 +71,12 @@ export const Analytics = () => {
   };
 
   if (loading) {
+    const loadingText = user?.role === 'club_manager' ? "Crunching club data..." : "Crunching federation data...";
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600 font-medium">Crunching federation data...</p>
+          <p className="text-slate-600 font-medium">{loadingText}</p>
         </div>
       </div>
     );
@@ -77,6 +86,8 @@ export const Analytics = () => {
 
   const currentSeason = stats.currentSeason;
   const seasonStats = stats.season || {};
+  const isClubView = stats.isClubFiltered;
+  const displayName = isClubView ? stats.clubName || "Club" : "Federation";
   
   // Chart Data: License Status
   const statusData = [
@@ -129,10 +140,10 @@ export const Analytics = () => {
       {/* Header */}
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Federation Analytics</h1>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">{displayName} Analytics</h1>
           <p className="text-slate-500 mt-1 flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-emerald-500" />
-            Comprehensive insights for the {currentSeason} Season
+            {isClubView ? `Insights for ${displayName} - ${currentSeason} Season` : `Comprehensive insights for the ${currentSeason} Season`}
           </p>
         </div>
         <Button 
@@ -229,7 +240,7 @@ export const Analytics = () => {
           <div className="mt-4 space-y-3">
             {genderData.map((item, idx) => {
               const totalGenders = genderData.reduce((acc, curr) => acc + curr.value, 0);
-              const percent = Math.round((item.value / totalGenders) * 100);
+              const percent = totalGenders > 0 ? Math.round((item.value / totalGenders) * 100) : 0;
               return (
                 <div key={idx} className="flex items-center justify-between text-sm">
                   <span className="text-slate-500">{item.name}</span>
@@ -286,25 +297,46 @@ export const Analytics = () => {
           </div>
         </div>
 
-        {/* Clubs Participation (Summary) */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-           <h2 className="text-lg font-semibold text-slate-900 mb-6">Club Ecosystem</h2>
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-                <p className="text-blue-600 text-xs font-bold uppercase tracking-wider">Active Clubs</p>
-                <p className="text-3xl font-black text-blue-900 mt-1">{stats.uniqueClubs}</p>
-              </div>
-              <div className="bg-purple-50 rounded-xl p-4 border border-purple-100 md:col-span-2">
-                 <p className="text-purple-600 text-xs font-bold uppercase tracking-wider">Season Licensing Efficiency</p>
-                 <div className="flex items-end gap-2 mt-1">
-                    <p className="text-3xl font-black text-purple-900">
-                       {seasonStats.total > 0 ? Math.round(((seasonStats.byStatus?.active || 0) / seasonStats.total) * 100) : 0}%
-                    </p>
-                    <p className="text-purple-500 text-sm mb-1 font-medium pb-0.5">Ratio of verified licenses for {currentSeason}</p>
-                 </div>
-              </div>
-           </div>
-        </div>
+        {/* Clubs Participation (Summary) - Only show for global view */}
+        {!isClubView && (
+          <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+             <h2 className="text-lg font-semibold text-slate-900 mb-6">Club Ecosystem</h2>
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                  <p className="text-blue-600 text-xs font-bold uppercase tracking-wider">Active Clubs</p>
+                  <p className="text-3xl font-black text-blue-900 mt-1">{stats.uniqueClubs}</p>
+                </div>
+                <div className="bg-purple-50 rounded-xl p-4 border border-purple-100 md:col-span-2">
+                   <p className="text-purple-600 text-xs font-bold uppercase tracking-wider">Season Licensing Efficiency</p>
+                   <div className="flex items-end gap-2 mt-1">
+                      <p className="text-3xl font-black text-purple-900">
+                         {seasonStats.total > 0 ? Math.round(((seasonStats.byStatus?.active || 0) / seasonStats.total) * 100) : 0}%
+                      </p>
+                      <p className="text-purple-500 text-sm mb-1 font-medium pb-0.5">Ratio of verified licenses for {currentSeason}</p>
+                   </div>
+                </div>
+             </div>
+          </div>
+        )}
+
+        {/* Efficiency Card for Club View */}
+        {isClubView && (
+          <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+             <h2 className="text-lg font-semibold text-slate-900 mb-6">Licensing Status</h2>
+             <div className="bg-purple-50 rounded-xl p-6 border border-purple-100">
+                <p className="text-purple-600 text-xs font-bold uppercase tracking-wider">Club Licensing Efficiency</p>
+                <div className="flex items-end gap-4 mt-2">
+                   <p className="text-5xl font-black text-purple-900">
+                      {seasonStats.total > 0 ? Math.round(((seasonStats.byStatus?.active || 0) / seasonStats.total) * 100) : 0}%
+                   </p>
+                   <div>
+                      <p className="text-purple-700 font-semibold">Verified License Ratio</p>
+                      <p className="text-purple-500 text-sm">Percentage of athletes fully verified for the {currentSeason} season.</p>
+                   </div>
+                </div>
+             </div>
+          </div>
+        )}
       </div>
     </div>
   );

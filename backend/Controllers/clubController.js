@@ -541,27 +541,66 @@ export const getClubSummary = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Club not found" });
   }
 
-  const baseMembershipFilter = { "memberships.club": club._id };
+  const currentSeason = getSeasonYear();
+  const baseMembershipFilter = { 
+    "memberships": {
+      $elemMatch: {
+        club: club._id,
+        season: currentSeason,
+        status: { $in: ["active", "pending"] }
+      }
+    }
+  };
 
   const [
     totalAthletes,
     activeMemberships,
-    inactiveMemberships,
     pendingMemberships,
+    licensedAthletes,
+    pendingDocsAthletes,
+    attentionAthletes,
     transferredMemberships,
   ] = await Promise.all([
     Athlete.countDocuments(baseMembershipFilter),
     Athlete.countDocuments({
-      memberships: { $elemMatch: { club: club._id, status: "active" } },
+      memberships: { 
+        $elemMatch: { 
+          club: club._id, 
+          status: "active",
+          season: currentSeason 
+        } 
+      },
     }),
     Athlete.countDocuments({
-      memberships: { $elemMatch: { club: club._id, status: "inactive" } },
+      memberships: { 
+        $elemMatch: { 
+          club: club._id, 
+          status: "pending",
+          season: currentSeason 
+        } 
+      },
+    }),
+    // License-centric counts (for active/pending members)
+    Athlete.countDocuments({
+      ...baseMembershipFilter,
+      status: "active"
     }),
     Athlete.countDocuments({
-      memberships: { $elemMatch: { club: club._id, status: "pending" } },
+      ...baseMembershipFilter,
+      status: "pending_documents"
     }),
     Athlete.countDocuments({
-      memberships: { $elemMatch: { club: club._id, status: "transferred" } },
+      ...baseMembershipFilter,
+      status: { $in: ["pending_documents", "expired_medical", "suspended"] }
+    }),
+    Athlete.countDocuments({
+      memberships: { 
+        $elemMatch: { 
+          club: club._id, 
+          status: "transferred",
+          season: currentSeason 
+        } 
+      },
     }),
   ]);
 
@@ -572,13 +611,11 @@ export const getClubSummary = asyncHandler(async (req, res) => {
     .select("firstName lastName email phone")
     .lean();
 
-  const recentAthletesRaw = await Athlete.find({
-    "memberships.club": club._id,
-  })
+  const recentAthletesRaw = await Athlete.find(baseMembershipFilter)
     .sort({ createdAt: -1 })
     .limit(5)
     .select(
-      "firstName lastName licenseNumber status memberships createdAt cin passportNumber"
+      "firstName lastName firstNameAr lastNameAr licenseNumber status memberships createdAt cin passportNumber"
     )
     .lean();
 
@@ -588,10 +625,15 @@ export const getClubSummary = asyncHandler(async (req, res) => {
       (entry) => entry.club?.toString() === clubIdString
     );
 
+    // Prefer Latin name, fallback to Arabic
+    const firstName = athlete.firstName || athlete.firstNameAr || "";
+    const lastName = athlete.lastName || athlete.lastNameAr || "";
+
     return {
       id: athlete._id,
-      firstName: athlete.firstName,
-      lastName: athlete.lastName,
+      firstName,
+      lastName,
+      fullName: `${firstName} ${lastName}`.trim(),
       licenseNumber: athlete.licenseNumber,
       cin: athlete.cin,
       passportNumber: athlete.passportNumber,
@@ -607,9 +649,12 @@ export const getClubSummary = asyncHandler(async (req, res) => {
     stats: {
       totalAthletes,
       activeMemberships,
-      inactiveMemberships,
       pendingMemberships,
+      licensedAthletes,
+      pendingDocsAthletes,
+      attentionAthletes,
       transferredMemberships,
+      season: currentSeason,
     },
     recentAthletes,
   });

@@ -1624,8 +1624,8 @@ const ClubDetail = () => {
     const idString = idParts.join(" | ");
 
     return (
-      <div className="flex items-center gap-2">
-        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50">
+      <div className="flex items-center gap-3 py-1">
+        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 shadow-sm">
           {photoUrl ? (
             <img
               src={photoUrl}
@@ -1643,22 +1643,22 @@ const ClubDetail = () => {
           ) : null}
           <span
             className={
-              photoUrl ? "hidden" : "text-[10px] font-semibold text-slate-400"
+              photoUrl ? "hidden" : "text-[11px] font-semibold text-slate-400"
             }
           >
             {initials}
           </span>
         </div>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-900 leading-tight">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-sm font-bold text-slate-900 leading-tight truncate">
             {displayName}
           </p>
           {athlete.fullNameAr && (
-            <p className="text-xs text-slate-500 leading-tight">
+            <p className="text-xs text-slate-500 leading-tight font-medium">
               {athlete.fullNameAr}
             </p>
           )}
-          {idString && <p className="text-[10px] text-slate-400">{idString}</p>}
+          {idString && <p className="text-[10px] text-slate-400 font-medium">{idString}</p>}
         </div>
       </div>
     );
@@ -1740,20 +1740,20 @@ const ClubDetail = () => {
       : [];
 
     return (
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-1.5 py-1">
         <span
-          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${licenseStyle}`}
+          className={`inline-flex items-center justify-center rounded px-2 py-0.5 text-[10px] uppercase tracking-wider font-bold ring-1 ring-inset ${licenseStyle}`}
         >
           {licenseLabel}
         </span>
         <span
-          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${documentsStyle}`}
+          className={`inline-flex items-center justify-center rounded px-2 py-0.5 text-[10px] uppercase tracking-wider font-bold ring-1 ring-inset ${documentsStyle}`}
         >
           {documentsLabel}
         </span>
         {documentsKey !== "active" && issues.length ? (
-          <span className="text-[10px] text-amber-600">
-            ⚠️ {issues.length} issue{issues.length > 1 ? "s" : ""}
+          <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-1">
+            <span className="scale-110">⚠️</span> {issues.length} {issues.length > 1 ? "issues" : "issue"}
           </span>
         ) : null}
       </div>
@@ -1777,7 +1777,7 @@ const ClubDetail = () => {
             handleStatusChange(athlete._id, event.target.value)
           }
           disabled={statusUpdating}
-          className="text-xs h-7 w-[90px]"
+          className="text-xs h-9 w-[100px] shadow-sm"
         >
           {ATHLETE_STATUS_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -1807,7 +1807,7 @@ const ClubDetail = () => {
             handleLicenseStatusChange(athlete._id, event.target.value)
           }
           disabled={licenseStatusUpdating}
-          className="text-xs h-7 w-[85px]"
+          className="text-xs h-9 w-[95px] shadow-sm"
         >
           {MANUAL_LICENSE_STATUS_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -1887,7 +1887,7 @@ const ClubDetail = () => {
         return <span className="text-[10px] text-slate-400">-</span>;
       }
 
-      return <div className="flex items-center gap-1">{buttons}</div>;
+      return <div className="flex items-center gap-1.5 py-1 flex-wrap">{buttons}</div>;
     },
     [
       clubs.length,

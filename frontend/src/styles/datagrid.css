@@ -30,8 +30,11 @@
 .e-grid .e-rowcell {
   font-size: 0.875rem !important; /* text-sm */
   color: #4b5563 !important; /* gray-600 */
-  padding-top: 12px !important;
-  padding-bottom: 12px !important;
+  padding-top: 16px !important;
+  padding-bottom: 16px !important;
+  padding-left: 1.25rem !important;
+  padding-right: 1.25rem !important;
+  line-height: 1.5 !important;
 }
 
 .e-grid .e-row:hover .e-rowcell {

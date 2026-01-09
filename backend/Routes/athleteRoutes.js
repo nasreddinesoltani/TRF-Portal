@@ -131,7 +131,7 @@ router.post(
 router.patch(
   "/:id/documents/medical-certificate",
   protect,
-  allowRoles("admin"),
+  allowRoles("admin", "club_manager"),
   updateMedicalCertificate
 );
 router.post(

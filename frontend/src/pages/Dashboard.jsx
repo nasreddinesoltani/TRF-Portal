@@ -249,7 +249,7 @@ function Dashboard() {
         fetch(`${API_BASE_URL}/api/clubs`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${API_BASE_URL}/api/transfers`, {
+        fetch(`${API_BASE_URL}/api/athlete-transfers`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`${API_BASE_URL}/api/athlete-deletions`, {
@@ -514,10 +514,10 @@ function Dashboard() {
       value ? new Date(value).toLocaleDateString() : "-";
 
     const clubStatCards = [
-      { label: "Total Athletes", value: stats.totalAthletes, icon: <Users className="h-5 w-5" />, color: "blue" },
-      { label: "Active Memb.", value: stats.activeMemberships, icon: <UserCheck className="h-5 w-5" />, color: "green" },
-      { label: "Pending", value: stats.pendingMemberships, icon: <Clock className="h-5 w-5" />, color: "amber" },
-      { label: "Inactive", value: stats.inactiveMemberships, icon: <AlertCircle className="h-5 w-5" />, color: "slate" },
+      { label: "Season Total", value: stats.totalAthletes, icon: <Users className="h-5 w-5" />, color: "blue" },
+      { label: "Active Memb.", value: stats.licensedAthletes, icon: <UserCheck className="h-5 w-5" />, color: "green" },
+      { label: "Pending Docs", value: stats.pendingDocsAthletes, icon: <Clock className="h-5 w-5" />, color: "amber" },
+      { label: "Attention Required", value: stats.attentionAthletes, icon: <AlertCircle className="h-5 w-5" />, color: "red" },
       { label: "Transfers", value: stats.transferredMemberships, icon: <ArrowRightLeft className="h-5 w-5" />, color: "purple" },
     ];
 

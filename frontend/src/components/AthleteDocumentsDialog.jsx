@@ -705,7 +705,7 @@ export const AthleteDocumentsDialog = ({
                         </div>
                       ) : null}
 
-                      {docType === "medicalCertificate" && canDecide ? (
+                      {docType === "medicalCertificate" && (canUpload || canDecide) ? (
                         <Button
                           type="button"
                           variant="secondary"
