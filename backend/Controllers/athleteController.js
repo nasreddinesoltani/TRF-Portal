@@ -267,6 +267,9 @@ export const searchAthletes = asyncHandler(async (req, res) => {
     ) {
       membershipMatch.status = normalizedMembershipStatus;
     }
+  } else if (clubId) {
+    // If clubId is provided but no specific status, exclude transferred by default
+    membershipMatch.status = { $ne: "transferred" };
   }
 
   if (Object.keys(membershipMatch).length > 0) {

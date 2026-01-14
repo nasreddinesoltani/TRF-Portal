@@ -19,24 +19,31 @@ import {
 const generateGridId = () => `grid-${Math.random().toString(36).slice(2, 9)}`;
 const DEFAULT_PAGE_SIZE = 12;
 
-export const DataGrid = ({
-  data,
-  columns,
-  gridId,
-  emptyMessage,
-  loading = false,
-  showSearch = true,
-  pageSize = DEFAULT_PAGE_SIZE,
-  onRowSelected,
-  onRowDeselected,
-  selectionType = "Single",
-  selectionMode = "Row",
-  allowRowDragAndDrop = false,
-  onRowDrop,
-  rowDropTargetID,
-}) => {
-  const gridRef = useRef(null);
-  const resolvedGridId = useMemo(() => gridId || generateGridId(), [gridId]);
+export const DataGrid = React.forwardRef(
+  (
+    {
+      data,
+      columns,
+      gridId,
+      emptyMessage,
+      loading = false,
+      showSearch = true,
+      pageSize = DEFAULT_PAGE_SIZE,
+      onRowSelected,
+      onRowDeselected,
+      selectionType = "Single",
+      selectionMode = "Row",
+      allowRowDragAndDrop = false,
+      onRowDrop,
+      rowDropTargetID,
+    },
+    ref
+  ) => {
+    const internalGridRef = useRef(null);
+    const resolvedGridId = useMemo(() => gridId || generateGridId(), [gridId]);
+
+    // Expose the internal grid instance to the parent ref if provided
+    React.useImperativeHandle(ref, () => internalGridRef.current);
 
   const resolvedPageSize = useMemo(() => {
     const candidate = Number(pageSize);
@@ -98,7 +105,7 @@ export const DataGrid = ({
 
   const toolbarClick = (args) => {
     if (args.item?.id === `${resolvedGridId}_excelexport`) {
-      gridRef.current?.excelExport();
+      internalGridRef.current?.excelExport();
     }
   };
 
@@ -123,7 +130,7 @@ export const DataGrid = ({
   return (
     <div className="relative">
       <GridComponent
-        ref={gridRef}
+        ref={internalGridRef}
         id={resolvedGridId}
         dataSource={data}
         allowPaging
@@ -197,4 +204,5 @@ export const DataGrid = ({
       )}
     </div>
   );
-};
+}
+);

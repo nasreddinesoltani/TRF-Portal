@@ -447,11 +447,55 @@ const AthleteCard = ({
         </div>
       </div>
 
-      {/* Warning if issues */}
-      {documentsStatus !== "active" && issues.length > 0 && (
-        <div className="mt-2 text-[11px] text-amber-600 bg-amber-50 rounded px-2 py-1">
-          ⚠️ {formatIssueLabel(issues[0])}
-          {issues.length > 1 ? ` +${issues.length - 1}` : ""}
+      {/* Document Issues / Missing Items */}
+      {documentsStatus !== "active" && (
+        <div className="mt-3 space-y-1.5">
+          {issues.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {issues.map((issue, idx) => {
+                const issueStr = issue.toString().toLowerCase();
+                const isMissing = issueStr.includes("required") || issueStr.includes("missing");
+                const isExpired = issueStr.includes("expired");
+                const isPending = issueStr.includes("not_approved") || issueStr.includes("pending");
+
+                let labelText = formatIssueLabel(issue);
+                let statusGroup = "pending"; // Default
+
+                if (isMissing) {
+                  labelText = `Missing: ${labelText.replace(/ Required| Missing/g, "")}`;
+                  statusGroup = "critical";
+                } else if (isExpired) {
+                  labelText = `Expired: ${labelText.replace(/ Expired/g, "")}`;
+                  statusGroup = "critical";
+                } else if (isPending) {
+                  labelText = `Pending: ${labelText.replace(/ Not Approved| Pending/g, "")}`;
+                  statusGroup = "warning";
+                }
+
+                return (
+                  <span
+                    key={idx}
+                    className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tight shadow-sm border ${
+                      statusGroup === "critical"
+                        ? "bg-rose-50 text-rose-600 border-rose-100"
+                        : "bg-amber-50 text-amber-600 border-amber-100"
+                    }`}
+                  >
+                    {statusGroup === "critical" ? "❌ " : "⏳ "}
+                    {labelText}
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-[10px] text-slate-400 italic bg-slate-50 rounded px-2 py-1 flex items-center gap-1.5">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
+              </span>
+              Verification in progress...
+            </div>
+          )}
         </div>
       )}
 
@@ -463,10 +507,14 @@ const AthleteCard = ({
             <Button
               variant="outline"
               size="sm"
-              className="h-6 px-2 text-[10px] border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+              className={`h-6 px-2 text-[10px] shadow-sm transition-all ${
+                documentsStatus !== "active"
+                  ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 animate-pulse-subtle"
+                  : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+              }`}
               onClick={() => onOpenDocuments(athlete)}
             >
-              Docs
+              Docs {documentsStatus !== "active" && `(${issues.length})`}
             </Button>
           )}
           {permissions.canManageAthletes && (
@@ -1011,21 +1059,47 @@ const ClubDetail = () => {
     const bucketMatchesMembership = (key) =>
       membershipFilter === "all" || membershipFilter === key;
 
+    const mapForExport = (athlete) => {
+      const issues = athlete.documentsIssues || athlete.documentEvaluation?.issues || [];
+      const documentIssuesText = (Array.isArray(issues) ? issues : []).map(issue => {
+        const issueStr = issue.toString().toLowerCase();
+        const isMissing = issueStr.includes("required") || issueStr.includes("missing");
+        const isExpired = issueStr.includes("expired");
+        const isPending = issueStr.includes("not_approved") || issueStr.includes("pending");
+
+        let label = formatIssueLabel(issue);
+        if (isMissing) return `Missing: ${label.replace(/ Required| Missing/gi, "")}`;
+        if (isExpired) return `Expired: ${label.replace(/ Expired/gi, "")}`;
+        if (isPending) return `Pending: ${label.replace(/ Not Approved| Pending/gi, "")}`;
+        return label;
+      }).join("; ");
+
+      return {
+        ...athlete,
+        documentIssuesText,
+        birthDate: athlete.birthDate ? new Date(athlete.birthDate) : null,
+      };
+    };
+
+    const filterAndMap = (list, search) =>
+      (Array.isArray(list) ? list.filter(a => matchesAllFilters(a, search)) : [])
+        .map(mapForExport);
+
     return {
       active: bucketMatchesMembership("active")
-        ? (Array.isArray(athleteBuckets.active) ? athleteBuckets.active.filter(a => matchesAllFilters(a, "")) : [])
+        ? filterAndMap(athleteBuckets.active, "")
         : [],
       eligible: bucketMatchesMembership("eligible")
-        ? (Array.isArray(athleteBuckets.eligible) ? athleteBuckets.eligible.filter(a => matchesAllFilters(a, eligibleSearchTerm)) : [])
+        ? filterAndMap(athleteBuckets.eligible, eligibleSearchTerm)
         : [],
       pending: bucketMatchesMembership("pending")
-        ? (Array.isArray(athleteBuckets.pending) ? athleteBuckets.pending.filter(a => matchesAllFilters(a, "")) : [])
+        ? filterAndMap(athleteBuckets.pending, "")
         : [],
       inactive: bucketMatchesMembership("inactive")
-        ? (Array.isArray(athleteBuckets.inactive) ? athleteBuckets.inactive.filter(a => matchesAllFilters(a, inactiveSearchTerm)) : [])
+        ? filterAndMap(athleteBuckets.inactive, inactiveSearchTerm)
         : [],
       transferred: bucketMatchesMembership("transferred")
-        ? (Array.isArray(athleteBuckets.transferred) ? athleteBuckets.transferred.filter(a => matchesAllFilters(a, transferredSearchTerm)) : [])
+        ? filterAndMap(athleteBuckets.transferred, transferredSearchTerm)
         : [],
     };
   }, [
@@ -1089,6 +1163,33 @@ const ClubDetail = () => {
     setInactiveSearchTerm("");
     setTransferredSearchTerm("");
   }, [setGenderFilter, setLicenseFilter, setMembershipFilter, setSearchTerm]);
+
+  const gridRefs = React.useRef({});
+  const setGridRef = (key) => (el) => {
+    if (el) gridRefs.current[key] = el;
+  };
+
+  const handleExportExcel = useCallback(
+    (bucketKey, bucketLabel) => {
+      const grid = gridRefs.current[bucketKey];
+      if (grid) {
+        // filter out columns that shouldn't be exported
+        const exportColumns = grid.columns.filter(col => col.allowExcelExport !== false);
+        
+        grid.excelExport({
+          fileName: `${club?.name || "club"}_${bucketLabel.replace(
+            /\s+/g,
+            "_"
+          )}.xlsx`,
+          includeHiddenColumn: true,
+          columns: exportColumns
+        });
+      } else {
+        toast.error("Export service not ready");
+      }
+    },
+    [club?.name]
+  );
 
   const allAthletes = useMemo(() => {
     const aggregated = [];
@@ -1910,18 +2011,58 @@ const ClubDetail = () => {
           field: "fullName",
           width: 200,
           template: renderAthleteSummary,
+          allowExcelExport: false,
         },
         {
           headerText: "Info",
           field: "licenseNumber",
           width: 110,
           template: renderIdentifierBadges,
+          allowExcelExport: false,
+        },
+        {
+          headerText: "Full Name",
+          field: "fullName",
+          width: 150,
+          visible: false,
+        },
+        {
+          headerText: "License Number",
+          field: "licenseNumber",
+          width: 120,
+          visible: false,
+        },
+        {
+          headerText: "Name (AR)",
+          field: "fullNameAr",
+          width: 150,
+          visible: false,
+        },
+        {
+          headerText: "Gender",
+          field: "gender",
+          width: 80,
+          visible: false,
+        },
+        {
+          headerText: "Birth Date",
+          field: "birthDate",
+          width: 100,
+          visible: false,
+          type: "date",
+          format: "dd/MM/yyyy",
         },
         {
           headerText: "Status",
           field: "status",
           width: 115,
           template: renderLicenseStatus,
+        },
+        {
+          headerText: "Document Issues",
+          field: "documentIssuesText",
+          width: 150,
+          visible: false,
         },
         permissions.canManageAthletes
           ? {
@@ -1943,6 +2084,7 @@ const ClubDetail = () => {
           headerText: "Actions",
           width: 140,
           template: renderActionButtons,
+          allowExcelExport: false,
         },
       ].filter(Boolean),
     [
@@ -2458,34 +2600,57 @@ const ClubDetail = () => {
                     />
                   </div>
                 )}
-                <span
-                  className={`inline-flex h-12 w-12 items-center justify-center rounded-full text-sm font-semibold text-white ${section.badgeClasses}`}
-                >
-                  {counts[section.key] ?? 0}
-                </span>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleExportExcel(section.key, section.label)}
+                    className="h-9 px-3 text-[11px] font-bold uppercase tracking-tight border-slate-200 hover:bg-slate-50 transition-colors shadow-sm active:scale-95"
+                  >
+                    Export List
+                  </Button>
+                  <span
+                    className={`inline-flex h-12 w-12 items-center justify-center rounded-full text-sm font-semibold text-white shadow-md ${section.badgeClasses}`}
+                  >
+                    {counts[section.key] ?? 0}
+                  </span>
+                </div>
               </div>
 
               {useCards ? (
-                <AthleteCardGrid
-                  athletes={bucket}
-                  permissions={permissions}
-                  isAdmin={isAdmin}
-                  clubs={clubs}
-                  canViewDocuments={canViewDocuments}
-                  onOpenDocuments={openDocumentsDialog}
-                  onEdit={openEditDialog}
-                  onTransfer={openTransferDialog}
-                  onRequestDelete={openDeleteDialog}
-                  onAdminDelete={handleAdminDelete}
-                  onStatusChange={handleStatusChange}
-                  onLicenseStatusChange={handleLicenseStatusChange}
-                  statusUpdating={statusUpdating}
-                  licenseStatusUpdating={licenseStatusUpdating}
-                  loading={loading}
-                  emptyMessage={ATHLETE_EMPTY_MESSAGES[section.key]}
-                />
+                <>
+                  <AthleteCardGrid
+                    athletes={bucket}
+                    permissions={permissions}
+                    isAdmin={isAdmin}
+                    clubs={clubs}
+                    canViewDocuments={canViewDocuments}
+                    onOpenDocuments={openDocumentsDialog}
+                    onEdit={openEditDialog}
+                    onTransfer={openTransferDialog}
+                    onRequestDelete={openDeleteDialog}
+                    onAdminDelete={handleAdminDelete}
+                    onStatusChange={handleStatusChange}
+                    onLicenseStatusChange={handleLicenseStatusChange}
+                    statusUpdating={statusUpdating}
+                    licenseStatusUpdating={licenseStatusUpdating}
+                    loading={loading}
+                    emptyMessage={ATHLETE_EMPTY_MESSAGES[section.key]}
+                  />
+                  {/* Hidden grid for export purposes */}
+                  <div className="hidden" aria-hidden="true" style={{ display: "none" }}>
+                    <DataGrid
+                      ref={setGridRef(section.key)}
+                      data={bucket}
+                      columns={athleteColumns}
+                      gridId={`export-grid-${section.key}`}
+                    />
+                  </div>
+                </>
               ) : (
                 <DataGrid
+                  ref={setGridRef(section.key)}
                   data={bucket}
                   columns={athleteColumns}
                   emptyMessage={ATHLETE_EMPTY_MESSAGES[section.key]}

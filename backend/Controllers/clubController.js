@@ -667,35 +667,21 @@ const normalizeClubMembership = (athlete, clubId, seasonYear = null) => {
 
   const targetId = clubId.toString();
 
-  return (
-    athlete.memberships.find((membership) => {
-      if (!membership.club) {
-        return false;
-      }
+  // 1. Try to find the exact season match first
+  if (seasonYear) {
+    const exactMatch = athlete.memberships.find((membership) => {
+      const membershipClubId = membership.club?._id?.toString() || membership.club?.toString();
+      return membershipClubId === targetId && membership.season === seasonYear;
+    });
+    if (exactMatch) return exactMatch;
+  }
 
-      const membershipClubId = (() => {
-        if (typeof membership.club === "string") {
-          return membership.club;
-        }
-        if (
-          typeof membership.club === "object" &&
-          membership.club !== null &&
-          membership.club._id
-        ) {
-          return membership.club._id.toString();
-        }
-        if (typeof membership.club?.toString === "function") {
-          return membership.club.toString();
-        }
-        return undefined;
-      })();
+  // 2. Fallback: Find the most recent membership for this club across ALL seasons
+  const clubMemberships = athlete.memberships
+    .filter((m) => (m.club?._id?.toString() || m.club?.toString()) === targetId)
+    .sort((a, b) => b.season - a.season);
 
-      const clubMatch = membershipClubId === targetId;
-      const seasonMatch = !seasonYear || membership.season === seasonYear;
-      
-      return clubMatch && seasonMatch;
-    }) || null
-  );
+  return clubMemberships.length > 0 ? clubMemberships[0] : null;
 };
 
 const buildAthleteClubView = (athlete, clubId, seasonYear) => {
@@ -871,19 +857,27 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
     const membership = normalizeClubMembership(athlete, id, seasonYear);
     const status = membership?.status || "inactive";
 
+    // EXCLUSION LOGIC: If an athlete was transferred away from this club,
+    // do not show them in the roster at all.
+    if (status === "transferred") {
+      return;
+    }
+
     // Enforce: Inactive Membership implies Inactive License
-    // User logic: "inactive athletes should be inactive license also not pending"
-    if (status === "inactive") {
-      athlete.licenseStatus = "inactive";
+    // If it's a previous season's membership (status would be active/pending but for old season),
+    // it will be treated as "inactive" in the view.
+    let resolvedStatus = status;
+    if (membership && membership.season !== seasonYear && (status === "active" || status === "pending")) {
+      resolvedStatus = "inactive";
     }
 
     const view = buildAthleteClubView(athlete, id, seasonYear);
 
     // Add to Membership Bucket
-    if (athletes[status]) {
-      athletes[status].push(view);
-      if (counts[status] !== undefined) {
-        counts[status] += 1;
+    if (athletes[resolvedStatus]) {
+      athletes[resolvedStatus].push(view);
+      if (counts[resolvedStatus] !== undefined) {
+        counts[resolvedStatus] += 1;
       }
     } else {
       // Fallback

@@ -1630,7 +1630,7 @@ const CreateAthlete = () => {
             Athlete workspace
           </h1>
           <p className="text-sm text-slate-500">
-            Review your roster, track documentation, and register new athletes
+            Review your list, track documentation, and register new athletes
             from a single hub.
           </p>
           {lastUpdatedLabel ? (
@@ -1686,7 +1686,7 @@ const CreateAthlete = () => {
             </p>
             <p className="text-xs text-emerald-600/80">
               {globalTotalAthletes
-                ? `${globalActivePercent}% of roster`
+                ? `${globalActivePercent}% of list`
                 : "No athletes yet"}
             </p>
           </div>
@@ -1699,7 +1699,7 @@ const CreateAthlete = () => {
             </p>
             <p className="text-xs text-amber-600/80">
               {globalTotalAthletes
-                ? `${globalAttentionPercent}% of roster requires attention`
+                ? `${globalAttentionPercent}% of list requires attention`
                 : "No athletes yet"}
             </p>
             <p className="text-xs text-amber-600/70">
@@ -1753,7 +1753,7 @@ const CreateAthlete = () => {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Roster matches
+            List matches
           </p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">
             {rosterStatistics.total}
@@ -1774,7 +1774,7 @@ const CreateAthlete = () => {
             {rosterStatistics.total
               ? `${Math.round(
                   (rosterStatistics.active / rosterStatistics.total) * 100
-                )}% of roster`
+                )}% of list`
               : "No athletes yet"}
           </p>
         </div>
@@ -1910,7 +1910,7 @@ const CreateAthlete = () => {
         <div className="flex flex-col gap-2 border-b border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
-              Athlete roster
+              Athlete list
             </h2>
             <p className="text-sm text-slate-500">
               Syncfusion DataGrid with instant filtering, column chooser, and

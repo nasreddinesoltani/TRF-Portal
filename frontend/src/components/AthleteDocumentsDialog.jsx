@@ -545,178 +545,238 @@ export const AthleteDocumentsDialog = ({
               Loading documents...
             </div>
           ) : definitions.length ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              {definitions.map((definition) => {
-                const docType = definition.key;
-                const document = documents[docType];
-                const state = getDocumentState(docType, evaluation, document);
-                const required = isDocumentRequired(definition, evaluation);
-                const uploadingState = Boolean(uploading[docType]);
-                const approvingState = Boolean(approving[docType]);
-                const rejectingState = Boolean(rejecting[docType]);
-                const removingState = Boolean(removing[docType]);
-                const docVersion = document?.uploadedAt ? new Date(document.uploadedAt).getTime() : "1";
-                const downloadPath = document?.storagePath
-                  ? `${resolvedBaseUrl}/uploads/${normaliseStoragePath(
-                      document.storagePath
-                    ).replace(/^(uploads\/)+/i, "")}?v=${docVersion}`
-                  : null;
+            <div className="space-y-8">
+              {/* Grouped definitions */}
+              {[
+                {
+                  label: "Identity & Personal",
+                  keys: ["photo", "birthCertificate", "cin", "passport"],
+                },
+                {
+                  label: "Health & Authorizations",
+                  keys: ["medicalCertificate", "parentalAuthorization"],
+                },
+              ].map((section) => {
+                const sectionDocs = definitions.filter((d) =>
+                  section.keys.includes(d.key)
+                );
+                if (sectionDocs.length === 0) return null;
 
                 return (
-                  <div
-                    key={docType}
-                    className="flex h-full flex-col justify-between rounded-xl border border-slate-200 bg-slate-50 p-4"
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h3 className="text-sm font-semibold text-slate-900">
-                            {definition.label}
-                          </h3>
-                          <p className="text-xs text-slate-500">
-                            {docType}
-                            {required ? " • Required" : ""}
-                          </p>
-                        </div>
-                        <span
-                          className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-medium ${
-                            DOCUMENT_STATE_STYLES[state] ||
-                            DOCUMENT_STATE_STYLES.pending
-                          }`}
-                        >
-                          {prettifyIssue(state)}
-                        </span>
-                      </div>
-
-                      {document ? (
-                        <div className="space-y-2 rounded-lg bg-white p-3 text-xs text-slate-600">
-                          <p>
-                            Uploaded{" "}
-                            {formatDateDisplay(document.uploadedAt) ||
-                              "recently"}
-                          </p>
-                          {document.fileName ? (
-                            <p className="truncate">
-                              File: {document.fileName}
-                            </p>
-                          ) : null}
-                          {document.expiresAt ? (
-                            <p>
-                              Expires {formatDateDisplay(document.expiresAt)}
-                            </p>
-                          ) : null}
-                          {document.note ? <p>Note: {document.note}</p> : null}
-                          {document.rejectionReason && state === "rejected" ? (
-                            <p className="text-rose-600">
-                              Reason: {document.rejectionReason}
-                            </p>
-                          ) : null}
-                          {downloadPath ? (
-                            <a
-                              href={downloadPath}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center text-xs font-medium text-indigo-600 hover:underline"
-                            >
-                              Open file
-                            </a>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <p className="rounded-lg border border-dashed border-slate-200 bg-white p-3 text-xs text-slate-500">
-                          No document uploaded yet.
-                        </p>
-                      )}
+                  <div key={section.label} className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                        {section.label}
+                      </h3>
+                      <div className="h-px flex-1 bg-slate-100"></div>
                     </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {sectionDocs.map((definition) => {
+                        const docType = definition.key;
+                        const document = documents[docType];
+                        const state = getDocumentState(docType, evaluation, document);
+                        const required = isDocumentRequired(definition, evaluation);
+                        const uploadingState = Boolean(uploading[docType]);
+                        const approvingState = Boolean(approving[docType]);
+                        const rejectingState = Boolean(rejecting[docType]);
+                        const removingState = Boolean(removing[docType]);
+                        const docVersion = document?.uploadedAt ? new Date(document.uploadedAt).getTime() : "1";
+                        const downloadPath = document?.storagePath
+                          ? `${resolvedBaseUrl}/uploads/${normaliseStoragePath(
+                              document.storagePath
+                            ).replace(/^(uploads\/)+/i, "")}?v=${docVersion}`
+                          : null;
 
-                    <div className="mt-4 space-y-2">
-                      {definition.requiresExpiry ? (
-                        <div className="space-y-1">
-                          <Label
-                            className="text-xs"
-                            htmlFor={`${docType}-expiry`}
+                        return (
+                          <div
+                            key={docType}
+                            className="flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50/50 p-5 shadow-sm transition-all hover:shadow-md hover:border-indigo-100"
                           >
-                            Expiry date
-                          </Label>
-                          <Input
-                            id={`${docType}-expiry`}
-                            type="date"
-                            value={expiryDrafts[docType] || ""}
-                            onChange={(event) =>
-                              updateExpiryDraft(docType, event.target.value)
-                            }
-                            disabled={!canUpload && !canDecide}
-                          />
-                        </div>
-                      ) : null}
+                            <div className="space-y-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-[15px] font-bold text-slate-900">
+                                    {definition.label}
+                                  </h4>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-[10px] font-mono uppercase text-slate-400">
+                                      {docType}
+                                    </span>
+                                    {required && (
+                                      <span className="inline-flex items-center rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600 ring-1 ring-inset ring-indigo-200">
+                                        Required
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <span
+                                  className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-[10px] font-bold shadow-sm ${
+                                    DOCUMENT_STATE_STYLES[state] ||
+                                    DOCUMENT_STATE_STYLES.pending
+                                  }`}
+                                >
+                                  {prettifyIssue(state)}
+                                </span>
+                              </div>
 
-                      {canUpload ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            id={`${docType}-file-input`}
-                            type="file"
-                            className="hidden"
-                            onChange={(event) => {
-                              const selectedFile = event.target.files?.[0];
-                              if (selectedFile) {
-                                handleUpload(docType, selectedFile);
-                              }
-                              event.target.value = "";
-                            }}
-                          />
-                          <Label
-                            htmlFor={`${docType}-file-input`}
-                            className={`inline-flex cursor-pointer items-center justify-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 ${
-                              uploadingState ? "opacity-60" : ""
-                            }`}
-                          >
-                            {uploadingState ? "Uploading..." : "Upload file"}
-                          </Label>
-                          {document && canDecide ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => handleRemove(docType)}
-                              disabled={removingState}
-                            >
-                              {removingState ? "Removing..." : "Remove"}
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : null}
+                              {document ? (
+                                <div className="space-y-2 rounded-xl bg-white p-3.5 text-[11px] text-slate-600 shadow-sm border border-slate-100">
+                                  <div className="flex items-center justify-between">
+                                    <p className="font-medium text-slate-400">
+                                      Uploaded{" "}
+                                      {formatDateDisplay(document.uploadedAt) ||
+                                        "recently"}
+                                    </p>
+                                    {downloadPath ? (
+                                      <a
+                                        href={downloadPath}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+                                      >
+                                        View File
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                  {document.fileName ? (
+                                    <p className="truncate text-slate-500">
+                                      <span className="font-semibold">File:</span> {document.fileName}
+                                    </p>
+                                  ) : null}
+                                  {document.expiresAt ? (
+                                    <p className={`${state === "expired" ? "text-orange-600 font-bold" : "text-slate-500"}`}>
+                                      <span className="font-semibold">Expires:</span> {formatDateDisplay(document.expiresAt)}
+                                    </p>
+                                  ) : null}
+                                  {document.note ? (
+                                    <p className="text-slate-500 italic">
+                                      <span className="font-semibold not-italic">Note:</span> {document.note}
+                                    </p>
+                                  ) : null}
+                                  {document.rejectionReason && state === "rejected" ? (
+                                    <div className="mt-2 rounded-lg border border-rose-100 bg-rose-50 p-2.5 text-rose-700">
+                                      <span className="font-bold">Rejection Reason:</span> {document.rejectionReason}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-white/40 p-5 text-center transition-colors">
+                                  <svg className="mb-2 h-8 w-8 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.5l7 7V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  <p className="text-xs font-semibold text-slate-400">
+                                    No document uploaded yet
+                                  </p>
+                                </div>
+                              )}
+                            </div>
 
-                      {document && canDecide ? (
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            onClick={() => handleApprove(docType)}
-                            disabled={approvingState}
-                          >
-                            {approvingState ? "Approving..." : "Approve"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => handleReject(docType)}
-                            disabled={rejectingState}
-                          >
-                            {rejectingState ? "Rejecting..." : "Reject"}
-                          </Button>
-                        </div>
-                      ) : null}
+                            <div className="mt-5 space-y-4 pt-4 border-t border-slate-200/50">
+                              {/* Actions: Upload before Expiry */}
+                              {canUpload ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <input
+                                    id={`${docType}-file-input`}
+                                    type="file"
+                                    className="hidden"
+                                    onChange={(event) => {
+                                      const selectedFile = event.target.files?.[0];
+                                      if (selectedFile) {
+                                        handleUpload(docType, selectedFile);
+                                      }
+                                      event.target.value = "";
+                                    }}
+                                  />
+                                  <Label
+                                    htmlFor={`${docType}-file-input`}
+                                    className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-600 shadow-sm transition-all hover:border-indigo-400 hover:bg-slate-50 active:scale-[0.98] ${
+                                      uploadingState ? "opacity-60 cursor-not-allowed" : ""
+                                    }`}
+                                  >
+                                    <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                    </svg>
+                                    {uploadingState ? "Uploading..." : "Upload New File"}
+                                  </Label>
+                                  {document && canDecide ? (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-10 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-semibold"
+                                      onClick={() => handleRemove(docType)}
+                                      disabled={removingState}
+                                    >
+                                      {removingState ? "..." : (
+                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                      )}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              ) : null}
 
-                      {docType === "medicalCertificate" && (canUpload || canDecide) ? (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={handleMedicalUpdate}
-                          disabled={medicalUpdating}
-                        >
-                          {medicalUpdating
-                            ? "Updating..."
-                            : "Update medical info"}
-                        </Button>
-                      ) : null}
+                              {definition.requiresExpiry ? (
+                                <div className="space-y-2 rounded-xl bg-slate-100/50 p-3 border border-slate-200/40">
+                                  <Label
+                                    className="text-[10px] font-black uppercase tracking-widest text-slate-400"
+                                    htmlFor={`${docType}-expiry`}
+                                  >
+                                    Document Expiry Date
+                                  </Label>
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      id={`${docType}-expiry`}
+                                      type="date"
+                                      className="h-9 text-xs font-semibold bg-white border-slate-200 shadow-sm focus:ring-indigo-500"
+                                      value={expiryDrafts[docType] || ""}
+                                      onChange={(event) =>
+                                        updateExpiryDraft(docType, event.target.value)
+                                      }
+                                      disabled={!canUpload && !canDecide}
+                                    />
+                                    {docType === "medicalCertificate" && (canUpload || canDecide) && (
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        className="h-9 px-4 text-[10px] font-black uppercase tracking-tighter shadow-sm"
+                                        onClick={handleMedicalUpdate}
+                                        disabled={medicalUpdating}
+                                      >
+                                        {medicalUpdating ? "..." : "Save"}
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {document && canDecide ? (
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    className="h-10 flex-1 bg-indigo-600 text-white shadow-md hover:bg-indigo-700 active:scale-[0.98] font-bold text-xs"
+                                    onClick={() => handleApprove(docType)}
+                                    disabled={approvingState}
+                                  >
+                                    {approvingState ? "Approving..." : "Approve Document"}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="h-10 px-4 border-rose-200 text-rose-600 hover:bg-rose-50 active:scale-[0.98] font-bold text-xs"
+                                    onClick={() => handleReject(docType)}
+                                    disabled={rejectingState}
+                                  >
+                                    {rejectingState ? "..." : "Reject"}
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );

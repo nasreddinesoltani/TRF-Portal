@@ -1069,7 +1069,7 @@ const CompetitionRegistration = () => {
                       Eligible athletes
                     </h2>
                     <p className="text-sm text-slate-500">
-                      Select a category, search your roster, and submit entries.
+                      Select a category, search your list, and submit entries.
                     </p>
                   </div>
                   <div className="text-xs text-slate-500">
