@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import multer from "multer";
 import connectDB from "./config/db.js";
 import userRoutes from "./Routes/userRoutes.js";
 import authRoutes from "./Routes/authRoutes.js";
@@ -60,7 +61,7 @@ app.use("/api/boat-classes", boatClassRoutes);
 app.use("/api/competitions/:competitionId/races", competitionRaceRoutes);
 app.use(
   "/api/competitions/:competitionId/registration",
-  competitionRegistrationRoutes
+  competitionRegistrationRoutes,
 );
 app.use("/api/competitions", competitionRoutes);
 app.use("/api/rankings", rankingRoutes);
