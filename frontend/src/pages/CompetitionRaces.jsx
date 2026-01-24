@@ -1615,6 +1615,101 @@ const CompetitionRaces = () => {
     return map;
   }, [entries, races]);
 
+  // Combined stats from registration entries AND race lane assignments
+  // This ensures old competitions with races but no formal registrations still show stats
+  const combinedStats = useMemo(() => {
+    // If we have registration stats with entries, use them as base
+    if (registrationStats?.totalEntries > 0) {
+      return registrationStats;
+    }
+
+    // Otherwise, calculate stats from races
+    if (!races || races.length === 0) {
+      return (
+        registrationStats || {
+          totalEntries: 0,
+          totalAthletes: 0,
+          totalClubs: 0,
+          byCategory: [],
+        }
+      );
+    }
+
+    const athleteIds = new Set();
+    const clubIds = new Set();
+    const categoryCounts = {};
+
+    races.forEach((race) => {
+      const catId = toDocumentId(race.category);
+      const catObj = race.category;
+
+      // Get category name
+      let catName = "Unknown";
+      if (catObj && typeof catObj === "object") {
+        catName =
+          catObj.abbreviation || catObj.titles?.en || catObj.name || "Unknown";
+      } else if (catId && categories.length > 0) {
+        const foundCat = categories.find((c) => toDocumentId(c) === catId);
+        if (foundCat) {
+          catName =
+            foundCat.abbreviation ||
+            foundCat.titles?.en ||
+            foundCat.name ||
+            "Unknown";
+        }
+      }
+
+      (race.lanes || []).forEach((lane) => {
+        // Count clubs
+        const clubId = toDocumentId(lane?.club);
+        if (clubId) {
+          clubIds.add(clubId);
+        }
+
+        // Count athletes from single athlete lanes
+        const athleteId = toDocumentId(lane?.athlete);
+        if (athleteId) {
+          athleteIds.add(athleteId);
+        }
+
+        // Count athletes from crew lanes
+        if (Array.isArray(lane.crew)) {
+          lane.crew.forEach((member) => {
+            const memberId = toDocumentId(member);
+            if (memberId) {
+              athleteIds.add(memberId);
+            }
+          });
+        }
+
+        // Count entries per category (each lane with an athlete is an entry)
+        if (athleteId || (lane.crew && lane.crew.length > 0)) {
+          if (!categoryCounts[catId]) {
+            categoryCounts[catId] = {
+              id: catId,
+              name: catName,
+              count: 0,
+              entries: [],
+            };
+          }
+          categoryCounts[catId].count++;
+        }
+      });
+    });
+
+    return {
+      totalEntries: Object.values(categoryCounts).reduce(
+        (sum, cat) => sum + cat.count,
+        0,
+      ),
+      totalAthletes: athleteIds.size,
+      totalClubs: clubIds.size,
+      byCategory: Object.values(categoryCounts).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+    };
+  }, [registrationStats, races, categories]);
+
   const loadRegistrationSummary = useCallback(async () => {
     if (!token || !competitionId) return;
     setLoadingRegistration(true);
@@ -4871,7 +4966,7 @@ const CompetitionRaces = () => {
                 Total Athletes
               </p>
               <p className="mt-2 text-3xl font-bold text-slate-900">
-                {registrationStats?.totalAthletes || 0}
+                {combinedStats?.totalAthletes || 0}
               </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -4879,7 +4974,7 @@ const CompetitionRaces = () => {
                 Registered Clubs
               </p>
               <p className="mt-2 text-3xl font-bold text-slate-900">
-                {registrationStats?.totalClubs || 0}
+                {combinedStats?.totalClubs || 0}
               </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -4887,7 +4982,7 @@ const CompetitionRaces = () => {
                 Total Entries
               </p>
               <p className="mt-2 text-3xl font-bold text-slate-900">
-                {registrationStats?.totalEntries || 0}
+                {combinedStats?.totalEntries || 0}
               </p>
             </div>
           </section>
@@ -4897,13 +4992,13 @@ const CompetitionRaces = () => {
             <h2 className="mb-2 text-sm font-semibold text-slate-900">
               Categories Overview
             </h2>
-            {loadingRegistration ? (
+            {loadingRegistration && !races.length ? (
               <p className="text-sm text-slate-500">
                 Loading registration data...
               </p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {registrationStats?.byCategory?.map((cat) => (
+                {combinedStats?.byCategory?.map((cat) => (
                   <button
                     key={cat.id}
                     type="button"
@@ -4916,7 +5011,7 @@ const CompetitionRaces = () => {
                     </span>
                   </button>
                 ))}
-                {!registrationStats?.byCategory?.length && (
+                {!combinedStats?.byCategory?.length && (
                   <p className="text-sm text-slate-500">
                     No registrations found for this competition.
                   </p>
