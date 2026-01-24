@@ -26,6 +26,7 @@ import CompetitionRegistration from "./pages/CompetitionRegistration";
 import CompetitionRankings from "./pages/CompetitionRankings";
 import RankingSystemManagement from "./pages/RankingSystemManagement";
 import BeachSprintCompetition from "./pages/BeachSprintCompetition";
+import RaceDetail from "./pages/RaceDetail";
 
 function App() {
   return (
@@ -108,6 +109,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["admin", "jury_president"]}>
                 <CompetitionRaces />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/competitions/:competitionId/races/:raceId"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "jury_president"]}>
+                <RaceDetail />
               </ProtectedRoute>
             }
           />

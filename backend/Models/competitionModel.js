@@ -14,7 +14,12 @@ export const COMPETITION_TYPES = [
   "championship",
 ];
 
-export const COMPETITION_STATUSES = ["draft", "published", "archived"];
+export const COMPETITION_STATUSES = [
+  "draft",
+  "published",
+  "completed",
+  "archived",
+];
 export const REGISTRATION_STATUSES = ["not_open", "open", "closed"];
 export const RESULTS_STATUSES = ["pending", "unofficial", "official"];
 
@@ -35,7 +40,7 @@ const localizedNameSchema = new mongoose.Schema(
     fr: { type: String, required: true, trim: true },
     ar: { type: String, required: true, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const organizerSchema = new mongoose.Schema(
@@ -45,7 +50,7 @@ const organizerSchema = new mongoose.Schema(
     contactEmail: { type: String, trim: true },
     contactPhone: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const venueSchema = new mongoose.Schema(
@@ -57,7 +62,7 @@ const venueSchema = new mongoose.Schema(
     latitude: { type: Number },
     longitude: { type: Number },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const sessionSchema = new mongoose.Schema(
@@ -68,7 +73,7 @@ const sessionSchema = new mongoose.Schema(
     endTime: { type: Date },
     notes: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const stageSchema = new mongoose.Schema(
@@ -85,7 +90,7 @@ const stageSchema = new mongoose.Schema(
     sessions: { type: [sessionSchema], default: [] },
     notes: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const categoryDistanceSchema = new mongoose.Schema(
@@ -103,7 +108,7 @@ const categoryDistanceSchema = new mongoose.Schema(
       min: 0,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const registrationWindowSchema = new mongoose.Schema(
@@ -111,7 +116,7 @@ const registrationWindowSchema = new mongoose.Schema(
     openAt: { type: Date },
     closeAt: { type: Date },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const competitionSchema = new mongoose.Schema(
@@ -225,7 +230,7 @@ const competitionSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 competitionSchema.index({ discipline: 1, startDate: 1 });

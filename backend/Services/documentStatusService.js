@@ -9,7 +9,7 @@ const DOCUMENT_TYPES = {
   birthCertificate: {
     key: "birthCertificate",
     label: "Birth Certificate",
-    required: false, // Conditional
+    required: false, // Conditional - required for new athletes
   },
   cin: {
     key: "cin",
@@ -24,7 +24,7 @@ const DOCUMENT_TYPES = {
   parentalAuthorization: {
     key: "parentalAuthorization",
     label: "Parental Authorization",
-    required: false, // Conditional based on age
+    required: false, // Conditional based on age (under 19 by year difference)
   },
   medicalCertificate: {
     key: "medicalCertificate",
@@ -100,6 +100,45 @@ const calculateAge = (birthDate, referenceDate = new Date()) => {
     age -= 1;
   }
   return age;
+};
+
+/**
+ * Calculate age by simple year difference (currentYear - birthYear)
+ * Used for determining if athlete is a senior (19+) for parental authorization
+ */
+const calculateAgeByYearDifference = (
+  birthDate,
+  referenceDate = new Date()
+) => {
+  if (!birthDate) {
+    return null;
+  }
+
+  const birth = new Date(birthDate);
+  if (Number.isNaN(birth.getTime())) {
+    return null;
+  }
+
+  return referenceDate.getFullYear() - birth.getFullYear();
+};
+
+/**
+ * Check if athlete is new based on license number containing current season
+ * e.g., license "5209-26" is new for season 2026
+ */
+const isNewAthlete = (licenseNumber, referenceDate = new Date()) => {
+  if (!licenseNumber) {
+    return true; // No license = definitely new
+  }
+
+  const currentYear = referenceDate.getFullYear();
+  const seasonSuffix = String(currentYear).slice(-2); // "26" for 2026
+
+  // Check if license number ends with current season suffix (e.g., "-26" or just "26")
+  const licenseStr = String(licenseNumber);
+  return (
+    licenseStr.endsWith(`-${seasonSuffix}`) || licenseStr.endsWith(seasonSuffix)
+  );
 };
 
 export const normalizeDocumentType = (rawType) => {
@@ -187,9 +226,19 @@ export const evaluateDocumentStatuses = (
 ) => {
   const documents = athlete?.documents || {};
   const birthDate = athlete?.birthDate;
+  const licenseNumber = athlete?.licenseNumber;
+
+  // Use exact age for display purposes
   const age = calculateAge(birthDate, referenceDate);
+
+  // Use year difference for parental authorization check
+  // Senior is 19+ by year difference (2026 - 2007 = 19 means senior, no parental auth needed)
+  const ageByYearDiff = calculateAgeByYearDifference(birthDate, referenceDate);
   const requiresParentalAuthorization =
-    typeof age === "number" ? age < 19 : false;
+    typeof ageByYearDiff === "number" ? ageByYearDiff < 19 : false;
+
+  // Check if athlete is new (license contains current season like "-26" for 2026)
+  const athleteIsNew = isNewAthlete(licenseNumber, referenceDate);
 
   const documentStates = {};
   Object.keys(DOCUMENT_TYPES).forEach((key) => {
@@ -199,10 +248,6 @@ export const evaluateDocumentStatuses = (
       referenceDate
     );
   });
-
-  const identityApproved =
-    documentStates.cin === APPROVED_STATUS ||
-    documentStates.passport === APPROVED_STATUS;
 
   const issues = [];
   let finalStatus = "active";
@@ -228,22 +273,26 @@ export const evaluateDocumentStatuses = (
     "medicalCertificate",
     "medical_certificate_not_approved"
   );
-  
+
   // Identity Verification Logic
-  const isOldAthlete = !!athlete.licenseNumber; // Proxies as "identified"
-  const hasBirthCertificate = documentStates.birthCertificate === APPROVED_STATUS;
-  const hasAdultIdentity = age >= 19 && (documentStates.cin === APPROVED_STATUS || documentStates.passport === APPROVED_STATUS);
-  
-  const isIdentityVerified = isOldAthlete || hasBirthCertificate || hasAdultIdentity;
+  // New athletes need identity verification: Birth Certificate OR CIN OR Passport
+  // Old athletes were already verified before - no need to block them
+  const hasBirthCertificate =
+    documentStates.birthCertificate === APPROVED_STATUS;
+  const hasCIN = documentStates.cin === APPROVED_STATUS;
+  const hasPassport = documentStates.passport === APPROVED_STATUS;
+  const hasIdentityDocument = hasBirthCertificate || hasCIN || hasPassport;
 
-  if (!isIdentityVerified) {
-     if (age >= 19) {
-        checkPending("missing", "identity", "identity_document_missing_adult");
-     } else {
-        checkPending("missing", "birthCertificate", "birth_certificate_required");
-     }
+  if (athleteIsNew) {
+    // New athletes MUST have at least one identity document: Birth Certificate, CIN, or Passport
+    if (!hasIdentityDocument) {
+      checkPending("missing", "identity", "identity_document_required");
+    }
   }
+  // Old athletes: already verified, no identity document requirement
+  // If they add identity docs, great - but not blocking them if they don't
 
+  // Parental authorization: required only for athletes under 19 by year difference
   if (requiresParentalAuthorization) {
     if (documentStates.parentalAuthorization !== APPROVED_STATUS) {
       checkPending(
@@ -259,7 +308,9 @@ export const evaluateDocumentStatuses = (
     issues,
     documentStates,
     requiresParentalAuthorization,
+    athleteIsNew,
     age,
+    ageByYearDiff,
   };
 };
 

@@ -856,10 +856,39 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         return res.status(400).json({ message: `Athlete not found: ${idStr}` });
       }
 
+      const allowMultiple = 
+        competition.discipline === "beach" || 
+        competition.discipline === "coastal" || 
+        req.body.bypassMultipleEntries === true;
+
       if (busyAthleteIds.has(idStr)) {
-        return res.status(400).json({
-          message: `${athlete.firstName} ${athlete.lastName} is already registered for this competition`,
+        if (!allowMultiple) {
+          const athleteName = athlete 
+            ? `${athlete.firstName || "Athlete"} ${athlete.lastName || idStr}`
+            : `Athlete ${idStr}`;
+            
+          return res.status(400).json({
+            message: `${athleteName} is already registered for this competition`,
+          });
+        }
+        
+        // If multiple are allowed, check for EXACT duplicate (same athlete, same category, same boat class)
+        const isDuplicateEvent = existingEntries.some(e => {
+          const isSameAthlete = (e.athlete?.toString() === idStr) || 
+                                (Array.isArray(e.crew) && e.crew.some(m => m.toString() === idStr));
+          const isSameCategory = e.category?.toString() === entry.categoryId?.toString();
+          const isSameBoatClass = e.boatClass?.toString() === entry.boatClassId?.toString();
+          return isSameAthlete && isSameCategory && isSameBoatClass;
         });
+
+        if (isDuplicateEvent) {
+          const athleteName = athlete 
+            ? `${athlete.firstName || "Athlete"} ${athlete.lastName || idStr}`
+            : `Athlete ${idStr}`;
+          return res.status(400).json({
+            message: `${athleteName} is already registered for this exact event (Category/Boat Class)`,
+          });
+        }
       }
 
       if (
@@ -875,7 +904,11 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       }
 
       // Validate license status - athlete must have all documents approved
-      if (athlete.licenseStatus !== "active") {
+      // BYPASS: If is a historical season, we allow admins to bypass document validation
+      const currentYear = new Date().getFullYear();
+      const isHistoricalSeason = competition.season && competition.season < currentYear;
+
+      if (!isHistoricalSeason && athlete.licenseStatus !== "active") {
         const issuesList = Array.isArray(athlete.documentsIssues) && athlete.documentsIssues.length > 0
           ? ` (${athlete.documentsIssues.join(", ")})`
           : "";

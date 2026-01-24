@@ -10,7 +10,23 @@ import BoatClass from "../Models/boatClassModel.js";
 import Athlete from "../Models/athleteModel.js";
 import CompetitionEntry from "../Models/competitionEntryModel.js";
 
-const MAX_LANES = 8;
+// Lane limits per discipline
+// Classic: 8 lanes (standard water lanes)
+// Coastal: 20 lanes (larger fields in coastal rowing)
+// Beach: 100 lanes (time trials can have many athletes running 1-2 at a time)
+// Indoor: 100 lanes (ergometer competitions can have many participants)
+const LANE_LIMITS = {
+  classic: 8,
+  coastal: 20,
+  beach: 100,
+  indoor: 100,
+};
+
+const getMaxLanesForDiscipline = (discipline) => {
+  return LANE_LIMITS[discipline] || 8;
+};
+
+const MAX_LANES = 8; // Default for backward compatibility
 
 const toObjectId = (value) => {
   if (!value) {
@@ -76,7 +92,7 @@ const resolveClubForAthlete = (athlete, competitionSeason, explicitClubId) => {
 
   // Prioritize active membership
   const activeMatch = memberships.find(
-    (membership) => membership?.club && membership.status === "active"
+    (membership) => membership?.club && membership.status === "active",
   );
   if (activeMatch?.club) {
     return activeMatch.club;
@@ -88,7 +104,7 @@ const resolveClubForAthlete = (athlete, competitionSeason, explicitClubId) => {
       (membership) =>
         membership?.club &&
         (membership.season === competitionSeason ||
-          Number(membership.season) === Number(competitionSeason))
+          Number(membership.season) === Number(competitionSeason)),
     );
     if (seasonMatch?.club) {
       return seasonMatch.club;
@@ -100,13 +116,17 @@ const resolveClubForAthlete = (athlete, competitionSeason, explicitClubId) => {
   return anyClub?.club || null;
 };
 
-const sanitiseLanes = (lanes = []) => {
+const sanitiseLanes = (lanes = [], discipline = "classic") => {
   if (!Array.isArray(lanes)) {
     throw new Error("Lane assignments must be an array");
   }
 
-  if (lanes.length > MAX_LANES) {
-    throw new Error("A race cannot have more than 8 lanes");
+  const maxLanes = getMaxLanesForDiscipline(discipline);
+
+  if (lanes.length > maxLanes) {
+    throw new Error(
+      `A race cannot have more than ${maxLanes} lanes for ${discipline} discipline`,
+    );
   }
 
   const result = [];
@@ -117,8 +137,12 @@ const sanitiseLanes = (lanes = []) => {
       continue;
     }
     const laneNumber = Number(laneCandidate.lane ?? laneCandidate.laneNumber);
-    if (!Number.isInteger(laneNumber) || laneNumber < 1 || laneNumber > 8) {
-      throw new Error("Lane numbers must be between 1 and 8");
+    if (
+      !Number.isInteger(laneNumber) ||
+      laneNumber < 1 ||
+      laneNumber > maxLanes
+    ) {
+      throw new Error(`Lane numbers must be between 1 and ${maxLanes}`);
     }
     if (seen.has(laneNumber)) {
       throw new Error("Lane numbers must be unique within a race");
@@ -141,7 +165,7 @@ const sanitiseLanes = (lanes = []) => {
     }
 
     const clubId = toObjectId(
-      laneCandidate.club || laneCandidate.clubId || laneCandidate.club_id
+      laneCandidate.club || laneCandidate.clubId || laneCandidate.club_id,
     );
     if (clubId) {
       lane.club = clubId;
@@ -191,7 +215,7 @@ const sanitiseLanes = (lanes = []) => {
   return result;
 };
 
-const sanitiseRacePayload = (body) => {
+const sanitiseRacePayload = (body, discipline = "classic") => {
   const payload = {};
 
   if (body.category) {
@@ -265,7 +289,7 @@ const sanitiseRacePayload = (body) => {
   }
 
   if (body.lanes !== undefined) {
-    payload.lanes = sanitiseLanes(body.lanes);
+    payload.lanes = sanitiseLanes(body.lanes, discipline);
   }
 
   return payload;
@@ -289,7 +313,7 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
 
   const normalised = entries.map((entry, index) => {
     const athleteId = toObjectId(
-      entry.athleteId || entry.athlete || entry.id || null
+      entry.athleteId || entry.athlete || entry.id || null,
     );
 
     let crewIds = [];
@@ -302,7 +326,7 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
     const licenseNumber = normaliseString(entry.licenseNumber);
     if (!athleteId && !licenseNumber && crewIds.length === 0) {
       throw new Error(
-        "Each entry must include an athlete id, license number, or crew"
+        "Each entry must include an athlete id, license number, or crew",
       );
     }
     const seedValue =
@@ -347,7 +371,7 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
   if (orConditions.length > 0) {
     athletes = await Athlete.find({ $or: orConditions })
       .select(
-        "firstName lastName firstNameAr lastNameAr licenseNumber memberships club"
+        "firstName lastName firstNameAr lastNameAr licenseNumber memberships club",
       )
       .lean();
   }
@@ -374,7 +398,7 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
     if (ce.athlete) crewNumberMap.set(ce.athlete.toString(), ce.crewNumber);
     if (Array.isArray(ce.crew)) {
       ce.crew.forEach((mid) =>
-        crewNumberMap.set(mid.toString(), ce.crewNumber)
+        crewNumberMap.set(mid.toString(), ce.crewNumber),
       );
     }
   }
@@ -423,7 +447,7 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
     const clubId = resolveClubForAthlete(
       representative,
       competitionSeason,
-      entry.clubId
+      entry.clubId,
     );
 
     const crewNumber = crewNumberMap.get(representative._id.toString());
@@ -496,7 +520,7 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
     boatClassId &&
     competition.allowedBoatClasses?.length &&
     !competition.allowedBoatClasses.some((allowed) =>
-      allowed.equals(boatClassId)
+      allowed.equals(boatClassId),
     )
   ) {
     return res.status(400).json({
@@ -510,10 +534,14 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
 
   const resolvedEntries = await resolveEntriesForAutoGeneration(
     entries,
-    competition
+    competition,
   );
 
-  const seatsPerRace = Math.max(1, Math.min(Number(lanesPerRace) || 8, 8));
+  const maxLanes = getMaxLanesForDiscipline(competition.discipline);
+  const seatsPerRace = Math.max(
+    1,
+    Math.min(Number(lanesPerRace) || maxLanes, maxLanes),
+  );
 
   let orderedEntries = resolvedEntries;
   if (strategy === "random") {
@@ -583,7 +611,7 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
       const lastTime = new Date(lastRace.startTime);
       if (!isNaN(lastTime.getTime())) {
         nextStartTime = new Date(
-          lastTime.getTime() + effectiveInterval * 60000
+          lastTime.getTime() + effectiveInterval * 60000,
         );
       }
     }
@@ -619,7 +647,7 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
     let currentStartTime = undefined;
     if (nextStartTime && !isNaN(nextStartTime.getTime())) {
       currentStartTime = new Date(
-        nextStartTime.getTime() + index * effectiveInterval * 60000
+        nextStartTime.getTime() + index * effectiveInterval * 60000,
       );
     }
 
@@ -748,7 +776,7 @@ export const createRace = asyncHandler(async (req, res) => {
     return;
   }
 
-  const payload = sanitiseRacePayload(req.body || {});
+  const payload = sanitiseRacePayload(req.body || {}, competition.discipline);
 
   if (!payload.category) {
     return res.status(400).json({ message: "Category is required" });
@@ -761,7 +789,7 @@ export const createRace = asyncHandler(async (req, res) => {
   if (
     competition.allowedCategories?.length &&
     !competition.allowedCategories.some((categoryId) =>
-      categoryId.equals(payload.category)
+      categoryId.equals(payload.category),
     )
   ) {
     return res.status(400).json({
@@ -773,7 +801,7 @@ export const createRace = asyncHandler(async (req, res) => {
     payload.boatClass &&
     competition.allowedBoatClasses?.length &&
     !competition.allowedBoatClasses.some((boatClassId) =>
-      boatClassId.equals(payload.boatClass)
+      boatClassId.equals(payload.boatClass),
     )
   ) {
     return res.status(400).json({
@@ -797,13 +825,13 @@ export const updateRace = asyncHandler(async (req, res) => {
     return;
   }
 
-  const payload = sanitiseRacePayload(req.body || {});
+  const payload = sanitiseRacePayload(req.body || {}, competition.discipline);
   payload.updatedBy = req.user?.id;
 
   const race = await CompetitionRace.findOneAndUpdate(
     { _id: raceId, competition: competition._id },
     { $set: payload },
-    { new: true }
+    { new: true },
   ).lean();
 
   if (!race) {
@@ -839,7 +867,7 @@ export const updateRaceLanes = asyncHandler(async (req, res) => {
     return;
   }
 
-  const lanes = sanitiseLanes(req.body?.lanes || []);
+  const lanes = sanitiseLanes(req.body?.lanes || [], competition.discipline);
 
   const race = await CompetitionRace.findOneAndUpdate(
     { _id: raceId, competition: competition._id },
@@ -849,7 +877,7 @@ export const updateRaceLanes = asyncHandler(async (req, res) => {
         updatedBy: req.user?.id,
       },
     },
-    { new: true }
+    { new: true },
   ).lean();
 
   if (!race) {
@@ -880,7 +908,7 @@ const pickLaneAssignment = (lane) => {
     notes: lane.notes || undefined,
     result:
       lane.result && typeof lane.result === "object"
-        ? lane.result.toObject?.() ?? { ...lane.result }
+        ? (lane.result.toObject?.() ?? { ...lane.result })
         : undefined,
   };
 };
@@ -1067,7 +1095,7 @@ export const recordRaceResults = asyncHandler(async (req, res) => {
     }
     const existingResult =
       lane.result && typeof lane.result === "object"
-        ? lane.result.toObject?.() ?? lane.result
+        ? (lane.result.toObject?.() ?? lane.result)
         : {};
     lane.result = {
       ...existingResult,
@@ -1118,7 +1146,7 @@ export const computeCompetitionRankings = asyncHandler(async (req, res) => {
 
   const races = await CompetitionRace.find({ competition: competition._id })
     .select(
-      "category boatClass journeyIndex name order status lanes distanceOverride"
+      "category boatClass journeyIndex name order status lanes distanceOverride",
     )
     .lean();
 
@@ -1224,7 +1252,7 @@ export const computeCompetitionRankings = asyncHandler(async (req, res) => {
       },
     })
       .select(
-        "firstName lastName firstNameAr lastNameAr licenseNumber club memberships"
+        "firstName lastName firstNameAr lastNameAr licenseNumber club memberships",
       )
       .lean();
     for (const athlete of athletes) {

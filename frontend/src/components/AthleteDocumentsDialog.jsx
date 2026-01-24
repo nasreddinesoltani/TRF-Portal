@@ -68,14 +68,29 @@ const sortDefinitions = (definitions, evaluation) => {
   }
 
   const requiresParental = Boolean(evaluation?.requiresParentalAuthorization);
+  const athleteIsNew = Boolean(evaluation?.athleteIsNew);
+
+  // Check if new athlete has any approved identity document
+  const hasApprovedIdentity =
+    athleteIsNew &&
+    evaluation?.documentStates &&
+    (evaluation.documentStates.birthCertificate === "approved" ||
+      evaluation.documentStates.cin === "approved" ||
+      evaluation.documentStates.passport === "approved");
+
+  // Identity documents are conditionally required for new athletes (one of them)
+  const isIdentityDoc = (key) =>
+    ["birthCertificate", "cin", "passport"].includes(key);
 
   return [...definitions].sort((a, b) => {
     const requiredA =
       Boolean(a?.required) ||
-      (a?.key === "parentalAuthorization" && requiresParental);
+      (a?.key === "parentalAuthorization" && requiresParental) ||
+      (isIdentityDoc(a?.key) && athleteIsNew && !hasApprovedIdentity);
     const requiredB =
       Boolean(b?.required) ||
-      (b?.key === "parentalAuthorization" && requiresParental);
+      (b?.key === "parentalAuthorization" && requiresParental) ||
+      (isIdentityDoc(b?.key) && athleteIsNew && !hasApprovedIdentity);
 
     if (requiredA !== requiredB) {
       return requiredA ? -1 : 1;
@@ -104,6 +119,21 @@ const isDocumentRequired = (definition, evaluation) => {
   }
   if (definition.key === "parentalAuthorization") {
     return Boolean(evaluation?.requiresParentalAuthorization);
+  }
+
+  // For new athletes, one identity document is required (Birth Certificate, CIN, or Passport)
+  const isIdentityDoc = ["birthCertificate", "cin", "passport"].includes(
+    definition.key
+  );
+  if (isIdentityDoc && evaluation?.athleteIsNew) {
+    // Check if any identity document is already approved
+    const hasApprovedIdentity =
+      evaluation?.documentStates &&
+      (evaluation.documentStates.birthCertificate === "approved" ||
+        evaluation.documentStates.cin === "approved" ||
+        evaluation.documentStates.passport === "approved");
+    // Required only if no identity doc is approved yet
+    return !hasApprovedIdentity;
   }
   return false;
 };
@@ -227,6 +257,12 @@ export const AthleteDocumentsDialog = ({
   const handleUpload = useCallback(
     async (docType, file) => {
       if (!file) {
+        return;
+      }
+
+      const MAX_SIZE = 10 * 1024 * 1024;
+      if (file.size > MAX_SIZE) {
+        toast.error("File is too large. Maximum size is 10MB.");
         return;
       }
 
@@ -574,13 +610,22 @@ export const AthleteDocumentsDialog = ({
                       {sectionDocs.map((definition) => {
                         const docType = definition.key;
                         const document = documents[docType];
-                        const state = getDocumentState(docType, evaluation, document);
-                        const required = isDocumentRequired(definition, evaluation);
+                        const state = getDocumentState(
+                          docType,
+                          evaluation,
+                          document
+                        );
+                        const required = isDocumentRequired(
+                          definition,
+                          evaluation
+                        );
                         const uploadingState = Boolean(uploading[docType]);
                         const approvingState = Boolean(approving[docType]);
                         const rejectingState = Boolean(rejecting[docType]);
                         const removingState = Boolean(removing[docType]);
-                        const docVersion = document?.uploadedAt ? new Date(document.uploadedAt).getTime() : "1";
+                        const docVersion = document?.uploadedAt
+                          ? new Date(document.uploadedAt).getTime()
+                          : "1";
                         const downloadPath = document?.storagePath
                           ? `${resolvedBaseUrl}/uploads/${normaliseStoragePath(
                               document.storagePath
@@ -640,29 +685,58 @@ export const AthleteDocumentsDialog = ({
                                   </div>
                                   {document.fileName ? (
                                     <p className="truncate text-slate-500">
-                                      <span className="font-semibold">File:</span> {document.fileName}
+                                      <span className="font-semibold">
+                                        File:
+                                      </span>{" "}
+                                      {document.fileName}
                                     </p>
                                   ) : null}
                                   {document.expiresAt ? (
-                                    <p className={`${state === "expired" ? "text-orange-600 font-bold" : "text-slate-500"}`}>
-                                      <span className="font-semibold">Expires:</span> {formatDateDisplay(document.expiresAt)}
+                                    <p
+                                      className={`${
+                                        state === "expired"
+                                          ? "text-orange-600 font-bold"
+                                          : "text-slate-500"
+                                      }`}
+                                    >
+                                      <span className="font-semibold">
+                                        Expires:
+                                      </span>{" "}
+                                      {formatDateDisplay(document.expiresAt)}
                                     </p>
                                   ) : null}
                                   {document.note ? (
                                     <p className="text-slate-500 italic">
-                                      <span className="font-semibold not-italic">Note:</span> {document.note}
+                                      <span className="font-semibold not-italic">
+                                        Note:
+                                      </span>{" "}
+                                      {document.note}
                                     </p>
                                   ) : null}
-                                  {document.rejectionReason && state === "rejected" ? (
+                                  {document.rejectionReason &&
+                                  state === "rejected" ? (
                                     <div className="mt-2 rounded-lg border border-rose-100 bg-rose-50 p-2.5 text-rose-700">
-                                      <span className="font-bold">Rejection Reason:</span> {document.rejectionReason}
+                                      <span className="font-bold">
+                                        Rejection Reason:
+                                      </span>{" "}
+                                      {document.rejectionReason}
                                     </div>
                                   ) : null}
                                 </div>
                               ) : (
                                 <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-white/40 p-5 text-center transition-colors">
-                                  <svg className="mb-2 h-8 w-8 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.5l7 7V19a2 2 0 01-2 2z" />
+                                  <svg
+                                    className="mb-2 h-8 w-8 text-slate-200"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={1.5}
+                                      d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.5l7 7V19a2 2 0 01-2 2z"
+                                    />
                                   </svg>
                                   <p className="text-xs font-semibold text-slate-400">
                                     No document uploaded yet
@@ -680,7 +754,8 @@ export const AthleteDocumentsDialog = ({
                                     type="file"
                                     className="hidden"
                                     onChange={(event) => {
-                                      const selectedFile = event.target.files?.[0];
+                                      const selectedFile =
+                                        event.target.files?.[0];
                                       if (selectedFile) {
                                         handleUpload(docType, selectedFile);
                                       }
@@ -690,13 +765,27 @@ export const AthleteDocumentsDialog = ({
                                   <Label
                                     htmlFor={`${docType}-file-input`}
                                     className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-600 shadow-sm transition-all hover:border-indigo-400 hover:bg-slate-50 active:scale-[0.98] ${
-                                      uploadingState ? "opacity-60 cursor-not-allowed" : ""
+                                      uploadingState
+                                        ? "opacity-60 cursor-not-allowed"
+                                        : ""
                                     }`}
                                   >
-                                    <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                    <svg
+                                      className="h-4 w-4 text-slate-400"
+                                      fill="none"
+                                      viewBox="0 0 24 24"
+                                      stroke="currentColor"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                                      />
                                     </svg>
-                                    {uploadingState ? "Uploading..." : "Upload New File"}
+                                    {uploadingState
+                                      ? "Uploading..."
+                                      : "Upload New File"}
                                   </Label>
                                   {document && canDecide ? (
                                     <Button
@@ -707,9 +796,21 @@ export const AthleteDocumentsDialog = ({
                                       onClick={() => handleRemove(docType)}
                                       disabled={removingState}
                                     >
-                                      {removingState ? "..." : (
-                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      {removingState ? (
+                                        "..."
+                                      ) : (
+                                        <svg
+                                          className="h-4 w-4"
+                                          fill="none"
+                                          viewBox="0 0 24 24"
+                                          stroke="currentColor"
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                          />
                                         </svg>
                                       )}
                                     </Button>
@@ -732,22 +833,26 @@ export const AthleteDocumentsDialog = ({
                                       className="h-9 text-xs font-semibold bg-white border-slate-200 shadow-sm focus:ring-indigo-500"
                                       value={expiryDrafts[docType] || ""}
                                       onChange={(event) =>
-                                        updateExpiryDraft(docType, event.target.value)
+                                        updateExpiryDraft(
+                                          docType,
+                                          event.target.value
+                                        )
                                       }
                                       disabled={!canUpload && !canDecide}
                                     />
-                                    {docType === "medicalCertificate" && (canUpload || canDecide) && (
-                                      <Button
-                                        type="button"
-                                        variant="secondary"
-                                        size="sm"
-                                        className="h-9 px-4 text-[10px] font-black uppercase tracking-tighter shadow-sm"
-                                        onClick={handleMedicalUpdate}
-                                        disabled={medicalUpdating}
-                                      >
-                                        {medicalUpdating ? "..." : "Save"}
-                                      </Button>
-                                    )}
+                                    {docType === "medicalCertificate" &&
+                                      (canUpload || canDecide) && (
+                                        <Button
+                                          type="button"
+                                          variant="secondary"
+                                          size="sm"
+                                          className="h-9 px-4 text-[10px] font-black uppercase tracking-tighter shadow-sm"
+                                          onClick={handleMedicalUpdate}
+                                          disabled={medicalUpdating}
+                                        >
+                                          {medicalUpdating ? "..." : "Save"}
+                                        </Button>
+                                      )}
                                   </div>
                                 </div>
                               ) : null}
@@ -760,7 +865,9 @@ export const AthleteDocumentsDialog = ({
                                     onClick={() => handleApprove(docType)}
                                     disabled={approvingState}
                                   >
-                                    {approvingState ? "Approving..." : "Approve Document"}
+                                    {approvingState
+                                      ? "Approving..."
+                                      : "Approve Document"}
                                   </Button>
                                   <Button
                                     type="button"

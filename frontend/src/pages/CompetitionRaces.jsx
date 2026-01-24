@@ -82,14 +82,25 @@ const normalizeGender = (g) => {
   return s; // fallback - return raw normalized string
 };
 
-const getAge = (athlete) => {
+/**
+ * Calculate athlete's age for a given season year.
+ * Age is calculated as of December 31 of the season year (World Rowing standard).
+ * @param {Object} athlete - Athlete object with birthDate
+ * @param {number} [seasonYear] - The season year to calculate age for. Defaults to current year.
+ * @returns {number|null} Age in years, or null if birthDate is invalid
+ */
+const getAge = (athlete, seasonYear) => {
   if (!athlete || !athlete.birthDate) return null;
   try {
     const bd = new Date(athlete.birthDate);
-    const today = new Date();
-    let age = today.getFullYear() - bd.getFullYear();
-    const m = today.getMonth() - bd.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+    // Use provided season year or default to current year
+    const targetYear = seasonYear || new Date().getFullYear();
+    // Calculate age as of Dec 31 of the season year (standard cutoff)
+    const cutoffDate = new Date(targetYear, 11, 31); // Dec 31
+    let age = cutoffDate.getFullYear() - bd.getFullYear();
+    // Adjust if birthday hasn't occurred by cutoff date
+    const m = cutoffDate.getMonth() - bd.getMonth();
+    if (m < 0 || (m === 0 && cutoffDate.getDate() < bd.getDate())) age--;
     return Number.isFinite(age) ? age : null;
   } catch (err) {
     return null;
@@ -98,6 +109,11 @@ const getAge = (athlete) => {
 
 const normaliseStrategy = (value) => (value === "seeded" ? "seeded" : "random");
 
+// Lane limits by discipline - must match backend limits
+// Beach/Indoor: 100 for time trials and ergometer events with many participants
+const LANE_LIMITS = { classic: 8, coastal: 20, beach: 100, indoor: 100 };
+const getMaxLanesForDiscipline = (discipline) => LANE_LIMITS[discipline] || 8;
+
 const deriveClubId = (athlete) => {
   if (!athlete) {
     return undefined;
@@ -105,14 +121,16 @@ const deriveClubId = (athlete) => {
   const memberships = Array.isArray(athlete.memberships)
     ? athlete.memberships
     : [];
-  
+
   // Always use active membership for club context, prioritizing standard clubs over promotion centers
   const activeMemberships = memberships.filter(
-    (membership) => membership?.status === "active" && membership.club
+    (membership) => membership?.status === "active" && membership.club,
   );
-  
+
   // Try to find a 'club' type specifically, otherwise fall back to first active
-  const activeMembership = activeMemberships.find(m => m.club?.type === "club") || activeMemberships[0];
+  const activeMembership =
+    activeMemberships.find((m) => m.club?.type === "club") ||
+    activeMemberships[0];
 
   if (activeMembership?.club) {
     return toDocumentId(activeMembership.club) || undefined;
@@ -179,6 +197,8 @@ const formatAthleteName = (athlete) => {
 /**
  * Generate World Rowing style race code
  * - Senior categories: M1x, W2x, M8+ (no category prefix, just gender + boat)
+ * - Lightweight: LM1x, LW2x (L + gender + boat)
+ * - U23 Lightweight: BLM1x, BLW2x (category + L + gender + boat)
  * - Other categories: JM1x, BW2x, bM4x (category abbreviation + boat)
  *
  * For coastal/beach boats that already include gender (CM1x, CW1x, CMix2x),
@@ -186,13 +206,27 @@ const formatAthleteName = (athlete) => {
  * or add category prefix for non-Senior categories.
  *
  * @param {Object} category - Category object with abbreviation, gender, type
- * @param {Object} boatClass - BoatClass object with code
- * @returns {string} Race code like "M1x", "JW2x", "CM1x", etc.
+ * @param {Object} boatClass - BoatClass object with code, weightClass
+ * @returns {string} Race code like "M1x", "LM1x", "JW2x", "CM1x", etc.
  */
 const generateRaceCode = (category, boatClass) => {
-  const boatCode = boatClass?.code || "1X";
+  let boatCode = boatClass?.code || "1X";
   const catAbbr = category?.abbreviation || "";
   const catGender = category?.gender || "mixed";
+  const weightClass = boatClass?.weightClass || "open";
+
+  // Check if boat code starts with L (legacy lightweight code like LW1x, LM1x)
+  // In this case, extract the pure boat code (1x, 2x) for proper formatting
+  const hasLegacyLightweightPrefix =
+    boatCode.match(/^L[MW]?\d/i) || boatCode.match(/^LW?\d/i);
+  if (hasLegacyLightweightPrefix) {
+    // Remove the L or LW/LM prefix to get the pure boat code
+    boatCode = boatCode.replace(/^L[MW]?/i, "");
+  }
+
+  // Determine if this is a lightweight boat
+  const isLightweight =
+    weightClass === "lightweight" || hasLegacyLightweightPrefix;
 
   // Check if this is a coastal/beach boat (already has gender in code)
   const isCoastalBoat = boatCode.startsWith("C") || boatCode.startsWith("c");
@@ -205,27 +239,54 @@ const generateRaceCode = (category, boatClass) => {
     catAbbr.toUpperCase() === "S" ||
     (category?.titles?.en || "").toLowerCase().includes("senior");
 
+  // Gender prefix for race codes
+  const genderPrefix =
+    catGender === "women" ? "W" : catGender === "mixed" ? "Mix" : "M";
+
   if (isSeniorCategory) {
     if (isCoastalBoat) {
       // Coastal boats already have gender: CM1x, CW1x, CMix2x
-      return boatCode;
+      // For lightweight coastal, prefix with L
+      return isLightweight ? `L${boatCode}` : boatCode;
     }
-    // For classic boats, use M/W + boat code (World Rowing senior standard)
-    const genderPrefix =
-      catGender === "women" ? "W" : catGender === "mixed" ? "Mix" : "M";
-    return `${genderPrefix}${boatCode}`;
+    // For classic boats, use [L]M/W + boat code (World Rowing senior standard)
+    // LM1x for Lightweight Men, M1x for Open Men
+    return isLightweight
+      ? `L${genderPrefix}${boatCode}`
+      : `${genderPrefix}${boatCode}`;
   }
 
   // For non-senior categories, use category abbreviation + boat code
   // Examples: JM1x (Junior Men), BW2x (U23 Women), bM4x (Benjamin Male)
+  // For lightweight: JLM1x (Junior Lightweight Men), BLW1x (U23 Lightweight Women)
   if (isCoastalBoat) {
     // For coastal boats with non-senior category, prefix with category
     // e.g., JCM1x for Junior Coastal Men's Solo
+    return isLightweight ? `${catAbbr}L${boatCode}` : `${catAbbr}${boatCode}`;
+  }
+
+  // Standard format: category abbreviation + [L if lightweight] + gender + boat
+  // For lightweight non-senior: BLM1x (U23 Lightweight Men), JLW2x (Junior Lightweight Women)
+  // Note: If catAbbr already includes gender (JM, JW, BM, BW), we use it directly
+  // Otherwise, we need to construct it properly
+  const catHasGender =
+    catAbbr.endsWith("M") || catAbbr.endsWith("W") || catAbbr.endsWith("Mix");
+
+  if (catHasGender) {
+    // Category already has gender suffix (JM, JW, BM, BW, etc.)
+    // For lightweight, insert L before the gender: JM -> JLM, BW -> BLW
+    if (isLightweight) {
+      const catBase = catAbbr.slice(0, -1); // Remove the gender suffix (M, W)
+      const catGenderSuffix = catAbbr.slice(-1); // Get the gender suffix
+      return `${catBase}L${catGenderSuffix}${boatCode}`;
+    }
     return `${catAbbr}${boatCode}`;
   }
 
-  // Standard format: category abbreviation already includes gender (JM, JW, BM, BW, bM, bW, etc.)
-  return `${catAbbr}${boatCode}`;
+  // Category doesn't have gender suffix, add gender
+  return isLightweight
+    ? `${catAbbr}L${genderPrefix}${boatCode}`
+    : `${catAbbr}${genderPrefix}${boatCode}`;
 };
 
 // Format milliseconds to MM:SS.cc or SS.cc (centiseconds - 2 digits)
@@ -322,6 +383,38 @@ const formatTimeInput = (value) => {
   return `${parseInt(mins, 10)}:${secs.padStart(2, "0")}.${centis}`;
 };
 
+const DEFAULT_POINT_TABLE = {
+  1: 20,
+  2: 12,
+  3: 8,
+  4: 6,
+  5: 4,
+  6: 3,
+  7: 2,
+  8: 1,
+};
+
+const calculatePoints = (position, rankingSystem = null) => {
+  if (!position || position < 1) return 0;
+
+  // Use effective point table if ranking system is provided
+  if (rankingSystem) {
+    if (
+      rankingSystem.customPointTable &&
+      rankingSystem.customPointTable.length > 0
+    ) {
+      const entry = rankingSystem.customPointTable.find(
+        (e) => e.position === position,
+      );
+      return entry ? entry.points : 0;
+    }
+    // Fallback if system has its own defaults or effective point table structure
+    // (matches the backend implementation logic)
+  }
+
+  return DEFAULT_POINT_TABLE[position] || 0;
+};
+
 const LANE_RESULT_STATUS_OPTIONS = [
   { value: "ok", label: "OK" },
   { value: "dns", label: "DNS (Did Not Start)" },
@@ -412,7 +505,8 @@ const PendingManualCrewDisplay = ({ crew, requiredSize, onCancel }) => {
             Pending Crew ({crew.length}/{requiredSize})
           </h4>
           <p className="text-xs text-blue-700">
-            Add {requiredSize - crew.length} more athlete{requiredSize - crew.length === 1 ? "" : "s"} to complete the entry.
+            Add {requiredSize - crew.length} more athlete
+            {requiredSize - crew.length === 1 ? "" : "s"} to complete the entry.
           </p>
         </div>
         <Button
@@ -459,7 +553,14 @@ const PendingManualCrewDisplay = ({ crew, requiredSize, onCancel }) => {
   );
 };
 
-const EntriesTable = ({ entries, onEntryChange, onRemove, onWithdraw, onDelete, isAdmin }) => {
+const EntriesTable = ({
+  entries,
+  onEntryChange,
+  onRemove,
+  onWithdraw,
+  onDelete,
+  isAdmin,
+}) => {
   if (!entries.length) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
@@ -485,9 +586,9 @@ const EntriesTable = ({ entries, onEntryChange, onRemove, onWithdraw, onDelete, 
           {entries.slice().map((entry, index) => {
             const isDbEntry = entry.id && !entry.uid?.startsWith("manual-");
             const isWithdrawn = entry.status === "withdrawn";
-            
+
             return (
-              <tr 
+              <tr
                 key={entry.uid || entry.id || `entry-${index}`}
                 className={isWithdrawn ? "bg-rose-50 opacity-60" : ""}
               >
@@ -497,7 +598,11 @@ const EntriesTable = ({ entries, onEntryChange, onRemove, onWithdraw, onDelete, 
                     min="1"
                     value={entry.seed}
                     onChange={(event) =>
-                      onEntryChange(entry.uid || entry.id, "seed", event.target.value)
+                      onEntryChange(
+                        entry.uid || entry.id,
+                        "seed",
+                        event.target.value,
+                      )
                     }
                     className="h-8 w-24"
                     disabled={isWithdrawn}
@@ -513,7 +618,9 @@ const EntriesTable = ({ entries, onEntryChange, onRemove, onWithdraw, onDelete, 
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex flex-col">
-                    <span className={`font-medium ${isWithdrawn ? "text-slate-500 line-through" : "text-slate-800"}`}>
+                    <span
+                      className={`font-medium ${isWithdrawn ? "text-slate-500 line-through" : "text-slate-800"}`}
+                    >
                       {entry.crew && entry.crew.length > 0
                         ? formatCrewName(entry.crew)
                         : formatAthleteName(entry.athlete)}
@@ -555,7 +662,11 @@ const EntriesTable = ({ entries, onEntryChange, onRemove, onWithdraw, onDelete, 
                   <Input
                     value={entry.notes || ""}
                     onChange={(event) =>
-                      onEntryChange(entry.uid || entry.id, "notes", event.target.value)
+                      onEntryChange(
+                        entry.uid || entry.id,
+                        "notes",
+                        event.target.value,
+                      )
                     }
                     className="h-8 w-40"
                     disabled={isWithdrawn}
@@ -579,7 +690,11 @@ const EntriesTable = ({ entries, onEntryChange, onRemove, onWithdraw, onDelete, 
                           type="button"
                           variant="ghost"
                           onClick={() => {
-                            if (window.confirm(`Permanently delete this entry for ${formatAthleteName(entry.athlete)}? This cannot be undone.`)) {
+                            if (
+                              window.confirm(
+                                `Permanently delete this entry for ${formatAthleteName(entry.athlete)}? This cannot be undone.`,
+                              )
+                            ) {
                               onDelete(entry.id);
                             }
                           }}
@@ -621,8 +736,8 @@ const describeLane = (lane, athleteLookup, clubLookup) => {
       const m = mId
         ? athleteLookup.get(mId)
         : typeof member === "object"
-        ? member
-        : null;
+          ? member
+          : null;
       const name = m ? formatAthleteName(m) : "Unknown";
       let pos = "";
       if (arr.length > 1) {
@@ -664,6 +779,7 @@ const RaceInfoView = ({
   onExportResultsPDF,
   onSaveResults,
   savingResults,
+  activeRankingSystem,
 }) => {
   const [showResultsEntry, setShowResultsEntry] = useState(false);
   const [resultsForm, setResultsForm] = useState({});
@@ -758,7 +874,7 @@ const RaceInfoView = ({
 
     if (!hasValidTime) {
       toast.error(
-        "Please enter valid times for at least one athlete (format: M:SS.cc or SS.cc)"
+        "Please enter valid times for at least one athlete (format: M:SS.cc or SS.cc)",
       );
       return;
     }
@@ -828,8 +944,8 @@ const RaceInfoView = ({
               race.status === "completed"
                 ? "bg-green-50 text-green-700 ring-1 ring-inset ring-green-600/20"
                 : race.status === "in_progress"
-                ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-700/10"
-                : "bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-500/10"
+                  ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-700/10"
+                  : "bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-500/10"
             }`}
           >
             {race.status || "Scheduled"}
@@ -843,9 +959,50 @@ const RaceInfoView = ({
             {showResultsEntry ? "Hide Results Entry" : "Enter Results"}
           </Button>
           {race.status === "completed" && (
-            <Button variant="outline" onClick={onExportResultsPDF}>
-              Export Results PDF
-            </Button>
+            <div className="flex gap-1">
+              <Button variant="outline" onClick={onExportResultsPDF}>
+                Export Results PDF
+              </Button>
+              {process.env.NODE_ENV === "development" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="px-2 text-slate-400 opacity-20 hover:opacity-100"
+                  onClick={(e) => {
+                    if (e.shiftKey) {
+                      const mockRace = {
+                        ...race,
+                        name: "Multi-page Legend Test",
+                        lanes: Array.from({ length: 45 }, (_, i) => ({
+                          lane: (i % 8) + 1,
+                          result: {
+                            finishPosition: i + 1,
+                            status: "ok",
+                            elapsedMs: 120000 + i * 1500,
+                          },
+                          club: race.lanes?.[0]?.club || {
+                            code: "TEST",
+                            name: "Test Club",
+                          },
+                          athlete: race.lanes?.[0]?.athlete || {
+                            firstName: "Test",
+                            lastName: `Athlete ${i + 1}`,
+                          },
+                        })),
+                      };
+                      onExportResultsPDF(mockRace);
+                    } else {
+                      toast.info(
+                        "Shift + Click this button to test multi-page legend placement",
+                      );
+                    }
+                  }}
+                  title="Shift + Click to test multi-page export"
+                >
+                  🧪
+                </Button>
+              )}
+            </div>
           )}
           <Button variant="outline" onClick={onExportPDF}>
             Export Start List
@@ -921,6 +1078,7 @@ const RaceInfoView = ({
                 <th className="px-4 py-3">Club</th>
                 <th className="px-4 py-3">Athlete</th>
                 <th className="px-4 py-3">Time</th>
+                <th className="px-4 py-3">Points</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 bg-white">
@@ -937,7 +1095,7 @@ const RaceInfoView = ({
 
                 // Find the winning time (first place)
                 const winningTime = sortedLanes.find(
-                  (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs
+                  (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
                 )?.result?.elapsedMs;
 
                 return sortedLanes.map((lane) => {
@@ -991,8 +1149,8 @@ const RaceInfoView = ({
                         status !== "ok"
                           ? "bg-amber-50"
                           : position === 1
-                          ? "bg-amber-50"
-                          : undefined
+                            ? "bg-amber-50"
+                            : undefined
                       }
                     >
                       <td className="px-4 py-3">
@@ -1001,10 +1159,10 @@ const RaceInfoView = ({
                             position === 1
                               ? "font-bold text-amber-600"
                               : position === 2
-                              ? "font-semibold text-slate-500"
-                              : position === 3
-                              ? "font-semibold text-orange-700"
-                              : ""
+                                ? "font-semibold text-slate-500"
+                                : position === 3
+                                  ? "font-semibold text-orange-700"
+                                  : ""
                           }
                         >
                           {position || "-"}
@@ -1037,6 +1195,11 @@ const RaceInfoView = ({
                             )}
                           </div>
                         )}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">
+                        {status === "ok"
+                          ? calculatePoints(position, activeRankingSystem)
+                          : 0}
                       </td>
                     </tr>
                   );
@@ -1127,10 +1290,10 @@ const RaceInfoView = ({
                               calculatedPositions[lane.lane] === 1
                                 ? "font-bold text-amber-600"
                                 : calculatedPositions[lane.lane] === 2
-                                ? "font-semibold text-slate-500"
-                                : calculatedPositions[lane.lane] === 3
-                                ? "font-semibold text-orange-700"
-                                : ""
+                                  ? "font-semibold text-slate-500"
+                                  : calculatedPositions[lane.lane] === 3
+                                    ? "font-semibold text-orange-700"
+                                    : ""
                             }
                           >
                             {calculatedPositions[lane.lane] || "-"}
@@ -1150,7 +1313,7 @@ const RaceInfoView = ({
                                 handleResultChange(
                                   lane.lane,
                                   "elapsedTime",
-                                  e.target.value
+                                  e.target.value,
                                 )
                               }
                               onBlur={() => handleTimeBlur(lane.lane)}
@@ -1170,7 +1333,7 @@ const RaceInfoView = ({
                               handleResultChange(
                                 lane.lane,
                                 "status",
-                                e.target.value
+                                e.target.value,
                               )
                             }
                             className="w-32"
@@ -1191,7 +1354,7 @@ const RaceInfoView = ({
                               handleResultChange(
                                 lane.lane,
                                 "notes",
-                                e.target.value
+                                e.target.value,
                               )
                             }
                             placeholder="Notes"
@@ -1256,7 +1419,7 @@ const CompetitionRaces = () => {
   const [loadingRaces, setLoadingRaces] = useState(false);
   const [loadingRegistration, setLoadingRegistration] = useState(false);
   const [registrationStats, setRegistrationStats] = useState(null);
-  const [savingResults, setSavingResults] = useState(false);
+  const [activeRankingSystem, setActiveRankingSystem] = useState(null);
 
   const [entrySearchTerm, setEntrySearchTerm] = useState("");
   const [entrySearchResults, setEntrySearchResults] = useState([]);
@@ -1278,6 +1441,7 @@ const CompetitionRaces = () => {
     startRaceNumber: "",
     startTime: "",
     intervalMinutes: "10",
+    allowMultipleEntries: false,
   });
 
   const [submittingAutoGen, setSubmittingAutoGen] = useState(false);
@@ -1293,15 +1457,15 @@ const CompetitionRaces = () => {
 
   const requiredCrewSize = useMemo(() => {
     if (!autoGenState.boatClass) return 1;
-    const bc = boatClasses.find((b) => toDocumentId(b) === autoGenState.boatClass);
+    const bc = boatClasses.find(
+      (b) => toDocumentId(b) === autoGenState.boatClass,
+    );
     return bc?.crewSize || 1;
   }, [autoGenState.boatClass, boatClasses]);
 
-  const [selectedRaceId, setSelectedRaceId] = useState(null);
-
   const competitionDocumentId = useMemo(
     () => toDocumentId(competition),
-    [competition]
+    [competition],
   );
 
   const allowedCategories = useMemo(() => {
@@ -1311,10 +1475,10 @@ const CompetitionRaces = () => {
     const allowedSet = new Set(
       competition.allowedCategories
         .map((category) => toDocumentId(category))
-        .filter(Boolean)
+        .filter(Boolean),
     );
     return categories.filter((category) =>
-      allowedSet.has(toDocumentId(category))
+      allowedSet.has(toDocumentId(category)),
     );
   }, [categories, competition]);
 
@@ -1325,10 +1489,10 @@ const CompetitionRaces = () => {
     const allowedSet = new Set(
       competition.allowedBoatClasses
         .map((boatClass) => toDocumentId(boatClass))
-        .filter(Boolean)
+        .filter(Boolean),
     );
     return boatClasses.filter((boatClass) =>
-      allowedSet.has(toDocumentId(boatClass))
+      allowedSet.has(toDocumentId(boatClass)),
     );
   }, [boatClasses, competition]);
 
@@ -1459,7 +1623,7 @@ const CompetitionRaces = () => {
         `${API_BASE_URL}/api/competitions/${competitionId}/registration`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       const data = await response.json();
       if (response.ok) {
@@ -1530,7 +1694,7 @@ const CompetitionRaces = () => {
           totalAthletes: athleteCount,
           totalClubs: clubs.size,
           byCategory: Object.values(categoryCounts).sort((a, b) =>
-            a.name.localeCompare(b.name)
+            a.name.localeCompare(b.name),
           ),
         };
 
@@ -1545,6 +1709,25 @@ const CompetitionRaces = () => {
     }
   }, [competitionId, token, categories]);
 
+  const loadRankingSystem = useCallback(async () => {
+    if (!token || !competitionId) return;
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/rankings/competition/${competitionId}/available-systems`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const data = await response.json();
+      if (response.ok && data.availableSystems?.length > 0) {
+        // Pick the first active system as default for point calculation in results
+        setActiveRankingSystem(data.availableSystems[0]);
+      }
+    } catch (error) {
+      console.error("Failed to load ranking systems", error);
+    }
+  }, [competitionId, token]);
+
   const loadCompetition = useCallback(async () => {
     if (!token || !competitionId) {
       return;
@@ -1557,7 +1740,7 @@ const CompetitionRaces = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -1596,12 +1779,12 @@ const CompetitionRaces = () => {
         .catch(() => []);
       if (categoriesResponse.ok) {
         setCategories(
-          Array.isArray(categoriesPayload) ? categoriesPayload : []
+          Array.isArray(categoriesPayload) ? categoriesPayload : [],
         );
       }
       if (boatClassesResponse.ok) {
         setBoatClasses(
-          Array.isArray(boatClassesPayload) ? boatClassesPayload : []
+          Array.isArray(boatClassesPayload) ? boatClassesPayload : [],
         );
       }
     } catch (error) {
@@ -1621,7 +1804,7 @@ const CompetitionRaces = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
       const payload = await response.json().catch(() => []);
       if (!response.ok) {
@@ -1636,47 +1819,6 @@ const CompetitionRaces = () => {
     }
   }, [competitionId, token]);
 
-  const saveRaceResults = useCallback(
-    async (raceId, lanes, markCompleted = true) => {
-      if (!token || !competitionId || !raceId) {
-        toast.error("Missing required data to save results");
-        return;
-      }
-
-      setSavingResults(true);
-      try {
-        const response = await fetch(
-          `${API_BASE_URL}/api/competitions/${competitionId}/races/${raceId}/results`,
-          {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              lanes,
-              markCompleted,
-            }),
-          }
-        );
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload.message || "Failed to save results");
-        }
-
-        toast.success("Race results saved successfully");
-        await loadRaces();
-      } catch (error) {
-        console.error("Failed to save race results", error);
-        toast.error(error.message);
-      } finally {
-        setSavingResults(false);
-      }
-    },
-    [competitionId, loadRaces, token]
-  );
-
   useEffect(() => {
     loadCompetition();
   }, [loadCompetition]);
@@ -1688,7 +1830,8 @@ const CompetitionRaces = () => {
   useEffect(() => {
     loadRaces();
     loadRegistrationSummary();
-  }, [loadCompetition, loadRaces, loadRegistrationSummary]);
+    loadRankingSystem();
+  }, [loadCompetition, loadRaces, loadRegistrationSummary, loadRankingSystem]);
 
   useEffect(() => {
     if (!token || !entrySearchTerm.trim()) {
@@ -1713,7 +1856,7 @@ const CompetitionRaces = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         const payload = await response.json().catch(() => []);
         if (!response.ok) {
@@ -1766,7 +1909,7 @@ const CompetitionRaces = () => {
       // Validate gender and category if a category is selected
       if (autoGenState.category) {
         const selectedCategory = categories.find(
-          (cat) => toDocumentId(cat) === autoGenState.category
+          (cat) => toDocumentId(cat) === autoGenState.category,
         );
 
         if (selectedCategory) {
@@ -1791,7 +1934,11 @@ const CompetitionRaces = () => {
           let isMaster =
             (athlete.category?.toLowerCase?.() || "").includes("master") ||
             athlete.isMaster === true;
-          const athleteAge = getAge(athlete);
+          // Use competition's season year for age calculation (important for past competitions)
+          const competitionSeason = competition?.season
+            ? Number(competition.season)
+            : undefined;
+          const athleteAge = getAge(athlete, competitionSeason);
           // If age indicates a master (commonly 27+), consider as master
           if (!isMaster && athleteAge !== null && athleteAge >= 27) {
             isMaster = true;
@@ -1811,8 +1958,8 @@ const CompetitionRaces = () => {
                   categoryGender === "women" ? "Women" : "Men";
                 toast.error(
                   `${formatAthleteName(
-                    athlete
-                  )} cannot be added to a ${genderLabel}'s category`
+                    athlete,
+                  )} cannot be added to a ${genderLabel}'s category`,
                 );
                 return;
               }
@@ -1820,7 +1967,8 @@ const CompetitionRaces = () => {
           }
 
           // Check age compatibility using `getAge` (more robust parsing)
-          const age = getAge(athlete);
+          // Use competition's season year for age calculation
+          const age = getAge(athlete, competitionSeason);
           if (age !== null) {
             const minAge = selectedCategory.minAge;
             const maxAge = selectedCategory.maxAge;
@@ -1834,7 +1982,7 @@ const CompetitionRaces = () => {
               toast.error(
                 `${formatAthleteName(athlete)} is too young for ${
                   selectedCategory.titles?.en || selectedCategory.abbreviation
-                } (minimum age: ${minAge})`
+                } (minimum age: ${minAge})`,
               );
               return;
             }
@@ -1850,7 +1998,7 @@ const CompetitionRaces = () => {
               toast.error(
                 `${formatAthleteName(athlete)} is too old for ${
                   selectedCategory.titles?.en || selectedCategory.abbreviation
-                } (maximum age: ${maxAge})`
+                } (maximum age: ${maxAge})`,
               );
               return;
             }
@@ -1867,10 +2015,12 @@ const CompetitionRaces = () => {
         : [];
       // Always use active membership for club context, prioritizing standard clubs over promotion centers
       const activeMemberships = memberships.filter(
-        (membership) => membership?.status === "active" && membership.club
+        (membership) => membership?.status === "active" && membership.club,
       );
       // Try to find a 'club' type specifically, otherwise fall back to first active
-      const activeMembership = activeMemberships.find(m => m.club?.type === "club") || activeMemberships[0];
+      const activeMembership =
+        activeMemberships.find((m) => m.club?.type === "club") ||
+        activeMemberships[0];
       const resolvedClub =
         activeMembership?.club ||
         athlete.club ||
@@ -1892,7 +2042,7 @@ const CompetitionRaces = () => {
           catId
         ) {
           const catData = registrationStats.byCategory.find(
-            (c) => toDocumentId(c.id) === catId
+            (c) => toDocumentId(c.id) === catId,
           );
           if (catData && Array.isArray(catData.entries)) {
             const matched = catData.entries.find((e) => {
@@ -1915,7 +2065,7 @@ const CompetitionRaces = () => {
             // Use promise chaining instead of `await` to avoid parser issues
             fetch(
               `${API_BASE_URL}/api/competitions/${competitionId}/registration`,
-              { headers: { Authorization: `Bearer ${token}` } }
+              { headers: { Authorization: `Bearer ${token}` } },
             )
               .then((resp) => {
                 if (!resp.ok) return null;
@@ -1971,8 +2121,8 @@ const CompetitionRaces = () => {
           new Set(
             resolvedCrew
               .filter((r) => r && !r.firstName && !r.lastName && r._id)
-              .map((r) => r._id)
-          )
+              .map((r) => r._id),
+          ),
         );
 
         const finalizeAndSet = (finalCrew) => {
@@ -1995,7 +2145,7 @@ const CompetitionRaces = () => {
               if (typeof console !== "undefined" && console.warn) {
                 console.warn(
                   "[manual-add] Missing club code for club",
-                  resolvedClub
+                  resolvedClub,
                 );
               }
             }
@@ -2028,7 +2178,7 @@ const CompetitionRaces = () => {
                 clubObj,
                 clubIdFallback,
                 clubCodeFallback,
-                nameFallback
+                nameFallback,
               ) => {
                 const ids = new Set();
                 const add = (v) => {
@@ -2067,13 +2217,15 @@ const CompetitionRaces = () => {
                 targetClubCode,
                 targetClubId,
                 entryIdentifiers,
-                targetIdentifiers
+                targetIdentifiers,
               ) => {
                 // 1. Direct Code Match (strongest signal)
                 if (entryClubCode && targetClubCode) {
                   // If both have codes, compare them directly
-                  return String(entryClubCode).trim().toUpperCase() ===
-                    String(targetClubCode).trim().toUpperCase();
+                  return (
+                    String(entryClubCode).trim().toUpperCase() ===
+                    String(targetClubCode).trim().toUpperCase()
+                  );
                 }
                 // 2. Direct ID Match (if we have IDs but no codes)
                 if (entryClubId && targetClubId) {
@@ -2081,7 +2233,9 @@ const CompetitionRaces = () => {
                 }
                 // 3. Fallback: Identifier Intersection (only if no codes and no IDs)
                 if (entryIdentifiers && targetIdentifiers) {
-                   return [...entryIdentifiers].some((x) => targetIdentifiers.has(x));
+                  return [...entryIdentifiers].some((x) =>
+                    targetIdentifiers.has(x),
+                  );
                 }
                 return false;
               };
@@ -2092,16 +2246,17 @@ const CompetitionRaces = () => {
                 resolvedClub,
                 clubIdStr,
                 clubCodeValue,
-                clubName
+                clubName,
               );
 
               // Only consider entries in the current race for the current club
               const numsFromEntries = previous
                 .map((e) => {
                   const entryClubObj = e.club || null;
-                  const entryClubId = toDocumentId(e.clubId) || toDocumentId(e.club);
+                  const entryClubId =
+                    toDocumentId(e.clubId) || toDocumentId(e.club);
                   const entryClubCode = e.clubCode || e.club?.code;
-                  
+
                   // Optimization: parse number first
                   const num = parseCrewNumber(e.crewNumber);
                   if (!Number.isFinite(num)) return null;
@@ -2111,10 +2266,19 @@ const CompetitionRaces = () => {
                     entryClubObj,
                     entryClubId,
                     entryClubCode,
-                    entryClubName
+                    entryClubName,
                   );
 
-                  if (isSameClub(entryClubCode, entryClubId, clubCodeValue, clubIdStr, entryIds, targetIds)) {
+                  if (
+                    isSameClub(
+                      entryClubCode,
+                      entryClubId,
+                      clubCodeValue,
+                      clubIdStr,
+                      entryIds,
+                      targetIds,
+                    )
+                  ) {
                     return num;
                   }
                   return null;
@@ -2131,21 +2295,29 @@ const CompetitionRaces = () => {
                   if (currentCategoryId && raceCatId !== currentCategoryId) {
                     return; // Skip races from other categories
                   }
-                  
+
                   (r.lanes || []).forEach((lane) => {
                     const laneClubObj = lane?.club || null;
                     const laneClubId = toDocumentId(lane?.club);
-                    const laneClubCode =
-                      lane?.club?.code || lane?.clubCode;
-                    
+                    const laneClubCode = lane?.club?.code || lane?.clubCode;
+
                     const laneIdentifiers = getClubIdentifiers(
                       laneClubObj,
                       laneClubId,
                       laneClubCode,
-                      lane?.clubName || lane?.club?.name
+                      lane?.clubName || lane?.club?.name,
                     );
 
-                    if (isSameClub(laneClubCode, laneClubId, clubCodeValue, clubIdStr, laneIdentifiers, targetIds)) {
+                    if (
+                      isSameClub(
+                        laneClubCode,
+                        laneClubId,
+                        clubCodeValue,
+                        clubIdStr,
+                        laneIdentifiers,
+                        targetIds,
+                      )
+                    ) {
                       const n = parseCrewNumber(lane.crewNumber);
                       if (Number.isFinite(n)) numsFromRaces.push(n);
                     }
@@ -2164,7 +2336,7 @@ const CompetitionRaces = () => {
               ) {
                 const catId = autoGenState.category;
                 const catData = registrationStats.byCategory.find(
-                  (c) => toDocumentId(c.id) === catId
+                  (c) => toDocumentId(c.id) === catId,
                 );
                 if (catData && Array.isArray(catData.entries)) {
                   catData.entries.forEach((e) => {
@@ -2172,21 +2344,28 @@ const CompetitionRaces = () => {
                     if (e.status === "withdrawn" || e.status === "rejected") {
                       return;
                     }
-                    
+
                     // Check if entry belongs to the same club
                     const entryClubObj = e.club || null;
                     const entryClubId = toDocumentId(e.club);
                     const entryClubCode = e.clubCode || e.club?.code;
-                    
+
                     const entryIdentifiers = getClubIdentifiers(
                       entryClubObj,
                       entryClubId,
                       entryClubCode,
-                      e.clubName || e.club?.name
+                      e.clubName || e.club?.name,
                     );
 
-                    const matched = isSameClub(entryClubCode, entryClubId, clubCodeValue, clubIdStr, entryIdentifiers, targetIds);
-                    
+                    const matched = isSameClub(
+                      entryClubCode,
+                      entryClubId,
+                      clubCodeValue,
+                      clubIdStr,
+                      entryIdentifiers,
+                      targetIds,
+                    );
+
                     if (matched) {
                       const n = parseCrewNumber(e.crewNumber);
                       if (Number.isFinite(n)) numsFromRegistrations.push(n);
@@ -2198,7 +2377,7 @@ const CompetitionRaces = () => {
               const allNums = numsFromEntries
                 .concat(numsFromRaces)
                 .concat(numsFromRegistrations);
-              
+
               const maxNum = allNums.length ? Math.max(...allNums) : 0;
               // If we found at least one existing numeric crew number, increment
               if (maxNum > 0) {
@@ -2246,7 +2425,7 @@ const CompetitionRaces = () => {
         // Try batch-fetching missing athletes by IDs. If the API doesn't
         // support batch, fall back to fetching individually.
         const tryBatchUrl = `${API_BASE_URL}/api/athletes?ids=${missingIds.join(
-          ","
+          ",",
         )}`;
         fetch(tryBatchUrl, { headers: { Authorization: `Bearer ${token}` } })
           .then((r) => (r.ok ? r.json().catch(() => []) : null))
@@ -2259,8 +2438,8 @@ const CompetitionRaces = () => {
                     headers: { Authorization: `Bearer ${token}` },
                   })
                     .then((rr) => (rr.ok ? rr.json().catch(() => null) : null))
-                    .catch(() => null)
-                )
+                    .catch(() => null),
+                ),
               ).then((arr) => (Array.isArray(arr) ? arr.filter(Boolean) : []));
             }
             return payload;
@@ -2310,7 +2489,9 @@ const CompetitionRaces = () => {
               addEntryWithCrew(updated, undefined);
               return [];
             }
-            toast.info(`Athlete added to pending crew (${updated.length}/${requiredCrewSize})`);
+            toast.info(
+              `Athlete added to pending crew (${updated.length}/${requiredCrewSize})`,
+            );
             return updated;
           });
           return;
@@ -2321,7 +2502,7 @@ const CompetitionRaces = () => {
           `${API_BASE_URL}/api/competitions/${competitionId}/registration`,
           {
             headers: { Authorization: `Bearer ${token}` },
-          }
+          },
         )
           .then((resp) => (resp.ok ? resp.json().catch(() => null) : null))
           .then((payload) => {
@@ -2359,11 +2540,13 @@ const CompetitionRaces = () => {
       competitionId,
       requiredCrewSize,
       setPendingManualCrew,
-    ]
+    ],
   );
 
   const handleRemoveEntry = useCallback((uid) => {
-    setEntries((previous) => previous.filter((entry) => entry.uid !== uid && entry.id !== uid));
+    setEntries((previous) =>
+      previous.filter((entry) => entry.uid !== uid && entry.id !== uid),
+    );
   }, []);
 
   const handleWithdrawEntry = useCallback(
@@ -2378,7 +2561,7 @@ const CompetitionRaces = () => {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
-          }
+          },
         );
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -2396,7 +2579,7 @@ const CompetitionRaces = () => {
         toast.error(error.message);
       }
     },
-    [competitionId, token, loadRegistrationSummary, autoGenState.category]
+    [competitionId, token, loadRegistrationSummary, autoGenState.category],
   );
 
   const handleDeleteEntry = useCallback(
@@ -2410,7 +2593,7 @@ const CompetitionRaces = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -2428,12 +2611,12 @@ const CompetitionRaces = () => {
         toast.error(error.message);
       }
     },
-    [competitionId, token, loadRegistrationSummary, autoGenState.category]
+    [competitionId, token, loadRegistrationSummary, autoGenState.category],
   );
 
   const handleEntryFieldChange = useCallback((uid, field, value) => {
     if (!uid) return;
-    
+
     // Check if it's a database entry (uid starts with "db-")
     if (uid.toString().startsWith("db-")) {
       const realId = uid.replace("db-", "");
@@ -2441,8 +2624,8 @@ const CompetitionRaces = () => {
         ...prev,
         [realId]: {
           ...prev[realId],
-          [field]: value
-        }
+          [field]: value,
+        },
       }));
       return;
     }
@@ -2463,7 +2646,7 @@ const CompetitionRaces = () => {
           ...entry,
           [field]: value,
         };
-      })
+      }),
     );
   }, []);
 
@@ -2474,7 +2657,7 @@ const CompetitionRaces = () => {
   const relevantEntries = useMemo(() => {
     // Start with manual entries
     let result = [...entries];
-    
+
     // Add database entries from registrationStats for the selected category
     if (
       registrationStats &&
@@ -2483,7 +2666,7 @@ const CompetitionRaces = () => {
     ) {
       const catId = autoGenState.category;
       const catData = registrationStats.byCategory.find(
-        (c) => toDocumentId(c.id) === catId
+        (c) => toDocumentId(c.id) === catId,
       );
       if (catData && Array.isArray(catData.entries)) {
         // Map database entries to the same format as manual entries
@@ -2491,16 +2674,16 @@ const CompetitionRaces = () => {
           const athleteId = toDocumentId(e.athlete);
           const clubObj = e.club || null;
           const entryId = toDocumentId(e.id || e._id);
-          
+
           // Apply overrides if any
           const overrides = dbEntryOverrides[entryId] || {};
-          
+
           // Prefer the athlete's current club / active membership club when present
           const memberships = Array.isArray(e.athlete?.memberships)
             ? e.athlete.memberships
             : [];
           const activeMemberships = memberships.filter(
-            (m) => m?.status === "active" && m.club
+            (m) => m?.status === "active" && m.club,
           );
           const activeMembership =
             activeMemberships.find((m) => m.club?.type === "club") ||
@@ -2520,24 +2703,26 @@ const CompetitionRaces = () => {
               resolveClubLabel(resolvedClub) || e.clubName || clubObj?.name,
             crewNumber: e.crewNumber,
             status: e.status,
-            seed: overrides.seed !== undefined ? overrides.seed : (e.seed || idx + 1),
-            notes: overrides.notes !== undefined ? overrides.notes : (e.notes || ""),
+            seed:
+              overrides.seed !== undefined ? overrides.seed : e.seed || idx + 1,
+            notes:
+              overrides.notes !== undefined ? overrides.notes : e.notes || "",
             boatClass: e.boatClass,
           };
         });
-        
+
         // Filter out any database entries that are already in manual entries (by athleteId)
         const manualAthleteIds = new Set(
-          result.map((e) => e.athleteId).filter(Boolean)
+          result.map((e) => e.athleteId).filter(Boolean),
         );
         const uniqueDbEntries = dbEntries.filter(
-          (e) => !manualAthleteIds.has(e.athleteId)
+          (e) => !manualAthleteIds.has(e.athleteId),
         );
-        
+
         result = [...result, ...uniqueDbEntries];
       }
     }
-    
+
     // Filter by boat class if selected
     if (autoGenState.boatClass) {
       result = result.filter((entry) => {
@@ -2550,16 +2735,22 @@ const CompetitionRaces = () => {
         );
       });
     }
-    
+
     return result;
-  }, [entries, autoGenState.boatClass, autoGenState.category, registrationStats, dbEntryOverrides]);
+  }, [
+    entries,
+    autoGenState.boatClass,
+    autoGenState.category,
+    registrationStats,
+    dbEntryOverrides,
+  ]);
 
   const handleSaveEntries = useCallback(async () => {
     // 1. Identify modified DB entries
     const modifiedIds = Object.keys(dbEntryOverrides);
     // 2. Identify NEW manual entries
     const newManualEntries = entries.filter(
-      (e) => e.uid && e.uid.toString().startsWith("manual-")
+      (e) => e.uid && e.uid.toString().startsWith("manual-"),
     );
 
     if (modifiedIds.length === 0 && newManualEntries.length === 0) {
@@ -2581,19 +2772,21 @@ const CompetitionRaces = () => {
           {
             method: "PUT",
             headers: {
-               "Content-Type": "application/json",
-               Authorization: `Bearer ${token}` 
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify(changes)
-          }
+            body: JSON.stringify(changes),
+          },
         );
         if (!response.ok) {
-           const errPayload = await response.json().catch(() => ({}));
-           throw new Error(errPayload.message || "Failed to save changes for entry");
+          const errPayload = await response.json().catch(() => ({}));
+          throw new Error(
+            errPayload.message || "Failed to save changes for entry",
+          );
         }
         successCount++;
       }
-      
+
       // 4. Create NEW manual entries
       // 4. Create NEW manual entries (Batched by Club)
       if (newManualEntries.length > 0) {
@@ -2610,9 +2803,9 @@ const CompetitionRaces = () => {
 
         for (const [cId, clubEntries] of Object.entries(entriesByClub)) {
           if (cId === "unknown") {
-             // Skipping entries without club context
-             console.warn("Skipping entries without club context:", clubEntries);
-             continue; 
+            // Skipping entries without club context
+            console.warn("Skipping entries without club context:", clubEntries);
+            continue;
           }
 
           const payload = {
@@ -2626,6 +2819,7 @@ const CompetitionRaces = () => {
             })),
             clubId: cId, // Pass clubId so backend resolves context
             bypassEligibility: true, // Allow admins to bypass eligibility rules (e.g. Master in Senior)
+            bypassMultipleEntries: autoGenState.allowMultipleEntries, // Allow multiple registrations if checked
           };
 
           const response = await fetch(
@@ -2633,24 +2827,28 @@ const CompetitionRaces = () => {
             {
               method: "POST",
               headers: {
-                 "Content-Type": "application/json",
-                 Authorization: `Bearer ${token}` 
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
               },
-              body: JSON.stringify(payload)
-            }
+              body: JSON.stringify(payload),
+            },
           );
-          
+
           if (!response.ok) {
-             const errPayload = await response.json().catch(() => ({}));
-             // Log error but try to continue with other batches? 
-             // Or throw to stop? Throwing is safer to alert user.
-             throw new Error(errPayload.message || `Failed to save entries for club ${cId}`);
+            const errPayload = await response.json().catch(() => ({}));
+            // Log error but try to continue with other batches?
+            // Or throw to stop? Throwing is safer to alert user.
+            throw new Error(
+              errPayload.message || `Failed to save entries for club ${cId}`,
+            );
           }
           successCount += clubEntries.length;
         }
 
         // Clear manual entries from state as they are now in DB
-        setEntries((prev) => prev.filter((e) => !e.uid.toString().startsWith("manual-")));
+        setEntries((prev) =>
+          prev.filter((e) => !e.uid.toString().startsWith("manual-")),
+        );
       }
 
       if (successCount > 0) {
@@ -2659,14 +2857,22 @@ const CompetitionRaces = () => {
         const newStats = await loadRegistrationSummary(); // Reload to get fresh data
         // Re-apply category select to refresh view
         if (autoGenState.category) {
-           handleCategorySelect(autoGenState.category, newStats);
+          handleCategorySelect(autoGenState.category, newStats);
         }
       }
     } catch (error) {
       console.error(error);
       toast.error(error.message);
     }
-  }, [dbEntryOverrides, entries, competitionId, token, loadRegistrationSummary, autoGenState.category, autoGenState.boatClass]);
+  }, [
+    dbEntryOverrides,
+    entries,
+    competitionId,
+    token,
+    loadRegistrationSummary,
+    autoGenState.category,
+    autoGenState.boatClass,
+  ]);
 
   const submitAutoGeneration = useCallback(async () => {
     if (!token || !competitionDocumentId) {
@@ -2686,11 +2892,11 @@ const CompetitionRaces = () => {
       const boatClasses = new Set(
         relevantEntries
           .map((e) => e.boatClass?.id || e.boatClass)
-          .filter(Boolean)
+          .filter(Boolean),
       );
       if (boatClasses.size > 1) {
         toast.error(
-          "Entries contain multiple boat classes. Please select a specific boat class."
+          "Entries contain multiple boat classes. Please select a specific boat class.",
         );
         return;
       }
@@ -2701,13 +2907,14 @@ const CompetitionRaces = () => {
       toast.error("Journey index must be a positive integer");
       return;
     }
+    const maxLanes = getMaxLanesForDiscipline(competition?.discipline);
     const lanesPerRace = Number(autoGenState.lanesPerRace);
     if (
       !Number.isInteger(lanesPerRace) ||
       lanesPerRace < 1 ||
-      lanesPerRace > 8
+      lanesPerRace > maxLanes
     ) {
-      toast.error("Lanes per race must be between 1 and 8");
+      toast.error(`Lanes per race must be between 1 and ${maxLanes}`);
       return;
     }
 
@@ -2748,7 +2955,7 @@ const CompetitionRaces = () => {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(payload),
-        }
+        },
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -2831,7 +3038,7 @@ const CompetitionRaces = () => {
             source: { raceId: swapState.sourceRaceId, lane: sourceLane },
             target: { raceId: swapState.targetRaceId, lane: targetLane },
           }),
-        }
+        },
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -2852,7 +3059,7 @@ const CompetitionRaces = () => {
       // Find the race to check if it has results
       const race = races.find((r) => r._id === raceId);
       const hasResults = race?.lanes?.some(
-        (lane) => lane.time || lane.position || lane.status === "finished"
+        (lane) => lane.time || lane.position || lane.status === "finished",
       );
 
       let confirmMessage = "Are you sure you want to delete this race?";
@@ -2874,7 +3081,7 @@ const CompetitionRaces = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
@@ -2887,7 +3094,7 @@ const CompetitionRaces = () => {
         toast.error(error.message);
       }
     },
-    [competitionDocumentId, token, loadRaces, races]
+    [competitionDocumentId, token, loadRaces, races],
   );
 
   const raceColumns = useMemo(
@@ -2917,16 +3124,15 @@ const CompetitionRaces = () => {
             ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
             : null;
 
-          const catAbbr = category?.abbreviation || "";
-          const boatCode = boatClass?.code || "";
+          // Use generateRaceCode for proper World Rowing code formatting (handles lightweight)
+          const eventCode = generateRaceCode(category, boatClass);
           const catTitle = category?.titles?.en || "";
           const boatName = boatClass?.names?.en || "";
 
           return (
             <div className="flex flex-col py-1">
               <span className="font-semibold text-slate-900">
-                {catAbbr}
-                {boatCode}
+                {eventCode}
                 <span className="ml-2 font-normal text-slate-500">
                   {catTitle} {boatName}
                 </span>
@@ -3060,7 +3266,9 @@ const CompetitionRaces = () => {
               variant="ghost"
               size="sm"
               className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-7 px-2 text-xs"
-              onClick={() => setSelectedRaceId(props._id)}
+              onClick={() =>
+                navigate(`/competitions/${competitionId}/races/${props._id}`)
+              }
             >
               View / Edit
             </Button>
@@ -3076,7 +3284,7 @@ const CompetitionRaces = () => {
         ),
       },
     ],
-    [boatClasses, categories, handleDeleteRace]
+    [boatClasses, categories, handleDeleteRace],
   );
 
   const sortedRaces = useMemo(() => {
@@ -3307,8 +3515,8 @@ const CompetitionRaces = () => {
                   const m = mId
                     ? raceAthleteLookup.get(mId)
                     : typeof member === "object"
-                    ? member
-                    : null;
+                      ? member
+                      : null;
                   const name = m ? formatAthleteName(m) : "Unknown";
                   let pos = "";
                   if (arr.length > 1) {
@@ -3346,8 +3554,8 @@ const CompetitionRaces = () => {
                   return mId
                     ? raceAthleteLookup.get(mId)
                     : typeof m === "object"
-                    ? m
-                    : null;
+                      ? m
+                      : null;
                 })
                 .filter(Boolean);
               license = members.map((m) => m.licenseNumber || "-").join("\n");
@@ -3355,7 +3563,7 @@ const CompetitionRaces = () => {
                 .map((m) =>
                   m.birthDate
                     ? new Date(m.birthDate).toLocaleDateString("en-GB")
-                    : "-"
+                    : "-",
                 )
                 .join("\n");
             }
@@ -3391,7 +3599,12 @@ const CompetitionRaces = () => {
             cellPadding: 3,
             font: fontName,
           },
-          margin: { left: leftMargin, right: 14 },
+          margin: {
+            left: leftMargin,
+            right: 14,
+            bottom: 30,
+            top: headerHeight,
+          },
           didDrawPage: (data) => {
             yPos = data.cursor.y;
           },
@@ -3412,13 +3625,13 @@ const CompetitionRaces = () => {
         // Progression Rule Box
         doc.setDrawColor(0);
         doc.setLineWidth(0.3);
-        doc.rect(leftMargin, yPos, 182, 10);
-        doc.setFontSize(9);
+        doc.rect(leftMargin, yPos, 182, 7);
+        doc.setFontSize(8);
         doc.setFont(fontName, "normal");
         doc.text(
           "Progression System: 1-2 to Final A, 3-4 to Final B, others eliminated.",
-          leftMargin + 3,
-          yPos + 6
+          leftMargin + 2,
+          yPos + 5,
         );
 
         // Collect clubs for this race (will be drawn in footer)
@@ -3475,7 +3688,7 @@ const CompetitionRaces = () => {
 
         // --- Club Legend Box (above footer) ---
         const pageClubs = pageClubsMap.get(i) || [];
-        if (pageClubs.length > 0) {
+        if (pageClubs.length > 0 && i === pageCount) {
           const clubs = [...pageClubs].sort((a, b) => {
             const codeA = a.code || "";
             const codeB = b.code || "";
@@ -3592,7 +3805,7 @@ const CompetitionRaces = () => {
       raceAthleteLookup,
       raceClubLookup,
       eventNumberMap,
-    ]
+    ],
   );
 
   const exportResultsPDF = useCallback(
@@ -3664,7 +3877,7 @@ const CompetitionRaces = () => {
 
       // --- Race Header (World Rowing Style) ---
       // 1. Competition Info (Location | Date)
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setFont(fontName, "normal");
       doc.setTextColor(0, 0, 0);
 
@@ -3688,11 +3901,11 @@ const CompetitionRaces = () => {
       doc.text(String(compTitle), center, yPos, { align: "center" });
       doc.text(String(dateStr), rightMargin, yPos, { align: "right" });
 
-      yPos += 3;
+      yPos += 2;
       doc.setLineWidth(0.5);
       doc.setDrawColor(0);
       doc.line(leftMargin, yPos, rightMargin, yPos);
-      yPos += 8;
+      yPos += 5;
 
       // 2. Event Header Row: Event Num | Results | Event Code
       const eventKey = `${categoryId}_${boatClassId || "null"}`;
@@ -3702,19 +3915,19 @@ const CompetitionRaces = () => {
         category?.number ||
         "1";
 
-      doc.setFontSize(16);
+      doc.setFontSize(14);
       doc.setFont(fontName, "bold");
       doc.text(String(eventNum), leftMargin, yPos);
 
-      doc.setFontSize(18);
+      doc.setFontSize(16);
       doc.text("Results", center, yPos, { align: "center" });
 
       const eventCode = generateRaceCode(category, boatClass);
-      doc.setFontSize(16);
+      doc.setFontSize(14);
       doc.text(String(eventCode), rightMargin, yPos, { align: "right" });
 
       // 3. Second Row: (Event) | Category Name | Phase
-      yPos += 6;
+      yPos += 4;
       doc.setFontSize(8);
       doc.setFont(fontName, "normal");
       doc.text("(Event)", leftMargin, yPos);
@@ -3723,7 +3936,7 @@ const CompetitionRaces = () => {
       const boatTitle = boatClass?.names?.en || "";
       const fullEventName = `${catTitle} ${boatTitle}`.trim();
 
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setFont(fontName, "bold");
       doc.text(fullEventName, center, yPos, { align: "center" });
 
@@ -3741,12 +3954,12 @@ const CompetitionRaces = () => {
         doc.setFont(arabicFontName, "normal");
         doc.text(fullEventNameAr, center, yPos, { align: "center" });
         doc.setFont(fontName, "normal");
-        yPos += 3;
+        yPos += 2;
       }
 
       // 4. Third Row: Start Time | As of Date | Race X
-      yPos += 5;
-      doc.setFontSize(10);
+      yPos += 3;
+      doc.setFontSize(9);
       doc.setFont(fontName, "normal");
 
       let startTimeStr = "09:00";
@@ -3764,7 +3977,7 @@ const CompetitionRaces = () => {
       doc.setFont(fontName, "bold");
       doc.text(`Race ${raceNum}`, rightMargin, yPos, { align: "right" });
 
-      yPos += 8;
+      yPos += 5;
 
       // Sort lanes by finish position (results)
       const sortedLanes = [...(race.lanes || [])].sort((a, b) => {
@@ -3778,7 +3991,7 @@ const CompetitionRaces = () => {
 
       // Find the winning time (first place)
       const winningTime = sortedLanes.find(
-        (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs
+        (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
       )?.result?.elapsedMs;
 
       // Build table data (World Rowing style)
@@ -3830,12 +4043,22 @@ const CompetitionRaces = () => {
           }
         }
 
-        return [position, lane.lane, clubCode, athleteName, timeDisplay];
+        const points =
+          status === "ok" ? calculatePoints(position, activeRankingSystem) : 0;
+
+        return [
+          position,
+          lane.lane,
+          clubCode,
+          athleteName,
+          timeDisplay,
+          points,
+        ];
       });
 
       autoTable(doc, {
         startY: yPos,
-        head: [["Rank", "Lane", "Club", "Name", "Time"]],
+        head: [["Rank", "Lane", "Club", "Name", "Time", "Points"]],
         body: tableBody,
         theme: "plain",
         headStyles: {
@@ -3850,18 +4073,19 @@ const CompetitionRaces = () => {
           lineWidth: 0,
         },
         columnStyles: {
-          0: { cellWidth: 15, halign: "center", fontStyle: "bold" },
-          1: { cellWidth: 15, halign: "center" },
-          2: { cellWidth: 30, fontStyle: "bold" },
+          0: { cellWidth: 14, halign: "center", fontStyle: "bold" },
+          1: { cellWidth: 14, halign: "center" },
+          2: { cellWidth: 25, fontStyle: "bold" },
           3: { cellWidth: "auto" },
-          4: { cellWidth: 30, halign: "right" },
+          4: { cellWidth: 35, halign: "right" },
+          5: { cellWidth: 20, halign: "center" },
         },
         styles: {
-          fontSize: 10,
-          cellPadding: 3,
+          fontSize: 8,
+          cellPadding: 1,
           font: fontName,
         },
-        margin: { left: leftMargin, right: 14 },
+        margin: { left: leftMargin, right: 14, bottom: 30, top: headerHeight },
         didDrawPage: (data) => {
           yPos = data.cursor.y;
         },
@@ -3882,10 +4106,10 @@ const CompetitionRaces = () => {
       // Progression Rule Box (optional for results)
       doc.setDrawColor(0);
       doc.setLineWidth(0.3);
-      doc.rect(leftMargin, yPos, 182, 10);
-      doc.setFontSize(9);
+      doc.rect(leftMargin, yPos, 182, 7);
+      doc.setFontSize(8);
       doc.setFont(fontName, "normal");
-      doc.text("Official Results - Times are final.", leftMargin + 3, yPos + 6);
+      doc.text("Official Results - Times are final.", leftMargin + 2, yPos + 5);
 
       // Collect clubs for legend
       const raceClubs = [];
@@ -3934,15 +4158,15 @@ const CompetitionRaces = () => {
         }
 
         // --- Club Legend Box (above footer) ---
-        if (raceClubs.length > 0) {
+        if (raceClubs.length > 0 && i === pageCount) {
           const clubs = [...raceClubs].sort((a, b) => {
             const codeA = a.code || "";
             const codeB = b.code || "";
             return codeA.localeCompare(codeB);
           });
 
-          const lineHeight = 5;
-          const boxHeight = clubs.length * lineHeight + 10;
+          const lineHeight = 4;
+          const boxHeight = clubs.length * lineHeight + 7;
           const legendY = pageHeight - 38 - boxHeight;
 
           doc.setDrawColor(0);
@@ -3957,7 +4181,7 @@ const CompetitionRaces = () => {
 
           // Club entries
           doc.setFontSize(8);
-          let clubY = legendY + 10;
+          let clubY = legendY + 9;
 
           for (const club of clubs) {
             const code = club.code || "---";
@@ -3980,7 +4204,7 @@ const CompetitionRaces = () => {
               doc.text(
                 " : " + arabicName,
                 leftMargin + 4 + codeWidth + frenchWidth,
-                clubY
+                clubY,
               );
               doc.setFont("helvetica", "normal");
             }
@@ -4001,7 +4225,7 @@ const CompetitionRaces = () => {
             leftMargin,
             pageHeight - h - 3,
             rightMargin,
-            pageHeight - h - 3
+            pageHeight - h - 3,
           );
           doc.addImage(footerData, "PNG", 0, pageHeight - h, w, h);
           doc.setFontSize(8);
@@ -4013,7 +4237,7 @@ const CompetitionRaces = () => {
             pageHeight - h - 6,
             {
               align: "right",
-            }
+            },
           );
         } else if (sponsorData) {
           const imgProps = doc.getImageProperties(sponsorData);
@@ -4031,7 +4255,7 @@ const CompetitionRaces = () => {
             leftMargin,
             pageHeight - h - 8,
             rightMargin,
-            pageHeight - h - 8
+            pageHeight - h - 8,
           );
           doc.addImage(sponsorData, "PNG", x, pageHeight - h - 3, w, h);
           doc.setFontSize(8);
@@ -4043,7 +4267,7 @@ const CompetitionRaces = () => {
             pageHeight - h - 11,
             {
               align: "right",
-            }
+            },
           );
         } else {
           doc.setDrawColor(128, 0, 0);
@@ -4063,8 +4287,8 @@ const CompetitionRaces = () => {
       doc.save(
         `Results_${competition?.code || "Comp"}_${raceCode}_${raceName.replace(
           /\s+/g,
-          "_"
-        )}.pdf`
+          "_",
+        )}.pdf`,
       );
     },
     [
@@ -4074,7 +4298,7 @@ const CompetitionRaces = () => {
       raceAthleteLookup,
       raceClubLookup,
       eventNumberMap,
-    ]
+    ],
   );
 
   // Export all results to a single PDF
@@ -4082,7 +4306,10 @@ const CompetitionRaces = () => {
     // Filter races that have results (completed or have times)
     const racesWithResults = sortedRaces.filter((race) => {
       const hasResults = race.lanes?.some(
-        (lane) => lane.time || lane.position || lane.status === "finished"
+        (lane) =>
+          lane.result?.finishPosition ||
+          lane.result?.elapsedMs ||
+          lane.result?.status === "ok",
       );
       return race.status === "completed" || hasResults;
     });
@@ -4282,31 +4509,40 @@ const CompetitionRaces = () => {
           : lane.athleteName || "-";
         const clubCode = clubData?.code || clubData?.name || "-";
 
+        const position = lane.result?.finishPosition;
+        const elapsedMs = lane.result?.elapsedMs;
+        const status = lane.result?.status || "ok";
+
         let timeStr = "-";
-        if (lane.time) {
-          const totalSeconds = parseFloat(lane.time);
-          const mins = Math.floor(totalSeconds / 60);
-          const secs = (totalSeconds % 60).toFixed(2).padStart(5, "0");
-          timeStr = mins > 0 ? `${mins}:${secs}` : secs;
+        if (status !== "ok") {
+          timeStr = status.toUpperCase();
+        } else if (elapsedMs) {
+          timeStr = formatElapsedTime(elapsedMs);
         }
 
+        const points =
+          position && status === "ok"
+            ? calculatePoints(position, activeRankingSystem)
+            : 0;
+
         return [
-          lane.position || "-",
+          position || "-",
           lane.lane || "-",
           clubCode,
           athleteName,
           timeStr,
+          points,
         ];
       });
 
       autoTable(doc, {
         startY: yPos,
-        head: [["Pos", "Lane", "Club", "Athlete", "Time"]],
+        head: [["Pos", "Lane", "Club", "Athlete", "Time", "Points"]],
         body: tableBody,
         theme: "plain",
         styles: {
-          fontSize: 9,
-          cellPadding: 2,
+          fontSize: 8,
+          cellPadding: 1,
           lineColor: [0, 0, 0],
           lineWidth: 0.1,
           font: fontName,
@@ -4320,13 +4556,14 @@ const CompetitionRaces = () => {
           font: fontName,
         },
         columnStyles: {
-          0: { halign: "center", cellWidth: 15 },
-          1: { halign: "center", cellWidth: 15 },
-          2: { halign: "center", cellWidth: 25 },
+          0: { halign: "center", cellWidth: 14 },
+          1: { halign: "center", cellWidth: 14 },
+          2: { halign: "center", cellWidth: 20 },
           3: { halign: "left", cellWidth: "auto" },
           4: { halign: "center", cellWidth: 30 },
+          5: { halign: "center", cellWidth: 20 },
         },
-        margin: { left: leftMargin, right: 14 },
+        margin: { left: leftMargin, right: 14, bottom: 30, top: headerHeight },
       });
     }
 
@@ -4377,7 +4614,7 @@ const CompetitionRaces = () => {
           leftMargin,
           pageHeight - h - 3,
           rightMargin,
-          pageHeight - h - 3
+          pageHeight - h - 3,
         );
         doc.addImage(footerData, "PNG", 0, pageHeight - h, w, h);
         doc.setFontSize(8);
@@ -4402,7 +4639,7 @@ const CompetitionRaces = () => {
           leftMargin,
           pageHeight - h - 8,
           rightMargin,
-          pageHeight - h - 8
+          pageHeight - h - 8,
         );
         doc.addImage(sponsorData, "PNG", x, pageHeight - h - 3, w, h);
         doc.setFontSize(8);
@@ -4414,7 +4651,7 @@ const CompetitionRaces = () => {
           pageHeight - h - 11,
           {
             align: "right",
-          }
+          },
         );
       } else {
         doc.setDrawColor(128, 0, 0);
@@ -4446,9 +4683,7 @@ const CompetitionRaces = () => {
     // Find entries for this category and populate the start list
     const sourceStats = statsOverride || registrationStats;
     if (sourceStats?.byCategory) {
-      const catData = sourceStats.byCategory.find(
-        (c) => c.id === categoryId
-      );
+      const catData = sourceStats.byCategory.find((c) => c.id === categoryId);
       if (catData) {
         const boatClassCounts = {};
 
@@ -4460,10 +4695,12 @@ const CompetitionRaces = () => {
             : [];
           // Always use active membership for club context, prioritizing standard clubs over promotion centers
           const activeMemberships = memberships.filter(
-            (membership) => membership?.status === "active" && membership.club
+            (membership) => membership?.status === "active" && membership.club,
           );
           // Try to find a 'club' type specifically, otherwise fall back to first active
-          const activeMembership = activeMemberships.find(m => m.club?.type === "club") || activeMemberships[0];
+          const activeMembership =
+            activeMemberships.find((m) => m.club?.type === "club") ||
+            activeMemberships[0];
           const resolvedClub =
             activeMembership?.club || entry.athlete?.club || entry.club || null;
 
@@ -4542,7 +4779,13 @@ const CompetitionRaces = () => {
 
         // Auto-select boat class if all entries share the same one
         const uniqueBoatClasses = new Set(
-          catData.entries.map((e) => e.boatClass?.id || (typeof e.boatClass === 'string' ? e.boatClass : null)).filter(Boolean)
+          catData.entries
+            .map(
+              (e) =>
+                e.boatClass?.id ||
+                (typeof e.boatClass === "string" ? e.boatClass : null),
+            )
+            .filter(Boolean),
         );
 
         setAutoGenState((prev) => {
@@ -4557,7 +4800,7 @@ const CompetitionRaces = () => {
 
           // If multiple boat classes, check if current selection is still valid
           if (prev.boatClass && uniqueBoatClasses.has(prev.boatClass)) {
-             return prev;
+            return prev;
           }
 
           // Otherwise reset if invalid or empty
@@ -4579,34 +4822,6 @@ const CompetitionRaces = () => {
           Invalid competition identifier supplied.
         </p>
       </div>
-    );
-  }
-
-  if (selectedRaceId) {
-    const race = races.find((r) => r._id === selectedRaceId);
-    return (
-      <RaceInfoView
-        race={race}
-        competition={competition}
-        categories={categories}
-        boatClasses={boatClasses}
-        onBack={() => {
-          setSelectedRaceId(null);
-          // Scroll to races section after state update
-          setTimeout(() => {
-            const section = document.getElementById("existing-races-section");
-            if (section) {
-              section.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
-          }, 100);
-        }}
-        raceAthleteLookup={raceAthleteLookup}
-        raceClubLookup={raceClubLookup}
-        onExportPDF={() => exportStartListPDF([race])}
-        onExportResultsPDF={() => exportResultsPDF(race)}
-        onSaveResults={saveRaceResults}
-        savingResults={savingResults}
-      />
     );
   }
 
@@ -4734,11 +4949,12 @@ const CompetitionRaces = () => {
                     <option value="">Select category</option>
                     {allowedCategories.map((category) => {
                       const id = toDocumentId(category);
-                      const label =
-                        category.abbreviation ||
-                        category.code ||
-                        category.titles?.en ||
-                        `Category ${id?.slice(-4)}`;
+                      const abbr = category.abbreviation || category.code || "";
+                      const fullName = category.titles?.en || "";
+                      // Show "Abbr - Full Name" for clarity
+                      const label = fullName
+                        ? `${abbr} - ${fullName}`
+                        : abbr || `Category ${id?.slice(-4)}`;
                       return (
                         <option key={id} value={id}>
                           {label}
@@ -4758,10 +4974,17 @@ const CompetitionRaces = () => {
                     <option value="">All boat classes</option>
                     {allowedBoatClasses.map((boatClass) => {
                       const id = toDocumentId(boatClass);
-                      const label =
-                        boatClass.code ||
-                        boatClass.names?.en ||
-                        `Boat class ${id?.slice(-4)}`;
+                      const code = boatClass.code || "";
+                      const fullName = boatClass.names?.en || "";
+                      const weight = boatClass.weightClass;
+                      // Show "Code - Full Name (Weight)" to distinguish open vs lightweight
+                      const weightSuffix =
+                        weight && weight !== "open"
+                          ? ` (${weight.charAt(0).toUpperCase() + weight.slice(1)})`
+                          : "";
+                      const label = fullName
+                        ? `${code} - ${fullName}${weightSuffix}`
+                        : code || `Boat class ${id?.slice(-4)}`;
                       return (
                         <option key={id} value={id}>
                           {label}
@@ -4789,7 +5012,7 @@ const CompetitionRaces = () => {
                     name="lanesPerRace"
                     type="number"
                     min="1"
-                    max="8"
+                    max={getMaxLanesForDiscipline(competition?.discipline)}
                     value={autoGenState.lanesPerRace}
                     onChange={handleAutoGenFieldChange}
                   />
@@ -4903,6 +5126,25 @@ const CompetitionRaces = () => {
                     Allow masters in senior category
                   </Label>
                 </div>
+                {(user?.role === "admin" ||
+                  user?.role === "jury_president") && (
+                  <div className="flex items-center gap-2 pb-2 text-blue-600">
+                    <input
+                      id="allowMultipleEntries"
+                      name="allowMultipleEntries"
+                      type="checkbox"
+                      checked={autoGenState.allowMultipleEntries}
+                      onChange={handleAutoGenFieldChange}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <Label
+                      htmlFor="allowMultipleEntries"
+                      className="text-sm font-medium"
+                    >
+                      Allow multiple entries per athlete
+                    </Label>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -4956,7 +5198,9 @@ const CompetitionRaces = () => {
                   onRemove={handleRemoveEntry}
                   onWithdraw={handleWithdrawEntry}
                   onDelete={handleDeleteEntry}
-                  isAdmin={user?.role === "admin" || user?.role === "jury_president"}
+                  isAdmin={
+                    user?.role === "admin" || user?.role === "jury_president"
+                  }
                 />
               </div>
 
@@ -4965,7 +5209,10 @@ const CompetitionRaces = () => {
                   type="button"
                   variant="secondary"
                   onClick={handleSaveEntries}
-                  disabled={Object.keys(dbEntryOverrides).length === 0 && entries.length === 0}
+                  disabled={
+                    Object.keys(dbEntryOverrides).length === 0 &&
+                    entries.length === 0
+                  }
                 >
                   Save Changes
                 </Button>
@@ -5057,19 +5304,19 @@ const CompetitionRaces = () => {
                       <option value="">Select lane</option>
                       {(() => {
                         const race = sortedRaces.find(
-                          (r) => r._id === swapState.sourceRaceId
+                          (r) => r._id === swapState.sourceRaceId,
                         );
                         if (!race) return null;
                         return Array.from({ length: 8 }, (_, i) => i + 1).map(
                           (laneNum) => {
                             const lane = race.lanes?.find(
-                              (l) => l.lane === laneNum
+                              (l) => l.lane === laneNum,
                             );
                             const label = lane
                               ? describeLane(
                                   lane,
                                   raceAthleteLookup,
-                                  raceClubLookup
+                                  raceClubLookup,
                                 )
                               : `${laneNum}. Empty`;
                             return (
@@ -5077,7 +5324,7 @@ const CompetitionRaces = () => {
                                 {label}
                               </option>
                             );
-                          }
+                          },
                         );
                       })()}
                     </Select>
@@ -5110,19 +5357,19 @@ const CompetitionRaces = () => {
                       <option value="">Select lane</option>
                       {(() => {
                         const race = sortedRaces.find(
-                          (r) => r._id === swapState.targetRaceId
+                          (r) => r._id === swapState.targetRaceId,
                         );
                         if (!race) return null;
                         return Array.from({ length: 8 }, (_, i) => i + 1).map(
                           (laneNum) => {
                             const lane = race.lanes?.find(
-                              (l) => l.lane === laneNum
+                              (l) => l.lane === laneNum,
                             );
                             const label = lane
                               ? describeLane(
                                   lane,
                                   raceAthleteLookup,
-                                  raceClubLookup
+                                  raceClubLookup,
                                 )
                               : `${laneNum}. Empty`;
                             return (
@@ -5130,7 +5377,7 @@ const CompetitionRaces = () => {
                                 {label}
                               </option>
                             );
-                          }
+                          },
                         );
                       })()}
                     </Select>

@@ -43,6 +43,35 @@ const LICENSE_ATTENTION_STATUSES = [
   "suspended",
 ];
 
+/**
+ * Capitalize the first letter of each word in a name (Latin characters only)
+ * e.g., "john doe" -> "John Doe", "JANE SMITH" -> "Jane Smith"
+ * Arabic or other non-Latin text is returned unchanged
+ */
+const capitalizeName = (name) => {
+  if (!name || typeof name !== "string") {
+    return name;
+  }
+
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  // Check if the text contains Latin letters (A-Za-z)
+  // If it doesn't (e.g., Arabic text), return as-is without modification
+  const hasLatinLetters = /[A-Za-z]/.test(trimmed);
+  if (!hasLatinLetters) {
+    return trimmed;
+  }
+
+  return trimmed
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
+
 const resolveUserId = (user) => {
   if (!user) {
     return undefined;
@@ -322,7 +351,7 @@ export const getAthleteStatistics = asyncHandler(async (req, res) => {
   if (clubId && mongoose.Types.ObjectId.isValid(clubId)) {
     const clubObjectId = new mongoose.Types.ObjectId(clubId);
     filters.memberships = { $elemMatch: { club: clubObjectId } };
-    
+
     // Also fetch club name for UI context
     const club = await Club.findById(clubObjectId).select("name").lean();
     clubName = club?.name;
@@ -400,7 +429,9 @@ export const getAthleteStatistics = asyncHandler(async (req, res) => {
           ...filters,
           memberships: {
             $elemMatch: {
-              club: clubId ? new mongoose.Types.ObjectId(clubId) : { $ne: null },
+              club: clubId
+                ? new mongoose.Types.ObjectId(clubId)
+                : { $ne: null },
               season: currentSeason,
               status: { $in: ["active", "pending"] },
             },
@@ -661,8 +692,8 @@ export const createAthlete = asyncHandler(async (req, res) => {
 
     try {
       const athlete = await Athlete.create({
-        firstName,
-        lastName,
+        firstName: capitalizeName(firstName),
+        lastName: capitalizeName(lastName),
         firstNameAr: normalizeArabic(firstNameAr),
         lastNameAr: normalizeArabic(lastNameAr),
         birthDate,
@@ -828,11 +859,11 @@ export const updateAthlete = asyncHandler(async (req, res) => {
   }
 
   if (firstName !== undefined) {
-    athlete.firstName = firstName;
+    athlete.firstName = capitalizeName(firstName);
   }
 
   if (lastName !== undefined) {
-    athlete.lastName = lastName;
+    athlete.lastName = capitalizeName(lastName);
   }
 
   if (firstNameAr !== undefined) {
@@ -880,10 +911,42 @@ export const updateAthlete = asyncHandler(async (req, res) => {
   const requestedClubId = membership?.clubId;
   const previousClubId = membership?.previousClubId;
 
+  // Helper to normalize club ID for comparison
+  const normalizeClubIdForComparison = (value) => {
+    if (!value) return undefined;
+    if (value instanceof mongoose.Types.ObjectId) return value.toString();
+    if (typeof value === "string" && mongoose.Types.ObjectId.isValid(value)) {
+      return new mongoose.Types.ObjectId(value).toString();
+    }
+    if (typeof value === "object" && value !== null && value._id) {
+      return value._id.toString();
+    }
+    return undefined;
+  };
+
+  // Check if club manager is trying to reassign athlete to a different club
   if (requestedClubId && req.user?.role !== "admin") {
-    return res.status(403).json({
-      message: "Only administrators can reassign athlete clubs",
-    });
+    const normalizedRequestedClubId =
+      normalizeClubIdForComparison(requestedClubId);
+
+    // Find the athlete's current active/pending membership
+    const currentActiveMembership = athlete.memberships?.find(
+      (m) => m.status === "active" || m.status === "pending"
+    );
+    const currentClubId = currentActiveMembership
+      ? normalizeClubIdForComparison(currentActiveMembership.club)
+      : undefined;
+
+    // Only block if it's actually a club reassignment (different club)
+    if (
+      normalizedRequestedClubId &&
+      currentClubId &&
+      normalizedRequestedClubId !== currentClubId
+    ) {
+      return res.status(403).json({
+        message: "Only administrators can reassign athlete clubs",
+      });
+    }
   }
 
   const normalizeIncomingClubId = (value) => {
@@ -1900,8 +1963,8 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
             const licenseNumber = `${licenseSequence}-${yearSuffix}`;
 
             const newAthlete = new Athlete({
-              firstName,
-              lastName,
+              firstName: capitalizeName(firstName),
+              lastName: capitalizeName(lastName),
               firstNameAr,
               lastNameAr,
               birthDate,
@@ -2640,14 +2703,14 @@ export const updateAthleteMemberships = asyncHandler(async (req, res) => {
 
 export const triggerPhotoImport = asyncHandler(async (req, res) => {
   try {
-      // Run synchronously to return summary
-      const result = await importPhotos({ useExistingConnection: true });
-      res.json({ 
-          message: "Photo import process completed",
-          summary: result 
-      });
+    // Run synchronously to return summary
+    const result = await importPhotos({ useExistingConnection: true });
+    res.json({
+      message: "Photo import process completed",
+      summary: result,
+    });
   } catch (error) {
-      res.status(500);
-      throw new Error(`Import failed: ${error.message}`);
+    res.status(500);
+    throw new Error(`Import failed: ${error.message}`);
   }
 });

@@ -182,6 +182,19 @@ export const createBoatClass = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: error.message });
   }
 
+  // Check for duplicate code within the same discipline and weight class
+  const effectiveWeightClass = weightClass || "open";
+  const existingBoatClass = await BoatClass.findOne({
+    code: uppercaseCode,
+    discipline,
+    weightClass: effectiveWeightClass,
+  });
+  if (existingBoatClass) {
+    return res.status(400).json({
+      message: `A boat class with code "${uppercaseCode}" already exists for ${discipline} discipline with ${effectiveWeightClass} weight class`,
+    });
+  }
+
   const boatClass = await BoatClass.create({
     code: uppercaseCode,
     discipline,
@@ -328,6 +341,19 @@ export const updateBoatClass = asyncHandler(async (req, res) => {
     boatClass.tags = Array.isArray(tags)
       ? tags.map((tag) => tag?.toString().trim()).filter(Boolean)
       : [];
+  }
+
+  // Check for duplicate code within the same discipline and weight class (excluding current record)
+  const existingBoatClass = await BoatClass.findOne({
+    _id: { $ne: boatClass._id },
+    code: boatClass.code,
+    discipline: boatClass.discipline,
+    weightClass: boatClass.weightClass,
+  });
+  if (existingBoatClass) {
+    return res.status(400).json({
+      message: `A boat class with code "${boatClass.code}" already exists for ${boatClass.discipline} discipline with ${boatClass.weightClass} weight class`,
+    });
   }
 
   await boatClass.save();

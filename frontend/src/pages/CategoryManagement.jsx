@@ -31,7 +31,7 @@ const STATUS_BADGE_STYLES = {
 const DEFAULT_FORM = {
   type: "national",
   abbreviation: "",
-  gender: "",
+  gender: "men",
   minAge: "",
   maxAge: "",
   titleEn: "",
@@ -60,7 +60,7 @@ const CategoryManagement = () => {
   const [editingCategoryId, setEditingCategoryId] = useState(null);
 
   const [recalculateSeason, setRecalculateSeason] = useState(() =>
-    new Date().getFullYear().toString()
+    new Date().getFullYear().toString(),
   );
   const [recalculateSubmitting, setRecalculateSubmitting] = useState(false);
 
@@ -88,7 +88,7 @@ const CategoryManagement = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
 
       if (!response.ok) {
@@ -146,7 +146,7 @@ const CategoryManagement = () => {
         }
         return accumulator;
       },
-      { men: 0, women: 0, mixed: 0 }
+      { men: 0, women: 0, mixed: 0 },
     );
 
     return {
@@ -217,7 +217,7 @@ const CategoryManagement = () => {
     const payload = {
       type: formState.type,
       abbreviation: formState.abbreviation.trim(),
-      gender: formState.gender || "mixed",
+      gender: formState.gender,
       minAge: parseAgeValue(formState.minAge),
       maxAge: parseAgeValue(formState.maxAge),
       titles: {
@@ -255,7 +255,7 @@ const CategoryManagement = () => {
 
     const payload = {
       abbreviation: formState.abbreviation.trim(),
-      gender: formState.gender || "mixed",
+      gender: formState.gender,
       minAge: parseAgeValue(formState.minAge),
       maxAge: parseAgeValue(formState.maxAge),
       titles: {
@@ -275,7 +275,7 @@ const CategoryManagement = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(payload),
-      }
+      },
     );
 
     const result = await response.json().catch(() => ({}));
@@ -319,7 +319,7 @@ const CategoryManagement = () => {
         return;
       }
       const confirmed = window.confirm(
-        `Delete category ${category.abbreviation}? This action cannot be undone.`
+        `Delete category ${category.abbreviation}? This action cannot be undone.`,
       );
       if (!confirmed) {
         return;
@@ -333,7 +333,7 @@ const CategoryManagement = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
 
         const result = await response.json().catch(() => ({}));
@@ -349,7 +349,7 @@ const CategoryManagement = () => {
         toast.error(error.message);
       }
     },
-    [token]
+    [token],
   );
 
   const handleToggleActive = useCallback(
@@ -368,7 +368,7 @@ const CategoryManagement = () => {
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ isActive: !category.isActive }),
-          }
+          },
         );
 
         const result = await response.json().catch(() => ({}));
@@ -378,7 +378,7 @@ const CategoryManagement = () => {
         }
 
         toast.success(
-          `Category ${!category.isActive ? "activated" : "deactivated"}`
+          `Category ${!category.isActive ? "activated" : "deactivated"}`,
         );
         setRefreshKey((previous) => previous + 1);
       } catch (error) {
@@ -386,7 +386,7 @@ const CategoryManagement = () => {
         toast.error(error.message);
       }
     },
-    [token]
+    [token],
   );
 
   const handleRecalculate = async () => {
@@ -409,7 +409,7 @@ const CategoryManagement = () => {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(payload),
-        }
+        },
       );
 
       const result = await response.json().catch(() => ({}));
@@ -419,7 +419,7 @@ const CategoryManagement = () => {
       }
 
       toast.success(
-        `Recalculated national categories for season ${result.season}`
+        `Recalculated national categories for season ${result.season}`,
       );
       setRefreshKey((previous) => previous + 1);
     } catch (error) {
@@ -477,7 +477,7 @@ const CategoryManagement = () => {
       <span
         className={clsx(
           "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",
-          STATUS_BADGE_STYLES[key]
+          STATUS_BADGE_STYLES[key],
         )}
       >
         {label}
@@ -517,7 +517,7 @@ const CategoryManagement = () => {
         </div>
       );
     },
-    [handleDeleteCategory, handleToggleActive, openEditDialog]
+    [handleDeleteCategory, handleToggleActive, openEditDialog],
   );
 
   const gridColumns = useMemo(
@@ -557,7 +557,7 @@ const CategoryManagement = () => {
         template: renderActionsCell,
       },
     ],
-    [renderActionsCell, renderAgeCell, renderStatusCell, renderTitlesCell]
+    [renderActionsCell, renderAgeCell, renderStatusCell, renderTitlesCell],
   );
 
   return (
@@ -777,7 +777,7 @@ const CategoryManagement = () => {
                     onChange={handleFormChange}
                   >
                     {CATEGORY_GENDER_OPTIONS.filter(
-                      (option) => option.value !== "all"
+                      (option) => option.value !== "all",
                     ).map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -869,8 +869,8 @@ const CategoryManagement = () => {
                       ? "Creating..."
                       : "Saving..."
                     : dialogMode === "create"
-                    ? "Create"
-                    : "Save changes"}
+                      ? "Create"
+                      : "Save changes"}
                 </Button>
               </div>
             </form>

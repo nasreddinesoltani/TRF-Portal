@@ -189,17 +189,35 @@ export const syncPresets = async (req, res) => {
 /**
  * Calculate ranking for a competition
  * GET /api/rankings/competition/:competitionId
+ * Query params:
+ *   - systemId: Ranking system ID
+ *   - summary: "true" for simplified view
+ *   - includeMasters: "true" or "false" to include/exclude masters categories
  */
 export const getCompetitionRanking = async (req, res) => {
   try {
     const { competitionId } = req.params;
-    const { systemId, summary } = req.query;
+    const { systemId, summary, includeMasters } = req.query;
+
+    // Build options from query params
+    const options = {};
+    if (includeMasters !== undefined) {
+      options.includeMasters = includeMasters === "true";
+    }
 
     let ranking;
     if (summary === "true") {
-      ranking = await getRankingSummary(competitionId, systemId || null);
+      ranking = await getRankingSummary(
+        competitionId,
+        systemId || null,
+        options
+      );
     } else {
-      ranking = await buildCompetitionRanking(competitionId, systemId || null);
+      ranking = await buildCompetitionRanking(
+        competitionId,
+        systemId || null,
+        options
+      );
     }
 
     res.json(ranking);

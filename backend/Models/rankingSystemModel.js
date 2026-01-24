@@ -24,11 +24,22 @@ export const JOURNEY_MODE_OPTIONS = [
   "best_n", // Best N results count (requires bestNCount field)
 ];
 
-// Point attribution mode
-export const POINT_MODE_OPTIONS = [
-  "skiff_athlete", // Skiff (1-person) boats: points go to athlete
-  "crew_club", // Crew boats: points go to club
-  "mixed", // Automatic based on crewSize: skiff → athlete, crew → club
+// Entity type - who gets the points
+export const ENTITY_TYPE_OPTIONS = [
+  "club", // Points go to club (aggregates all athletes)
+  "athlete", // Points go to individual athletes
+];
+
+// Boat class filter - which boats count
+export const BOAT_CLASS_FILTER_OPTIONS = [
+  "all", // All boat classes count
+  "skiff_only", // Only single-person boats (crewSize === 1)
+];
+
+// Scoring mode - how to rank
+export const SCORING_MODE_OPTIONS = [
+  "points", // Use point table (1st=20, 2nd=12, etc.)
+  "medals", // Count medals (gold/silver/bronze) - sorted by most golds, then silvers, then bronzes
 ];
 
 // Standard point table (position → points)
@@ -137,11 +148,35 @@ const rankingSystemSchema = new mongoose.Schema(
       default: null, // Only used when journeyMode = "best_n"
     },
 
-    // === Point Attribution ===
-    pointMode: {
+    // === Entity Type ===
+    // Who gets the points: clubs or individual athletes
+    entityType: {
       type: String,
-      enum: POINT_MODE_OPTIONS,
-      default: "mixed",
+      enum: ENTITY_TYPE_OPTIONS,
+      default: "club",
+    },
+
+    // === Boat Class Filter ===
+    // Which boats count toward this ranking
+    boatClassFilter: {
+      type: String,
+      enum: BOAT_CLASS_FILTER_OPTIONS,
+      default: "all",
+    },
+
+    // === Scoring Mode ===
+    // How to calculate ranking: points (accumulate point table) or medals (count 1st/2nd/3rd)
+    scoringMode: {
+      type: String,
+      enum: SCORING_MODE_OPTIONS,
+      default: "points",
+    },
+
+    // === Masters Inclusion ===
+    // Default setting for including masters categories (can be overridden at runtime)
+    includeMastersDefault: {
+      type: Boolean,
+      default: true,
     },
 
     // === Point Table ===

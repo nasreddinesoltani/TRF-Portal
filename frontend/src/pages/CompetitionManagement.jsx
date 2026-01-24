@@ -37,6 +37,7 @@ const STATUS_OPTIONS = [
   { value: "all", label: "Any status" },
   { value: "draft", label: "Draft" },
   { value: "published", label: "Published" },
+  { value: "completed", label: "Completed" },
   { value: "archived", label: "Archived" },
 ];
 
@@ -55,6 +56,7 @@ const RESULTS_STATUS_LABELS = {
 const STATUS_BADGES = {
   draft: "bg-slate-100 text-slate-600 border border-slate-200",
   published: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  completed: "bg-blue-50 text-blue-700 border border-blue-200",
   archived: "bg-amber-50 text-amber-600 border border-amber-200",
 };
 
@@ -330,7 +332,7 @@ const CompetitionManagement = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
 
       const payload = await response.json().catch(() => ({}));
@@ -341,8 +343,8 @@ const CompetitionManagement = () => {
       const items = Array.isArray(payload)
         ? payload
         : Array.isArray(payload?.items)
-        ? payload.items
-        : [];
+          ? payload.items
+          : [];
       setCompetitions(items);
     } catch (error) {
       console.error("Failed to load competitions", error);
@@ -381,12 +383,12 @@ const CompetitionManagement = () => {
 
       if (categoriesResponse.ok) {
         setCategories(
-          Array.isArray(categoriesPayload) ? categoriesPayload : []
+          Array.isArray(categoriesPayload) ? categoriesPayload : [],
         );
       }
       if (boatClassesResponse.ok) {
         setBoatClasses(
-          Array.isArray(boatClassesPayload) ? boatClassesPayload : []
+          Array.isArray(boatClassesPayload) ? boatClassesPayload : [],
         );
       }
     } catch (error) {
@@ -460,7 +462,7 @@ const CompetitionManagement = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -489,22 +491,22 @@ const CompetitionManagement = () => {
               : "",
           allowUpCategory: Boolean(payload.allowUpCategory),
           registrationOpenAt: formatDateInput(
-            payload.registrationWindow?.openAt
+            payload.registrationWindow?.openAt,
           ),
           registrationCloseAt: formatDateInput(
-            payload.registrationWindow?.closeAt
+            payload.registrationWindow?.closeAt,
           ),
           notes: payload.notes || "",
           allowedCategories: Array.isArray(payload.allowedCategories)
             ? payload.allowedCategories.map(
                 (category) =>
-                  category?._id?.toString?.() || category?.toString?.() || ""
+                  category?._id?.toString?.() || category?.toString?.() || "",
               )
             : [],
           allowedBoatClasses: Array.isArray(payload.allowedBoatClasses)
             ? payload.allowedBoatClasses.map(
                 (boatClass) =>
-                  boatClass?._id?.toString?.() || boatClass?.toString?.() || ""
+                  boatClass?._id?.toString?.() || boatClass?.toString?.() || "",
               )
             : [],
         });
@@ -514,15 +516,22 @@ const CompetitionManagement = () => {
         toast.error(error.message);
       }
     },
-    [canManage, token]
+    [canManage, token],
   );
 
   const handleInputChange = useCallback((event) => {
     const { name, value, type, checked } = event.target;
-    setFormState((previous) => ({
-      ...previous,
-      [name]: type === "checkbox" ? checked : value,
-    }));
+    setFormState((previous) => {
+      const newState = {
+        ...previous,
+        [name]: type === "checkbox" ? checked : value,
+      };
+      // Clear allowed boat classes when discipline changes (they may not be valid for new discipline)
+      if (name === "discipline" && value !== previous.discipline) {
+        newState.allowedBoatClasses = [];
+      }
+      return newState;
+    });
   }, []);
 
   const handleMultiToggle = useCallback((field, value) => {
@@ -632,7 +641,7 @@ const CompetitionManagement = () => {
       } else if (editingId) {
         await submitCompetition(
           "PUT",
-          `${API_BASE_URL}/api/competitions/${editingId}`
+          `${API_BASE_URL}/api/competitions/${editingId}`,
         );
         toast.success("Competition updated");
       }
@@ -659,7 +668,7 @@ const CompetitionManagement = () => {
           `${API_BASE_URL}/api/competitions/${competitionId}/races`,
           {
             headers: { Authorization: `Bearer ${token}` },
-          }
+          },
         );
         if (racesRes.ok) {
           const racesData = await racesRes.json();
@@ -667,8 +676,9 @@ const CompetitionManagement = () => {
           raceCount = races.length;
           hasResults = races.some((race) =>
             race.lanes?.some(
-              (lane) => lane.time || lane.position || lane.status === "finished"
-            )
+              (lane) =>
+                lane.time || lane.position || lane.status === "finished",
+            ),
           );
         }
       } catch (err) {
@@ -702,7 +712,7 @@ const CompetitionManagement = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -715,7 +725,7 @@ const CompetitionManagement = () => {
         toast.error(error.message);
       }
     },
-    [canManage, token]
+    [canManage, token],
   );
 
   const handleStatusUpdate = useCallback(
@@ -733,12 +743,12 @@ const CompetitionManagement = () => {
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify(updates),
-          }
+          },
         );
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(
-            data.message || "Failed to update competition status"
+            data.message || "Failed to update competition status",
           );
         }
         toast.success("Competition status updated");
@@ -748,7 +758,7 @@ const CompetitionManagement = () => {
         toast.error(error.message);
       }
     },
-    [canManage, token]
+    [canManage, token],
   );
 
   const handleCompetitionRowSelected = useCallback(
@@ -758,7 +768,7 @@ const CompetitionManagement = () => {
         focusCompetitionDetails(id, { scroll: true });
       }
     },
-    [focusCompetitionDetails]
+    [focusCompetitionDetails],
   );
 
   const handleCompetitionRowDeselected = useCallback(
@@ -768,7 +778,7 @@ const CompetitionManagement = () => {
         focusCompetitionDetails(null);
       }
     },
-    [focusCompetitionDetails, selectedCompetitionId]
+    [focusCompetitionDetails, selectedCompetitionId],
   );
 
   const filteredCompetitions = useMemo(() => {
@@ -797,7 +807,7 @@ const CompetitionManagement = () => {
     }
     return (
       filteredCompetitions.find(
-        (item) => toDocumentId(item) === selectedCompetitionId
+        (item) => toDocumentId(item) === selectedCompetitionId,
       ) || null
     );
   }, [filteredCompetitions, selectedCompetitionId]);
@@ -808,7 +818,7 @@ const CompetitionManagement = () => {
 
   const registrationState = useMemo(
     () => computeRegistrationState(selectedCompetition),
-    [selectedCompetition]
+    [selectedCompetition],
   );
 
   const selectedCompetitionRegistrationOpen = registrationState.isOpen;
@@ -840,7 +850,7 @@ const CompetitionManagement = () => {
     }
 
     const exists = filteredCompetitions.some(
-      (item) => toDocumentId(item) === selectedCompetitionId
+      (item) => toDocumentId(item) === selectedCompetitionId,
     );
 
     if (!exists) {
@@ -873,7 +883,7 @@ const CompetitionManagement = () => {
         accumulator[key] = (accumulator[key] || 0) + 1;
         return accumulator;
       },
-      { draft: 0, published: 0, archived: 0, unknown: 0 }
+      { draft: 0, published: 0, archived: 0, unknown: 0 },
     );
     const upcoming = filteredCompetitions.filter((item) => {
       if (!item.startDate) {
@@ -890,7 +900,7 @@ const CompetitionManagement = () => {
     }
     return describeScheduleStatus(
       selectedCompetition.startDate,
-      selectedCompetition.endDate
+      selectedCompetition.endDate,
     );
   }, [selectedCompetition]);
 
@@ -962,13 +972,23 @@ const CompetitionManagement = () => {
       .filter(Boolean);
   }, [boatClassMap, selectedCompetition]);
 
+  // Filter boat classes by the selected discipline in the form
+  const filteredBoatClasses = useMemo(() => {
+    if (!formState.discipline) {
+      return boatClasses;
+    }
+    return boatClasses.filter(
+      (boatClass) => boatClass.discipline === formState.discipline,
+    );
+  }, [boatClasses, formState.discipline]);
+
   const selectedDisciplineLabel = useMemo(() => {
     if (!selectedCompetition?.discipline) {
       return null;
     }
     return (
       DISCIPLINE_OPTIONS.find(
-        (option) => option.value === selectedCompetition.discipline
+        (option) => option.value === selectedCompetition.discipline,
       )?.label || selectedCompetition.discipline
     );
   }, [selectedCompetition]);
@@ -979,7 +999,7 @@ const CompetitionManagement = () => {
     }
     return (
       COMPETITION_TYPES.find(
-        (option) => option.value === selectedCompetition.competitionType
+        (option) => option.value === selectedCompetition.competitionType,
       )?.label || selectedCompetition.competitionType
     );
   }, [selectedCompetition]);
@@ -1021,7 +1041,7 @@ const CompetitionManagement = () => {
         <span
           className={clsx(
             "inline-flex w-fit items-center rounded-full px-3 py-1 font-semibold",
-            statusClass
+            statusClass,
           )}
         >
           {competition.status || "Draft"}
@@ -1062,11 +1082,11 @@ const CompetitionManagement = () => {
     }
     const disciplineLabel =
       DISCIPLINE_OPTIONS.find(
-        (option) => option.value === competition.discipline
+        (option) => option.value === competition.discipline,
       )?.label || competition.discipline;
     const typeLabel =
       COMPETITION_TYPES.find(
-        (option) => option.value === competition.competitionType
+        (option) => option.value === competition.competitionType,
       )?.label || competition.competitionType;
     return (
       <div className="flex flex-col gap-1 text-xs text-slate-600">
@@ -1104,7 +1124,7 @@ const CompetitionManagement = () => {
                 }
               >
                 🏖️ Beach Sprint
-              </Button>
+              </Button>,
             );
           } else {
             actions.push(
@@ -1115,7 +1135,7 @@ const CompetitionManagement = () => {
                 onClick={() => navigate(`/competitions/${competitionId}/races`)}
               >
                 Plan races
-              </Button>
+              </Button>,
             );
           }
           actions.push(
@@ -1128,7 +1148,7 @@ const CompetitionManagement = () => {
               }
             >
               🏆 Rankings
-            </Button>
+            </Button>,
           );
         }
         actions.push(
@@ -1139,7 +1159,7 @@ const CompetitionManagement = () => {
             onClick={() => openEditDialog(competition._id)}
           >
             Edit
-          </Button>
+          </Button>,
         );
         if (competition.status !== "published") {
           actions.push(
@@ -1155,7 +1175,7 @@ const CompetitionManagement = () => {
               }
             >
               Publish
-            </Button>
+            </Button>,
           );
         }
         if (competition.registrationStatus !== "closed") {
@@ -1171,7 +1191,7 @@ const CompetitionManagement = () => {
               }
             >
               Close registration
-            </Button>
+            </Button>,
           );
         }
         if (competition.resultsStatus !== "official") {
@@ -1187,7 +1207,7 @@ const CompetitionManagement = () => {
               }
             >
               Mark official
-            </Button>
+            </Button>,
           );
         }
         actions.push(
@@ -1198,7 +1218,7 @@ const CompetitionManagement = () => {
             onClick={() => handleDelete(competition._id)}
           >
             Delete
-          </Button>
+          </Button>,
         );
       } else {
         if (competitionId && registrationState.isOpen) {
@@ -1212,7 +1232,7 @@ const CompetitionManagement = () => {
               }
             >
               Register athletes
-            </Button>
+            </Button>,
           );
         }
         if (competitionId) {
@@ -1226,7 +1246,7 @@ const CompetitionManagement = () => {
               }
             >
               View details
-            </Button>
+            </Button>,
           );
         }
       }
@@ -1243,7 +1263,7 @@ const CompetitionManagement = () => {
       navigate,
       openEditDialog,
       focusCompetitionDetails,
-    ]
+    ],
   );
 
   const columns = useMemo(
@@ -1274,7 +1294,7 @@ const CompetitionManagement = () => {
       renderDisciplineCell,
       renderScheduleCell,
       renderStatusCell,
-    ]
+    ],
   );
 
   return (
@@ -1426,7 +1446,7 @@ const CompetitionManagement = () => {
                   <p className="text-sm text-slate-500">
                     {formatDateRange(
                       selectedCompetition.startDate,
-                      selectedCompetition.endDate
+                      selectedCompetition.endDate,
                     )}
                     {locationLabel ? ` • ${locationLabel}` : ""}
                   </p>
@@ -1443,7 +1463,7 @@ const CompetitionManagement = () => {
                       className={clsx(
                         "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",
                         STATUS_BADGES[selectedCompetition.status] ||
-                          STATUS_BADGES.draft
+                          STATUS_BADGES.draft,
                       )}
                     >
                       {selectedCompetition.status || "Draft"}
@@ -1452,7 +1472,7 @@ const CompetitionManagement = () => {
                       className={clsx(
                         "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",
                         REGISTRATION_BADGES[registrationState.key] ||
-                          REGISTRATION_BADGES.not_open
+                          REGISTRATION_BADGES.not_open,
                       )}
                     >
                       Registration • {registrationState.label || "Unknown"}
@@ -1461,7 +1481,7 @@ const CompetitionManagement = () => {
                       className={clsx(
                         "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",
                         RESULTS_BADGES[selectedCompetition.resultsStatus] ||
-                          RESULTS_BADGES.pending
+                          RESULTS_BADGES.pending,
                       )}
                     >
                       Results •{" "}
@@ -1612,7 +1632,7 @@ const CompetitionManagement = () => {
                         onClick={() =>
                           selectedCompetitionRegistrationOpen
                             ? navigate(
-                                `/competitions/${selectedCompetitionDocumentId}/register`
+                                `/competitions/${selectedCompetitionDocumentId}/register`,
                               )
                             : null
                         }
@@ -1736,8 +1756,8 @@ const CompetitionManagement = () => {
                   {dialogMode === "create"
                     ? "Create competition"
                     : canManage
-                    ? "Edit competition"
-                    : "Competition details"}
+                      ? "Edit competition"
+                      : "Competition details"}
                 </h2>
                 <p className="text-sm text-slate-500">
                   Localise the event name, define the season, and configure
@@ -1793,7 +1813,7 @@ const CompetitionManagement = () => {
                     disabled={!canManage}
                   >
                     {DISCIPLINE_OPTIONS.filter(
-                      (option) => option.value !== "all"
+                      (option) => option.value !== "all",
                     ).map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -1997,12 +2017,12 @@ const CompetitionManagement = () => {
                           <input
                             type="checkbox"
                             checked={formState.allowedCategories.includes(
-                              category._id
+                              category._id,
                             )}
                             onChange={() =>
                               handleMultiToggle(
                                 "allowedCategories",
-                                category._id
+                                category._id,
                               )
                             }
                             disabled={!canManage}
@@ -2020,37 +2040,50 @@ const CompetitionManagement = () => {
                 <fieldset className="space-y-2 rounded-xl border border-slate-200 p-4">
                   <legend className="text-sm font-semibold text-slate-700">
                     Allowed boat classes
+                    {formState.discipline && (
+                      <span className="ml-1 font-normal text-slate-400">
+                        ({formState.discipline})
+                      </span>
+                    )}
                   </legend>
                   <div className="max-h-48 space-y-1 overflow-y-auto pr-1 text-sm text-slate-600">
-                    {boatClasses.length === 0 ? (
+                    {filteredBoatClasses.length === 0 ? (
                       <p className="text-xs text-slate-400">
-                        No boat classes available.
+                        No boat classes available for this discipline.
                       </p>
                     ) : (
-                      boatClasses.map((boatClass) => (
-                        <label
-                          key={boatClass._id}
-                          className="flex items-center gap-2"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={formState.allowedBoatClasses.includes(
-                              boatClass._id
-                            )}
-                            onChange={() =>
-                              handleMultiToggle(
-                                "allowedBoatClasses",
-                                boatClass._id
-                              )
-                            }
-                            disabled={!canManage}
-                          />
-                          <span>
-                            {boatClass.code} •{" "}
-                            {boatClass.names?.en || "Unnamed"}
-                          </span>
-                        </label>
-                      ))
+                      filteredBoatClasses.map((boatClass) => {
+                        const weightLabel =
+                          boatClass.weightClass &&
+                          boatClass.weightClass !== "open"
+                            ? ` (${boatClass.weightClass})`
+                            : "";
+                        return (
+                          <label
+                            key={boatClass._id}
+                            className="flex items-center gap-2"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={formState.allowedBoatClasses.includes(
+                                boatClass._id,
+                              )}
+                              onChange={() =>
+                                handleMultiToggle(
+                                  "allowedBoatClasses",
+                                  boatClass._id,
+                                )
+                              }
+                              disabled={!canManage}
+                            />
+                            <span>
+                              {boatClass.code} •{" "}
+                              {boatClass.names?.en || "Unnamed"}
+                              {weightLabel}
+                            </span>
+                          </label>
+                        );
+                      })
                     )}
                   </div>
                 </fieldset>
@@ -2086,8 +2119,8 @@ const CompetitionManagement = () => {
                         ? "Creating..."
                         : "Saving..."
                       : dialogMode === "create"
-                      ? "Create"
-                      : "Save changes"}
+                        ? "Create"
+                        : "Save changes"}
                   </Button>
                 </div>
               ) : null}

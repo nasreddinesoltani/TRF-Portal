@@ -68,6 +68,15 @@ app.use("/api/beach-sprint", beachSprintRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({
+        message: "File too large. Maximum size allowed is 10MB.",
+      });
+    }
+    return res.status(400).json({ message: err.message });
+  }
+
   const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
   res.status(statusCode);
   res.json({

@@ -21,7 +21,7 @@ const ALL_CATEGORY_GENDERS = Object.values(CATEGORY_GENDERS);
 
 const ensureCategoriesInCache = async (
   cache,
-  type = CATEGORY_TYPES.national
+  type = CATEGORY_TYPES.national,
 ) => {
   if (!cache[type]) {
     cache[type] = (
@@ -30,7 +30,7 @@ const ensureCategoriesInCache = async (
         .lean()
     ).filter(
       (category) =>
-        !category?.gender || ALL_CATEGORY_GENDERS.includes(category.gender)
+        !category?.gender || ALL_CATEGORY_GENDERS.includes(category.gender),
     );
   }
   return cache[type];
@@ -67,6 +67,58 @@ export const calculateAgeOnSeasonCutoff = (birthDate, seasonYear) => {
   return age;
 };
 
+/**
+ * Check if a category is a "secondary" adult category (U23, Master).
+ * These should not be assigned by default - Senior should be preferred.
+ * Athletes can still compete in these categories at race registration time.
+ */
+const isSecondaryAdultCategory = (category) => {
+  const abbr = (category.abbreviation || "").toLowerCase();
+  const titleEn = (category.titles?.en || "").toLowerCase();
+
+  // U23 / Under 23 categories (BM, BW, BMix)
+  if (
+    abbr === "bm" ||
+    abbr === "bw" ||
+    abbr === "bmix" ||
+    titleEn.includes("under 23") ||
+    titleEn.includes("u23")
+  ) {
+    return true;
+  }
+
+  // Master categories (contain age ranges like 27-35, 36-42, etc.)
+  if (
+    titleEn.includes("master") ||
+    abbr.includes("27") ||
+    abbr.includes("35") ||
+    abbr.includes("43") ||
+    abbr.includes("50")
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+/**
+ * Check if a category is a primary Senior category.
+ */
+const isSeniorCategory = (category) => {
+  const abbr = (category.abbreviation || "").toLowerCase();
+  const titleEn = (category.titles?.en || "").toLowerCase();
+
+  // Senior categories: M, W, SM, SW, SMix
+  return (
+    abbr === "m" ||
+    abbr === "w" ||
+    abbr === "sm" ||
+    abbr === "sw" ||
+    abbr === "smix" ||
+    (titleEn.includes("senior") && !titleEn.includes("master"))
+  );
+};
+
 const pickMatchingCategory = (categories, gender, age) => {
   if (!Array.isArray(categories) || typeof age !== "number") {
     return null;
@@ -74,7 +126,9 @@ const pickMatchingCategory = (categories, gender, age) => {
 
   const allowedGenders =
     GENDER_TO_CATEGORY_GENDER[gender] ?? ALL_CATEGORY_GENDERS;
-  let bestMatch = null;
+
+  // Separate categories into Senior and others for adults (19+)
+  const matchingCategories = [];
 
   for (const category of categories) {
     // Mixed categories match any athlete gender
@@ -96,6 +150,50 @@ const pickMatchingCategory = (categories, gender, age) => {
     if (age < minAge || age > maxAge) {
       continue;
     }
+
+    matchingCategories.push(category);
+  }
+
+  if (matchingCategories.length === 0) {
+    return null;
+  }
+
+  // For adults (19+), prioritize Senior over U23/Master
+  if (age >= 19) {
+    // First, try to find a Senior category
+    const seniorCategory = matchingCategories.find(
+      (cat) => isSeniorCategory(cat) && !isSecondaryAdultCategory(cat),
+    );
+    if (seniorCategory) {
+      return seniorCategory;
+    }
+
+    // If no Senior found, filter out secondary categories if we have other options
+    const primaryCategories = matchingCategories.filter(
+      (cat) => !isSecondaryAdultCategory(cat),
+    );
+    if (primaryCategories.length > 0) {
+      return pickBestFromList(primaryCategories);
+    }
+  }
+
+  // For youth or if no primary category found, use original logic
+  return pickBestFromList(matchingCategories);
+};
+
+/**
+ * Pick the best category from a list using the original "most specific" logic.
+ */
+const pickBestFromList = (categories) => {
+  let bestMatch = null;
+
+  for (const category of categories) {
+    const minAge = Number.isFinite(category.minAge)
+      ? category.minAge
+      : -Infinity;
+    const maxAge = Number.isFinite(category.maxAge)
+      ? category.maxAge
+      : Infinity;
 
     if (!bestMatch) {
       bestMatch = category;
@@ -156,7 +254,7 @@ const buildAssignmentPayload = (categoryDoc, seasonYear, age) => ({
 export const ensureNationalCategoryForAthlete = async (
   athlete,
   seasonYear,
-  cache = {}
+  cache = {},
 ) => {
   if (!athlete || !athlete.birthDate) {
     return false;
@@ -173,7 +271,7 @@ export const ensureNationalCategoryForAthlete = async (
 
   const categories = await ensureCategoriesInCache(
     cache,
-    CATEGORY_TYPES.national
+    CATEGORY_TYPES.national,
   );
   if (!categories.length) {
     return false;
@@ -184,7 +282,9 @@ export const ensureNationalCategoryForAthlete = async (
 
   let assignments = Array.isArray(athlete.categoryAssignments)
     ? athlete.categoryAssignments.map((entry) =>
-        entry && typeof entry.toObject === "function" ? entry.toObject() : entry
+        entry && typeof entry.toObject === "function"
+          ? entry.toObject()
+          : entry,
       )
     : [];
   let assignmentsChanged = false;
@@ -207,7 +307,7 @@ export const ensureNationalCategoryForAthlete = async (
 
   const existingIndex = assignments.findIndex(
     (entry) =>
-      entry.type === CATEGORY_TYPES.national && entry.season === seasonYear
+      entry.type === CATEGORY_TYPES.national && entry.season === seasonYear,
   );
 
   if (!category) {
@@ -219,7 +319,7 @@ export const ensureNationalCategoryForAthlete = async (
     if (assignmentsChanged) {
       await Athlete.updateOne(
         { _id: athlete._id },
-        { $set: { categoryAssignments: assignments } }
+        { $set: { categoryAssignments: assignments } },
       );
       return true;
     }
@@ -247,7 +347,7 @@ export const ensureNationalCategoryForAthlete = async (
   if (assignmentsChanged) {
     await Athlete.updateOne(
       { _id: athlete._id },
-      { $set: { categoryAssignments: assignments } }
+      { $set: { categoryAssignments: assignments } },
     );
     return true;
   }
@@ -258,7 +358,7 @@ export const ensureNationalCategoryForAthlete = async (
 export const ensureNationalCategoriesForAthletes = async (
   athletes,
   seasonYear,
-  cache = {}
+  cache = {},
 ) => {
   if (!Array.isArray(athletes) || athletes.length === 0) {
     return 0;
@@ -266,7 +366,7 @@ export const ensureNationalCategoriesForAthletes = async (
 
   const categoryDocs = await ensureCategoriesInCache(
     cache,
-    CATEGORY_TYPES.national
+    CATEGORY_TYPES.national,
   );
   if (!categoryDocs.length) {
     return 0;
@@ -277,7 +377,7 @@ export const ensureNationalCategoriesForAthletes = async (
     const changed = await ensureNationalCategoryForAthlete(
       athlete,
       seasonYear,
-      cache
+      cache,
     );
     if (changed) {
       updates += 1;
@@ -290,7 +390,7 @@ export const assignNationalCategoriesForSeason = async (seasonYear) => {
   const cache = {};
   const categories = await ensureCategoriesInCache(
     cache,
-    CATEGORY_TYPES.national
+    CATEGORY_TYPES.national,
   );
   if (!categories.length) {
     return { updated: 0, total: 0 };
@@ -302,7 +402,7 @@ export const assignNationalCategoriesForSeason = async (seasonYear) => {
     const changed = await ensureNationalCategoryForAthlete(
       athlete,
       seasonYear,
-      cache
+      cache,
     );
     if (changed) {
       updated += 1;

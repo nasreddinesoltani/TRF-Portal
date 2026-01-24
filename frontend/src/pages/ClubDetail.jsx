@@ -76,6 +76,13 @@ const ATHLETE_SECTIONS = [
     badgeClasses: "bg-emerald-500",
   },
   {
+    key: "pending",
+    label: "Pending Approval",
+    description: "Athletes awaiting membership activation",
+    cardClasses: "border-amber-200 bg-amber-50",
+    badgeClasses: "bg-amber-500",
+  },
+  {
     key: "eligible",
     label: "Eligible to Compete",
     description: "Licensed athletes ready for competition",
@@ -158,28 +165,32 @@ const DOCUMENT_DEFINITION_SUMMARY = [
   {
     key: "birthCertificate",
     label: "Birth Certificate",
-    description: "Proof of identity and age issued by civil authorities.",
-    required: true,
+    description:
+      "Proof of identity and age. New athletes need at least one identity document (Birth Certificate, CIN, or Passport).",
+    required: false,
+    conditional: true,
   },
   {
     key: "cin",
     label: "National ID (CIN)",
     description:
-      "Preferred identity document for athletes with national ID numbers.",
+      "Identity document for athletes with national ID. Accepted as identity proof for new athletes.",
     required: false,
+    conditional: true,
   },
   {
     key: "passport",
     label: "Passport",
     description:
-      "Accepted in place of CIN. Upload the most recent passport scan.",
+      "Valid passport scan. Accepted as identity proof for new athletes.",
     required: false,
+    conditional: true,
   },
   {
     key: "parentalAuthorization",
     label: "Parental Authorization",
     description:
-      "Parental consent form. Mandatory for athletes younger than 19.",
+      "Parental consent form. Required if current year minus birth year is less than 19.",
     required: false,
     conditional: true,
   },
@@ -454,21 +465,30 @@ const AthleteCard = ({
             <div className="flex flex-wrap gap-1">
               {issues.map((issue, idx) => {
                 const issueStr = issue.toString().toLowerCase();
-                const isMissing = issueStr.includes("required") || issueStr.includes("missing");
+                const isMissing =
+                  issueStr.includes("required") || issueStr.includes("missing");
                 const isExpired = issueStr.includes("expired");
-                const isPending = issueStr.includes("not_approved") || issueStr.includes("pending");
+                const isPending =
+                  issueStr.includes("not_approved") ||
+                  issueStr.includes("pending");
 
                 let labelText = formatIssueLabel(issue);
                 let statusGroup = "pending"; // Default
 
                 if (isMissing) {
-                  labelText = `Missing: ${labelText.replace(/ Required| Missing/g, "")}`;
+                  labelText = `Missing: ${labelText.replace(
+                    / Required| Missing/g,
+                    ""
+                  )}`;
                   statusGroup = "critical";
                 } else if (isExpired) {
                   labelText = `Expired: ${labelText.replace(/ Expired/g, "")}`;
                   statusGroup = "critical";
                 } else if (isPending) {
-                  labelText = `Pending: ${labelText.replace(/ Not Approved| Pending/g, "")}`;
+                  labelText = `Pending: ${labelText.replace(
+                    / Not Approved| Pending/g,
+                    ""
+                  )}`;
                   statusGroup = "warning";
                 }
 
@@ -689,6 +709,7 @@ const ClubDetail = () => {
 
   // Section-specific search terms
   const [eligibleSearchTerm, setEligibleSearchTerm] = useState("");
+  const [pendingSearchTerm, setPendingSearchTerm] = useState("");
   const [inactiveSearchTerm, setInactiveSearchTerm] = useState("");
   const [transferredSearchTerm, setTransferredSearchTerm] = useState("");
 
@@ -978,7 +999,9 @@ const ClubDetail = () => {
     const needle = searchTerm.trim().toLowerCase();
 
     const matchesSearchTerm = (athlete, specificSearchTerm = "") => {
-      const combinedSearch = (searchTerm + " " + specificSearchTerm).trim().toLowerCase();
+      const combinedSearch = (searchTerm + " " + specificSearchTerm)
+        .trim()
+        .toLowerCase();
       if (!combinedSearch) {
         return true;
       }
@@ -997,10 +1020,10 @@ const ClubDetail = () => {
         athlete.passportNumber,
         athlete.status,
         athlete.membershipStatus,
-      ].map(v => v ? v.toString().toLowerCase() : "");
+      ].map((v) => (v ? v.toString().toLowerCase() : ""));
 
-      return needles.every(needle => 
-        fields.some(field => field.includes(needle))
+      return needles.every((needle) =>
+        fields.some((field) => field.includes(needle))
       );
     };
 
@@ -1060,19 +1083,26 @@ const ClubDetail = () => {
       membershipFilter === "all" || membershipFilter === key;
 
     const mapForExport = (athlete) => {
-      const issues = athlete.documentsIssues || athlete.documentEvaluation?.issues || [];
-      const documentIssuesText = (Array.isArray(issues) ? issues : []).map(issue => {
-        const issueStr = issue.toString().toLowerCase();
-        const isMissing = issueStr.includes("required") || issueStr.includes("missing");
-        const isExpired = issueStr.includes("expired");
-        const isPending = issueStr.includes("not_approved") || issueStr.includes("pending");
+      const issues =
+        athlete.documentsIssues || athlete.documentEvaluation?.issues || [];
+      const documentIssuesText = (Array.isArray(issues) ? issues : [])
+        .map((issue) => {
+          const issueStr = issue.toString().toLowerCase();
+          const isMissing =
+            issueStr.includes("required") || issueStr.includes("missing");
+          const isExpired = issueStr.includes("expired");
+          const isPending =
+            issueStr.includes("not_approved") || issueStr.includes("pending");
 
-        let label = formatIssueLabel(issue);
-        if (isMissing) return `Missing: ${label.replace(/ Required| Missing/gi, "")}`;
-        if (isExpired) return `Expired: ${label.replace(/ Expired/gi, "")}`;
-        if (isPending) return `Pending: ${label.replace(/ Not Approved| Pending/gi, "")}`;
-        return label;
-      }).join("; ");
+          let label = formatIssueLabel(issue);
+          if (isMissing)
+            return `Missing: ${label.replace(/ Required| Missing/gi, "")}`;
+          if (isExpired) return `Expired: ${label.replace(/ Expired/gi, "")}`;
+          if (isPending)
+            return `Pending: ${label.replace(/ Not Approved| Pending/gi, "")}`;
+          return label;
+        })
+        .join("; ");
 
       return {
         ...athlete,
@@ -1082,8 +1112,10 @@ const ClubDetail = () => {
     };
 
     const filterAndMap = (list, search) =>
-      (Array.isArray(list) ? list.filter(a => matchesAllFilters(a, search)) : [])
-        .map(mapForExport);
+      (Array.isArray(list)
+        ? list.filter((a) => matchesAllFilters(a, search))
+        : []
+      ).map(mapForExport);
 
     return {
       active: bucketMatchesMembership("active")
@@ -1093,7 +1125,7 @@ const ClubDetail = () => {
         ? filterAndMap(athleteBuckets.eligible, eligibleSearchTerm)
         : [],
       pending: bucketMatchesMembership("pending")
-        ? filterAndMap(athleteBuckets.pending, "")
+        ? filterAndMap(athleteBuckets.pending, pendingSearchTerm)
         : [],
       inactive: bucketMatchesMembership("inactive")
         ? filterAndMap(athleteBuckets.inactive, inactiveSearchTerm)
@@ -1109,6 +1141,7 @@ const ClubDetail = () => {
     membershipFilter,
     searchTerm,
     eligibleSearchTerm,
+    pendingSearchTerm,
     inactiveSearchTerm,
     transferredSearchTerm,
   ]);
@@ -1160,6 +1193,7 @@ const ClubDetail = () => {
     setLicenseFilter("all");
     setGenderFilter("all");
     setEligibleSearchTerm("");
+    setPendingSearchTerm("");
     setInactiveSearchTerm("");
     setTransferredSearchTerm("");
   }, [setGenderFilter, setLicenseFilter, setMembershipFilter, setSearchTerm]);
@@ -1174,15 +1208,17 @@ const ClubDetail = () => {
       const grid = gridRefs.current[bucketKey];
       if (grid) {
         // filter out columns that shouldn't be exported
-        const exportColumns = grid.columns.filter(col => col.allowExcelExport !== false);
-        
+        const exportColumns = grid.columns.filter(
+          (col) => col.allowExcelExport !== false
+        );
+
         grid.excelExport({
           fileName: `${club?.name || "club"}_${bucketLabel.replace(
             /\s+/g,
             "_"
           )}.xlsx`,
           includeHiddenColumn: true,
-          columns: exportColumns
+          columns: exportColumns,
         });
       } else {
         toast.error("Export service not ready");
@@ -1759,7 +1795,9 @@ const ClubDetail = () => {
               {athlete.fullNameAr}
             </p>
           )}
-          {idString && <p className="text-[10px] text-slate-400 font-medium">{idString}</p>}
+          {idString && (
+            <p className="text-[10px] text-slate-400 font-medium">{idString}</p>
+          )}
         </div>
       </div>
     );
@@ -1854,7 +1892,8 @@ const ClubDetail = () => {
         </span>
         {documentsKey !== "active" && issues.length ? (
           <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-1">
-            <span className="scale-110">⚠️</span> {issues.length} {issues.length > 1 ? "issues" : "issue"}
+            <span className="scale-110">⚠️</span> {issues.length}{" "}
+            {issues.length > 1 ? "issues" : "issue"}
           </span>
         ) : null}
       </div>
@@ -1988,7 +2027,11 @@ const ClubDetail = () => {
         return <span className="text-[10px] text-slate-400">-</span>;
       }
 
-      return <div className="flex items-center gap-1.5 py-1 flex-wrap">{buttons}</div>;
+      return (
+        <div className="flex items-center gap-1.5 py-1 flex-wrap">
+          {buttons}
+        </div>
+      );
     },
     [
       clubs.length,
@@ -2562,7 +2605,8 @@ const ClubDetail = () => {
       <div className="space-y-8">
         {ATHLETE_SECTIONS.map((section) => {
           const bucket = filteredBuckets[section.key] ?? [];
-          const useCards = section.key === "active";
+          const useCards =
+            section.key === "active" || section.key === "pending";
           return (
             <section
               key={section.key}
@@ -2586,15 +2630,22 @@ const ClubDetail = () => {
                     <Input
                       placeholder={`Search in ${section.label?.toLowerCase()}...`}
                       value={
-                        section.key === "eligible" ? eligibleSearchTerm :
-                        section.key === "inactive" ? inactiveSearchTerm :
-                        section.key === "transferred" ? transferredSearchTerm : ""
+                        section.key === "eligible"
+                          ? eligibleSearchTerm
+                          : section.key === "inactive"
+                          ? inactiveSearchTerm
+                          : section.key === "transferred"
+                          ? transferredSearchTerm
+                          : ""
                       }
                       onChange={(e) => {
                         const val = e.target.value;
-                        if (section.key === "eligible") setEligibleSearchTerm(val);
-                        else if (section.key === "inactive") setInactiveSearchTerm(val);
-                        else if (section.key === "transferred") setTransferredSearchTerm(val);
+                        if (section.key === "eligible")
+                          setEligibleSearchTerm(val);
+                        else if (section.key === "inactive")
+                          setInactiveSearchTerm(val);
+                        else if (section.key === "transferred")
+                          setTransferredSearchTerm(val);
                       }}
                       className="h-9 text-sm"
                     />
@@ -2605,7 +2656,9 @@ const ClubDetail = () => {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => handleExportExcel(section.key, section.label)}
+                    onClick={() =>
+                      handleExportExcel(section.key, section.label)
+                    }
                     className="h-9 px-3 text-[11px] font-bold uppercase tracking-tight border-slate-200 hover:bg-slate-50 transition-colors shadow-sm active:scale-95"
                   >
                     Export List
@@ -2639,7 +2692,11 @@ const ClubDetail = () => {
                     emptyMessage={ATHLETE_EMPTY_MESSAGES[section.key]}
                   />
                   {/* Hidden grid for export purposes */}
-                  <div className="hidden" aria-hidden="true" style={{ display: "none" }}>
+                  <div
+                    className="hidden"
+                    aria-hidden="true"
+                    style={{ display: "none" }}
+                  >
                     <DataGrid
                       ref={setGridRef(section.key)}
                       data={bucket}
@@ -2981,23 +3038,30 @@ const ClubDetail = () => {
               onSubmit={handleEditSubmit}
             >
               <div className="md:col-span-2 flex justify-center mb-4">
-                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-3xl font-medium text-slate-500">
-                    {getAthletePhotoUrl(editingAthlete) ? (
-                      <img
-                        src={getAthletePhotoUrl(editingAthlete)}
-                        alt="Profile"
-                        className="h-full w-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.style.display = "none";
-                          const span = e.currentTarget.parentNode.querySelector("span");
-                          if (span) span.style.display = "block";
-                        }}
-                      />
-                    ) : null}
-                    <span style={{ display: getAthletePhotoUrl(editingAthlete) ? 'none' : 'block' }}>
-                        {getAthleteInitials(editingAthlete)}
-                    </span>
-                  </div>
+                <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-3xl font-medium text-slate-500">
+                  {getAthletePhotoUrl(editingAthlete) ? (
+                    <img
+                      src={getAthletePhotoUrl(editingAthlete)}
+                      alt="Profile"
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                        const span =
+                          e.currentTarget.parentNode.querySelector("span");
+                        if (span) span.style.display = "block";
+                      }}
+                    />
+                  ) : null}
+                  <span
+                    style={{
+                      display: getAthletePhotoUrl(editingAthlete)
+                        ? "none"
+                        : "block",
+                    }}
+                  >
+                    {getAthleteInitials(editingAthlete)}
+                  </span>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-first-name">First name</Label>

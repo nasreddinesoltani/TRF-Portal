@@ -35,7 +35,7 @@ const laneResultSchema = new mongoose.Schema(
       trim: true,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const laneAssignmentSchema = new mongoose.Schema(
@@ -44,7 +44,8 @@ const laneAssignmentSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 1,
-      max: 8,
+      // No max here - discipline-specific limits enforced in controller
+      // classic/coastal: 8, beach: 4, indoor: 50
     },
     athlete: {
       type: mongoose.Schema.Types.ObjectId,
@@ -75,7 +76,7 @@ const laneAssignmentSchema = new mongoose.Schema(
       default: undefined,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const raceSchema = new mongoose.Schema(
@@ -166,12 +167,12 @@ const raceSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 raceSchema.index(
   { competition: 1, category: 1, journeyIndex: 1, order: 1 },
-  { name: "competition_category_schedule" }
+  { name: "competition_category_schedule" },
 );
 
 raceSchema.index({ competition: 1, "lanes.athlete": 1 });

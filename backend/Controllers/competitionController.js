@@ -46,7 +46,7 @@ const sanitiseObjectIdArray = (values = []) => {
     .filter(Boolean)
     .filter(
       (value, index, array) =>
-        array.findIndex((candidate) => candidate.equals(value)) === index
+        array.findIndex((candidate) => candidate.equals(value)) === index,
     );
 };
 
@@ -170,6 +170,9 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
     categoryDistances,
     stages,
     notes,
+    status,
+    registrationStatus,
+    resultsStatus,
   } = body;
 
   if (!allowPartial || code !== undefined) {
@@ -322,6 +325,22 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
 
   if (notes !== undefined) {
     payload.notes = notes?.toString().trim() || undefined;
+  }
+
+  // Handle status fields with validation
+  if (status !== undefined && COMPETITION_STATUSES.includes(status)) {
+    payload.status = status;
+  }
+
+  if (
+    registrationStatus !== undefined &&
+    REGISTRATION_STATUSES.includes(registrationStatus)
+  ) {
+    payload.registrationStatus = registrationStatus;
+  }
+
+  if (resultsStatus !== undefined && RESULTS_STATUSES.includes(resultsStatus)) {
+    payload.resultsStatus = resultsStatus;
   }
 
   if (userId) {

@@ -6,7 +6,7 @@ const localizedNameSchema = new mongoose.Schema(
     fr: { type: String, required: true, trim: true },
     ar: { type: String, required: true, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const boatClassSchema = new mongoose.Schema(
@@ -14,9 +14,9 @@ const boatClassSchema = new mongoose.Schema(
     code: {
       type: String,
       required: true,
-      unique: true,
       uppercase: true,
       trim: true,
+      index: true,
     },
     discipline: {
       type: String,
@@ -81,10 +81,14 @@ const boatClassSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-boatClassSchema.index({ discipline: 1, code: 1 }, { unique: true });
+// Unique constraint: same code can exist for different disciplines OR different weight classes
+boatClassSchema.index(
+  { discipline: 1, code: 1, weightClass: 1 },
+  { unique: true },
+);
 
 const BoatClass = mongoose.model("BoatClass", boatClassSchema);
 export default BoatClass;

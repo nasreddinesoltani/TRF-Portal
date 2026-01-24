@@ -86,6 +86,6 @@ const documentStorage = multer.diskStorage({
 export const documentUpload = multer({
   storage: documentStorage,
   limits: {
-    fileSize: 5 * 1024 * 1024,
+    fileSize: 10 * 1024 * 1024,
   },
 });
