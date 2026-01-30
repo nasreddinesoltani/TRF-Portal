@@ -69,6 +69,9 @@ const normaliseCategory = (category) => {
     id,
     abbreviation: category.abbreviation || category.code || "",
     title: category.titles?.en || category.name || category.description || "",
+    titleEn: category.titles?.en || category.name || category.description || "",
+    titleFr: category.titles?.fr || "",
+    titleAr: category.titles?.ar || "",
   };
 };
 
@@ -100,7 +103,7 @@ const CompetitionRegistration = () => {
   const userClubId = user?.clubId || "";
 
   const [clubIdOverride, setClubIdOverride] = useState(() =>
-    !isClubManager ? searchParams.get("clubId") || "" : ""
+    !isClubManager ? searchParams.get("clubId") || "" : "",
   );
   const resolvedClubId = isClubManager ? userClubId : clubIdOverride;
 
@@ -136,7 +139,7 @@ const CompetitionRegistration = () => {
 
   const currentClubParam = useMemo(
     () => (isClubManager ? userClubId : searchParams.get("clubId") || ""),
-    [isClubManager, searchParams, userClubId]
+    [isClubManager, searchParams, userClubId],
   );
 
   useEffect(() => {
@@ -144,7 +147,7 @@ const CompetitionRegistration = () => {
       return;
     }
     setClubIdOverride((previous) =>
-      previous === currentClubParam ? previous : currentClubParam
+      previous === currentClubParam ? previous : currentClubParam,
     );
   }, [currentClubParam, isClubManager]);
 
@@ -195,7 +198,7 @@ const CompetitionRegistration = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
       const payload = await response.json().catch(() => []);
       if (!response.ok) {
@@ -221,7 +224,7 @@ const CompetitionRegistration = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
       const payload = await response.json().catch(() => []);
       if (!response.ok) {
@@ -256,12 +259,12 @@ const CompetitionRegistration = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(
-            payload.message || "Failed to load registration summary"
+            payload.message || "Failed to load registration summary",
           );
         }
         setSummary(payload);
@@ -283,7 +286,7 @@ const CompetitionRegistration = () => {
         }
       }
     },
-    [competitionId, resolvedClubId, token]
+    [competitionId, resolvedClubId, token],
   );
 
   const summaryCanSubmit = permissions?.canSubmit === true;
@@ -316,14 +319,14 @@ const CompetitionRegistration = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
       const payload = await response.json().catch(() => ({ athletes: [] }));
       if (!response.ok) {
         throw new Error(payload.message || "Failed to load eligible athletes");
       }
       setEligibleAthletes(
-        Array.isArray(payload.athletes) ? payload.athletes : []
+        Array.isArray(payload.athletes) ? payload.athletes : [],
       );
     } catch (error) {
       console.error("Failed to load eligible athletes", error);
@@ -426,7 +429,7 @@ const CompetitionRegistration = () => {
         accumulator[key] = (accumulator[key] || 0) + 1;
         return accumulator;
       },
-      { pending: 0, approved: 0, rejected: 0, withdrawn: 0 }
+      { pending: 0, approved: 0, rejected: 0, withdrawn: 0 },
     );
   }, [entries]);
 
@@ -447,7 +450,7 @@ const CompetitionRegistration = () => {
         setSearchParams({}, { replace: true });
       }
     },
-    [isClubManager, setSearchParams]
+    [isClubManager, setSearchParams],
   );
 
   const requiredCrewSize = useMemo(() => {
@@ -477,7 +480,7 @@ const CompetitionRegistration = () => {
         });
       }
     },
-    [requiredCrewSize]
+    [requiredCrewSize],
   );
 
   const handleEligibleDeselected = useCallback(
@@ -490,7 +493,7 @@ const CompetitionRegistration = () => {
       // deselects the previous row when a new one is clicked.
       // Removal is handled via the remove button in the crew list.
     },
-    [requiredCrewSize]
+    [requiredCrewSize],
   );
 
   const removeCrewMember = useCallback((index) => {
@@ -558,7 +561,7 @@ const CompetitionRegistration = () => {
         });
       }
     },
-    [requiredCrewSize]
+    [requiredCrewSize],
   );
 
   const handleSubmitEntry = useCallback(async () => {
@@ -623,7 +626,7 @@ const CompetitionRegistration = () => {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(payload),
-        }
+        },
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -671,7 +674,7 @@ const CompetitionRegistration = () => {
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ status: newStatus }),
-          }
+          },
         );
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -686,7 +689,7 @@ const CompetitionRegistration = () => {
         setActionEntryId(null);
       }
     },
-    [competitionId, loadSummary, summaryCanManageEntries, token]
+    [competitionId, loadSummary, summaryCanManageEntries, token],
   );
 
   const handleWithdrawEntry = useCallback(
@@ -704,7 +707,7 @@ const CompetitionRegistration = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -725,7 +728,7 @@ const CompetitionRegistration = () => {
       summaryCanManageEntries,
       summaryCanWithdraw,
       token,
-    ]
+    ],
   );
 
   const [isProcessingAll, setIsProcessingAll] = useState(false);
@@ -737,7 +740,7 @@ const CompetitionRegistration = () => {
 
     if (
       !window.confirm(
-        `Are you sure you want to approve ${pendingEntries.length} pending entries?`
+        `Are you sure you want to approve ${pendingEntries.length} pending entries?`,
       )
     ) {
       return;
@@ -759,7 +762,7 @@ const CompetitionRegistration = () => {
                 Authorization: `Bearer ${token}`,
               },
               body: JSON.stringify({ status: "approved" }),
-            }
+            },
           );
           if (response.ok) successCount++;
         } catch (e) {
@@ -862,7 +865,7 @@ const CompetitionRegistration = () => {
             <span
               className={clsx(
                 "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium",
-                meta.badgeClass
+                meta.badgeClass,
               )}
             >
               {meta.label}
@@ -909,7 +912,7 @@ const CompetitionRegistration = () => {
                 onClick={() => handleUpdateStatus(entry.id, "approved")}
               >
                 {isProcessing ? "Working..." : "Approve"}
-              </Button>
+              </Button>,
             );
           }
 
@@ -927,7 +930,7 @@ const CompetitionRegistration = () => {
                 onClick={() => handleUpdateStatus(entry.id, "rejected")}
               >
                 {isProcessing ? "Working..." : "Reject"}
-              </Button>
+              </Button>,
             );
           }
 
@@ -952,7 +955,7 @@ const CompetitionRegistration = () => {
                 onClick={() => handleWithdrawEntry(entry.id)}
               >
                 {isProcessing ? "Working..." : label}
-              </Button>
+              </Button>,
             );
           }
 
@@ -962,7 +965,7 @@ const CompetitionRegistration = () => {
 
           return <div className="flex flex-wrap gap-2">{buttons}</div>;
         },
-      }
+      },
     );
 
     return columnList;
@@ -1005,7 +1008,7 @@ const CompetitionRegistration = () => {
         textAlign: "Center",
       },
     ],
-    []
+    [],
   );
 
   const registrationStatus = competition?.registrationStatus || "not_open";
@@ -1053,6 +1056,43 @@ const CompetitionRegistration = () => {
           </Button>
         </div>
       </div>
+
+      {/* Category Legend */}
+      {availableCategories.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Competition Categories
+          </h2>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {availableCategories.map((category) => (
+              <div
+                key={category.id}
+                className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm"
+              >
+                <span className="shrink-0 rounded bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-700">
+                  {category.abbreviation || "—"}
+                </span>
+                <div className="min-w-0 flex-1 text-xs leading-relaxed text-slate-600">
+                  <span className="font-medium text-slate-800">
+                    {category.titleEn || category.title || "—"}
+                  </span>
+                  {category.titleAr && (
+                    <span dir="rtl" className="mx-1">
+                      • {category.titleAr}
+                    </span>
+                  )}
+                  {category.titleFr && (
+                    <span className="text-slate-500">
+                      {" "}
+                      • {category.titleFr}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loadingSummary ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
@@ -1439,12 +1479,12 @@ const CompetitionRegistration = () => {
                 <span className="font-semibold text-slate-800">Window:</span>{" "}
                 {competition?.registrationWindow?.openAt
                   ? new Date(
-                      competition.registrationWindow.openAt
+                      competition.registrationWindow.openAt,
                     ).toLocaleString()
                   : "TBD"}
                 {competition?.registrationWindow?.closeAt
                   ? ` → ${new Date(
-                      competition.registrationWindow.closeAt
+                      competition.registrationWindow.closeAt,
                     ).toLocaleString()}`
                   : ""}
               </p>

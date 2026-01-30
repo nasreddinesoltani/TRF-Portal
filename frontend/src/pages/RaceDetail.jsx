@@ -84,8 +84,13 @@ const toDocumentId = (value) => {
 
 const formatAthleteName = (athlete) => {
   if (!athlete) return "Unknown athlete";
+  // Try English name first
   const parts = [athlete.firstName, athlete.lastName].filter(Boolean);
   if (parts.length) return parts.join(" ");
+  // Fallback to Arabic name
+  const arabicParts = [athlete.firstNameAr, athlete.lastNameAr].filter(Boolean);
+  if (arabicParts.length) return arabicParts.join(" ");
+  // Last fallback to license number
   return athlete.licenseNumber || "Unknown athlete";
 };
 
@@ -149,6 +154,47 @@ const parseTimeToMs = (timeStr) => {
     return seconds * 1000 + centis * 10;
   }
   return undefined;
+};
+
+// Auto-format time input: 022360 -> 02:23.60, 02:01:20 -> 02:01.20
+const autoFormatTime = (input) => {
+  if (!input) return input;
+  const trimmed = input.trim();
+
+  // Handle format MM:SS:cc (colon before centiseconds) -> convert to MM:SS.cc
+  const doubleColonMatch = trimmed.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (doubleColonMatch) {
+    const mm = doubleColonMatch[1].padStart(2, "0");
+    const ss = doubleColonMatch[2];
+    const cc = doubleColonMatch[3];
+    return `${mm}:${ss}.${cc}`;
+  }
+
+  // If already properly formatted (MM:SS.cc), return as-is
+  if (/^\d{1,2}:\d{2}\.\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Only digits - auto format
+  if (/^\d+$/.test(trimmed)) {
+    const padded = trimmed.padStart(6, "0");
+    if (padded.length === 6) {
+      // MMSSCC format
+      const mm = padded.slice(0, 2);
+      const ss = padded.slice(2, 4);
+      const cc = padded.slice(4, 6);
+      return `${mm}:${ss}.${cc}`;
+    } else if (padded.length > 6) {
+      // Longer input - take last 6 digits
+      const last6 = padded.slice(-6);
+      const mm = last6.slice(0, 2);
+      const ss = last6.slice(2, 4);
+      const cc = last6.slice(4, 6);
+      return `${mm}:${ss}.${cc}`;
+    }
+  }
+
+  return trimmed;
 };
 
 const generateRaceCode = (category, boatClass) => {
@@ -464,56 +510,82 @@ const RaceDetail = () => {
     const rightMargin = 196;
     const center = 105;
 
-    let headerHeight = 30;
+    let headerHeight = 35;
     if (headerData) {
       const imgProps = doc.getImageProperties(headerData);
-      headerHeight = pageWidth / (imgProps.width / imgProps.height) + 8;
+      headerHeight = pageWidth / (imgProps.width / imgProps.height) + 5 + 8; // 5mm top margin + 8mm after line
     }
 
     let yPos = headerHeight;
 
     // --- Header Section ---
+    // Use event date instead of generation date
+    const eventDateStr = competition.startDate
+      ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+      : dateStr;
+
+    // Competition title in header (bigger, bold)
+    doc.setFontSize(14);
+    doc.setFont(fontName, "bold");
+    const competitionTitle =
+      competition.names?.en ||
+      competition.name ||
+      competition.code ||
+      "Competition";
+    doc.text(competitionTitle, center, yPos, { align: "center" });
+
+    // Location and date on same line (smaller)
     doc.setFontSize(9);
     doc.setFont(fontName, "normal");
     const compLocation =
-      competition.location?.name || competition.venue || "Location";
+      competition.location?.name ||
+      competition.venue?.name ||
+      competition.venue ||
+      "Location";
     doc.text(String(compLocation), leftMargin, yPos);
-    doc.text(competition.names?.en || competition.code || "", center, yPos, {
-      align: "center",
-    });
-    doc.text(dateStr, rightMargin, yPos, { align: "right" });
+    doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
 
     yPos += 2;
     doc.setLineWidth(0.5);
     doc.line(leftMargin, yPos, rightMargin, yPos);
     yPos += 5;
 
-    // --- Event Title ---
+    // --- Event Details (original layout) ---
+    // Line 1: Race order | Results/Start List | Race code
     doc.setFontSize(14);
     doc.setFont(fontName, "bold");
     doc.text(String(race.order || "1"), leftMargin, yPos);
-    doc.setFontSize(16);
     doc.text(isResults ? "Results" : "Start List", center, yPos, {
       align: "center",
     });
-    doc.setFontSize(14);
     doc.text(generateRaceCode(category, boatClass), rightMargin, yPos, {
       align: "right",
     });
 
-    yPos += 4;
-    doc.setFontSize(8);
+    // Line 2: (Event) | Category + Boat Class | Phase
+    yPos += 5;
+    doc.setFontSize(9);
     doc.setFont(fontName, "normal");
     doc.text("(Event)", leftMargin, yPos);
-    doc.setFontSize(11);
+    doc.setFontSize(12);
     doc.setFont(fontName, "bold");
     const fullEventName =
-      `${category?.titles?.en} ${boatClass?.names?.en}`.trim();
+      `${category?.titles?.en || ""} ${boatClass?.names?.en || ""}`.trim();
     doc.text(fullEventName, center, yPos, { align: "center" });
+    doc.setFontSize(9);
+    doc.setFont(fontName, "normal");
     doc.text(race.phase || "Final", rightMargin, yPos, { align: "right" });
 
+    // Line 3: Arabic text (center) | Distance (right)
+    const raceDistance = race.distanceOverride || competition?.defaultDistance;
     if (arabicFontName && (category?.titles?.ar || boatClass?.names?.ar)) {
-      yPos += 5;
+      yPos += 6;
+      doc.setFontSize(14);
       doc.setFont(arabicFontName, "normal");
       doc.text(
         `${category?.titles?.ar || ""} ${boatClass?.names?.ar || ""}`.trim(),
@@ -522,10 +594,20 @@ const RaceDetail = () => {
         { align: "center" },
       );
       doc.setFont(fontName, "normal");
-      yPos += 2;
+      doc.setFontSize(9);
+      if (raceDistance) {
+        doc.text(`Distance: ${raceDistance}m`, rightMargin, yPos, {
+          align: "right",
+        });
+      }
+    } else if (raceDistance) {
+      yPos += 4;
+      doc.setFontSize(9);
+      doc.text(`Distance: ${raceDistance}m`, center, yPos, { align: "center" });
     }
 
-    yPos += 3;
+    // Line 4: Start Time | Race #
+    yPos += 4;
     doc.setFontSize(9);
     const startTime = race.startTime
       ? new Date(race.startTime).toLocaleTimeString([], {
@@ -534,11 +616,22 @@ const RaceDetail = () => {
         })
       : "00:00";
     doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
-    if (!isResults)
-      doc.text(`As of ${dateStr}`, center, yPos, { align: "center" });
     doc.setFont(fontName, "bold");
     doc.text(`Race ${race.order}`, rightMargin, yPos, { align: "right" });
-    yPos += 8;
+    yPos += 4;
+
+    // --- Calculate legend height for bottom margin ---
+    const uniqueClubs = Array.from(
+      new Set(race.lanes.map((l) => toDocumentId(l.club)).filter(Boolean)),
+    )
+      .map((id) => race.lanes.find((l) => toDocumentId(l.club) === id).club)
+      .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+
+    const legendLineHeight = 4;
+    const legendBoxHeight =
+      uniqueClubs.length > 0 ? uniqueClubs.length * legendLineHeight + 7 : 0;
+    // 38 = footer height + margin, add legend box height
+    const bottomMargin = 38 + legendBoxHeight + 5;
 
     // --- Table ---
     // For results, sort by position. For start list, ALWAYS sort by lane.
@@ -580,8 +673,16 @@ const RaceDetail = () => {
         points = calculatePoints(pos, activeRankingSystem);
       }
 
+      // Helper to format name with uppercase last name
+      const formatNameForPdf = (a) => {
+        if (!a) return "Unknown";
+        const first = a.firstName || "";
+        const last = (a.lastName || "").toUpperCase();
+        return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
+      };
+
       if (athlete) {
-        athleteName = formatAthleteName(athlete);
+        athleteName = formatNameForPdf(athlete);
         license = athlete.licenseNumber || "";
         dob = athlete.birthDate
           ? new Date(athlete.birthDate).toLocaleDateString("en-GB")
@@ -589,7 +690,7 @@ const RaceDetail = () => {
       } else if (lane.crew?.length > 0) {
         athleteName = lane.crew
           .map((m, i, arr) => {
-            const name = formatAthleteName(m);
+            const name = formatNameForPdf(m);
             let pos = "";
             if (arr.length > 1) {
               if (i === 0) pos = "(b) ";
@@ -634,20 +735,32 @@ const RaceDetail = () => {
         fontStyle: "bold",
         lineWidth: 0.1,
         lineColor: [0, 0, 0],
+        cellPadding: 1.5,
       },
       styles: {
-        fontSize: isResults ? 8 : 10,
-        cellPadding: isResults ? 1 : 3,
+        fontSize: isResults ? 8 : 9,
+        cellPadding: isResults ? 1 : 1.5,
         font: fontName,
       },
       columnStyles: isResults
         ? {
             0: { cellWidth: 14, halign: "center", fontStyle: "bold" },
+            2: { fontStyle: "bold" },
+            3: { fontStyle: "bold" },
             4: { halign: "right" },
-            5: { halign: "center" },
+            5: { halign: "center", fontStyle: "bold" },
           }
-        : { 0: { cellWidth: 15, halign: "center" }, 1: { fontStyle: "bold" } },
-      margin: { left: leftMargin, right: 14, bottom: 30, top: headerHeight },
+        : {
+            0: { cellWidth: 15, halign: "center" },
+            1: { fontStyle: "bold" },
+            2: { fontStyle: "bold" },
+          },
+      margin: {
+        left: leftMargin,
+        right: 14,
+        bottom: bottomMargin,
+        top: headerHeight,
+      },
       didParseCell: (data) => {
         if (data.section === "head") {
           data.cell.styles.lineWidth = {
@@ -682,10 +795,10 @@ const RaceDetail = () => {
       if (headerData) {
         const imgProps = doc.getImageProperties(headerData);
         const h = pageWidth / (imgProps.width / imgProps.height);
-        doc.addImage(headerData, "PNG", 0, 0, pageWidth, h);
+        doc.addImage(headerData, "PNG", 0, 5, pageWidth, h);
         doc.setDrawColor(128, 0, 0);
         doc.setLineWidth(0.8);
-        doc.line(leftMargin, h + 2, rightMargin, h + 2);
+        doc.line(leftMargin, h + 7, rightMargin, h + 7);
       }
 
       // Legend on last page
@@ -744,20 +857,25 @@ const RaceDetail = () => {
       if (footerData) {
         const imgProps = doc.getImageProperties(footerData);
         const h = pageWidth / (imgProps.width / imgProps.height);
-        doc.addImage(footerData, "PNG", 0, pageHeight - h, pageWidth, h);
+        doc.addImage(footerData, "PNG", 0, pageHeight - h - 5, pageWidth, h);
         doc.setDrawColor(128, 0, 0);
         doc.setLineWidth(0.8);
         doc.line(
           leftMargin,
-          pageHeight - h - 3,
+          pageHeight - h - 8,
           rightMargin,
-          pageHeight - h - 3,
+          pageHeight - h - 8,
         );
         doc.setFontSize(8);
         doc.setTextColor(100);
-        doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - h - 6, {
-          align: "right",
-        });
+        doc.text(
+          `Page ${i} of ${pageCount}`,
+          rightMargin,
+          pageHeight - h - 11,
+          {
+            align: "right",
+          },
+        );
       }
     }
 
@@ -910,6 +1028,23 @@ const RaceDetail = () => {
                     </p>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                    <MapPin className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase">
+                      Distance
+                    </p>
+                    <p className="text-base font-bold text-slate-900">
+                      {race?.distanceOverride ||
+                        competition?.defaultDistance ||
+                        "-"}{" "}
+                      m
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
@@ -923,7 +1058,11 @@ const RaceDetail = () => {
                 <div className="flex gap-3">
                   <MapPin className="h-5 w-5 text-slate-400 shrink-0" />
                   <p className="text-sm text-slate-700">
-                    {competition?.location?.name || competition?.venue}
+                    {competition?.location?.name ||
+                      competition?.venue?.name ||
+                      (typeof competition?.venue === "string"
+                        ? competition.venue
+                        : "")}
                   </p>
                 </div>
                 <div className="flex gap-3">
@@ -978,9 +1117,16 @@ const RaceDetail = () => {
                         className="grid grid-cols-1 gap-4 rounded-xl border p-4 sm:grid-cols-4 sm:items-center"
                       >
                         <div className="flex items-center gap-3 sm:col-span-2">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">
-                            {lane.lane}
-                          </span>
+                          <div className="flex flex-col items-center">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">
+                              {lane.lane}
+                            </span>
+                            {calculatedPositions[lane.lane] && (
+                              <span className="mt-1 text-xs font-bold text-indigo-600">
+                                #{calculatedPositions[lane.lane]}
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-col">
                             <span className="font-semibold text-slate-900 truncate max-w-[200px]">
                               {lane.crew?.length > 0
@@ -1007,6 +1153,16 @@ const RaceDetail = () => {
                                 e.target.value,
                               )
                             }
+                            onBlur={(e) => {
+                              const formatted = autoFormatTime(e.target.value);
+                              if (formatted !== e.target.value) {
+                                handleResultChange(
+                                  lane.lane,
+                                  "elapsedTime",
+                                  formatted,
+                                );
+                              }
+                            }}
                             className="font-mono"
                           />
                         </div>
@@ -1017,8 +1173,12 @@ const RaceDetail = () => {
                           </Label>
                           <Select
                             value={resultsForm[lane.lane]?.status}
-                            onValueChange={(val) =>
-                              handleResultChange(lane.lane, "status", val)
+                            onChange={(e) =>
+                              handleResultChange(
+                                lane.lane,
+                                "status",
+                                e.target.value,
+                              )
                             }
                           >
                             {LANE_RESULT_STATUS_OPTIONS.map((opt) => (

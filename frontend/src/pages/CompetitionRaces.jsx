@@ -574,149 +574,171 @@ const EntriesTable = ({
       <table className="min-w-full text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase text-slate-500">
           <tr>
-            <th className="px-3 py-2 w-24">Seed</th>
-            <th className="px-3 py-2 w-28">Crew #</th>
+            <th className="px-4 py-2 w-24">Seed</th>
+            <th className="px-3 py-2 w-36">Crew #</th>
             <th className="px-3 py-2">Athlete</th>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2">Notes</th>
+            <th className="px-3 py-2 w-24">Status</th>
+            <th className="px-3 py-2 w-28">Notes</th>
             <th className="px-3 py-2 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200 bg-white">
-          {entries.slice().map((entry, index) => {
-            const isDbEntry = entry.id && !entry.uid?.startsWith("manual-");
-            const isWithdrawn = entry.status === "withdrawn";
+          {entries
+            .slice()
+            .sort((a, b) => (Number(a.seed) || 0) - (Number(b.seed) || 0))
+            .map((entry, index) => {
+              const isDbEntry = entry.id && !entry.uid?.startsWith("manual-");
+              const isWithdrawn = entry.status === "withdrawn";
 
-            return (
-              <tr
-                key={entry.uid || entry.id || `entry-${index}`}
-                className={isWithdrawn ? "bg-rose-50 opacity-60" : ""}
-              >
-                <td className="px-3 py-2">
-                  <Input
-                    type="number"
-                    min="1"
-                    value={entry.seed}
-                    onChange={(event) =>
-                      onEntryChange(
-                        entry.uid || entry.id,
-                        "seed",
-                        event.target.value,
-                      )
-                    }
-                    className="h-8 w-24"
-                    disabled={isWithdrawn}
-                  />
-                </td>
-                <td className="px-3 py-2 text-center text-slate-600 whitespace-nowrap">
-                  {entry.clubCode ? (
-                    <span className="mr-1 font-semibold text-slate-700">
-                      {entry.clubCode}
-                    </span>
-                  ) : null}
-                  {entry.crewNumber || "-"}
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex flex-col">
-                    <span
-                      className={`font-medium ${isWithdrawn ? "text-slate-500 line-through" : "text-slate-800"}`}
-                    >
-                      {entry.crew && entry.crew.length > 0
-                        ? formatCrewName(entry.crew)
-                        : formatAthleteName(entry.athlete)}
-                    </span>
-                    <span className="text-xs text-slate-500">
-                      {entry.crew && entry.crew.length > 0
-                        ? `${entry.crew.length} athletes`
-                        : `License ${entry.athlete?.licenseNumber || "-"}`}
-                    </span>
-                    {entry.clubName ? (
-                      <span className="text-xs text-slate-400">
-                        {entry.clubName}
+              return (
+                <tr
+                  key={entry.uid || entry.id || `entry-${index}`}
+                  className={isWithdrawn ? "bg-rose-50 opacity-60" : ""}
+                >
+                  <td className="px-4 py-2 w-24">
+                    <Input
+                      type="number"
+                      min="1"
+                      value={entry.seed}
+                      onChange={(event) =>
+                        onEntryChange(
+                          entry.uid || entry.id,
+                          "seed",
+                          event.target.value,
+                        )
+                      }
+                      className="h-8 w-16 text-center"
+                      disabled={isWithdrawn}
+                    />
+                  </td>
+                  <td className="px-3 py-2 w-36 text-slate-600 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      {entry.clubCode ? (
+                        <span className="font-semibold text-slate-700 text-sm">
+                          {entry.clubCode}
+                        </span>
+                      ) : null}
+                      <Input
+                        type="number"
+                        min="1"
+                        value={entry.crewNumber || ""}
+                        placeholder="-"
+                        onChange={(event) =>
+                          onEntryChange(
+                            entry.uid || entry.id,
+                            "crewNumber",
+                            event.target.value
+                              ? parseInt(event.target.value, 10)
+                              : undefined,
+                          )
+                        }
+                        className="h-8 w-14 text-center"
+                        disabled={isWithdrawn}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col">
+                      <span
+                        className={`font-medium ${isWithdrawn ? "text-slate-500 line-through" : "text-slate-800"}`}
+                      >
+                        {entry.crew && entry.crew.length > 0
+                          ? formatCrewName(entry.crew)
+                          : formatAthleteName(entry.athlete)}
                       </span>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="px-3 py-2">
-                  {isWithdrawn ? (
-                    <span className="inline-flex items-center rounded-md bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700">
-                      Withdrawn
-                    </span>
-                  ) : entry.status === "pending" ? (
-                    <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
-                      Pending
-                    </span>
-                  ) : entry.status === "approved" ? (
-                    <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
-                      Approved
-                    </span>
-                  ) : isDbEntry ? (
-                    <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                      {entry.status || "Registered"}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-slate-400">Manual</span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  <Input
-                    value={entry.notes || ""}
-                    onChange={(event) =>
-                      onEntryChange(
-                        entry.uid || entry.id,
-                        "notes",
-                        event.target.value,
-                      )
-                    }
-                    className="h-8 w-40"
-                    disabled={isWithdrawn}
-                  />
-                </td>
-                <td className="px-3 py-2 text-right space-x-1">
-                  {isDbEntry ? (
-                    <>
-                      {!isWithdrawn && onWithdraw && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => onWithdraw(entry.id)}
-                          className="text-amber-600 hover:text-amber-700"
-                        >
-                          Withdraw
-                        </Button>
-                      )}
-                      {isAdmin && onDelete && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `Permanently delete this entry for ${formatAthleteName(entry.athlete)}? This cannot be undone.`,
-                              )
-                            ) {
-                              onDelete(entry.id);
-                            }
-                          }}
-                          className="text-rose-600 hover:text-rose-700"
-                        >
-                          Delete
-                        </Button>
-                      )}
-                    </>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => onRemove(entry.uid)}
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
+                      <span className="text-xs text-slate-500">
+                        {entry.crew && entry.crew.length > 0
+                          ? `${entry.crew.length} athletes`
+                          : `License ${entry.athlete?.licenseNumber || "-"}`}
+                      </span>
+                      {entry.clubName ? (
+                        <span className="text-xs text-slate-400">
+                          {entry.clubName}
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    {isWithdrawn ? (
+                      <span className="inline-flex items-center rounded-md bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700">
+                        Withdrawn
+                      </span>
+                    ) : entry.status === "pending" ? (
+                      <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
+                        Pending
+                      </span>
+                    ) : entry.status === "approved" ? (
+                      <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                        Approved
+                      </span>
+                    ) : isDbEntry ? (
+                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                        {entry.status || "Registered"}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400">Manual</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      value={entry.notes || ""}
+                      onChange={(event) =>
+                        onEntryChange(
+                          entry.uid || entry.id,
+                          "notes",
+                          event.target.value,
+                        )
+                      }
+                      className="h-8 w-24"
+                      placeholder="-"
+                      disabled={isWithdrawn}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right space-x-1">
+                    {isDbEntry ? (
+                      <>
+                        {!isWithdrawn && onWithdraw && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => onWithdraw(entry.id)}
+                            className="text-amber-600 hover:text-amber-700"
+                          >
+                            Withdraw
+                          </Button>
+                        )}
+                        {isAdmin && onDelete && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Permanently delete this entry for ${formatAthleteName(entry.athlete)}? This cannot be undone.`,
+                                )
+                              ) {
+                                onDelete(entry.id);
+                              }
+                            }}
+                            className="text-rose-600 hover:text-rose-700"
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => onRemove(entry.uid)}
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
         </tbody>
       </table>
     </div>
@@ -1420,6 +1442,7 @@ const CompetitionRaces = () => {
   const [loadingRegistration, setLoadingRegistration] = useState(false);
   const [registrationStats, setRegistrationStats] = useState(null);
   const [activeRankingSystem, setActiveRankingSystem] = useState(null);
+  const initialDataLoadedRef = React.useRef(false);
 
   const [entrySearchTerm, setEntrySearchTerm] = useState("");
   const [entrySearchResults, setEntrySearchResults] = useState([]);
@@ -1441,6 +1464,7 @@ const CompetitionRaces = () => {
     startRaceNumber: "",
     startTime: "",
     intervalMinutes: "10",
+    distance: "",
     allowMultipleEntries: false,
   });
 
@@ -1618,73 +1642,79 @@ const CompetitionRaces = () => {
   // Combined stats from registration entries AND race lane assignments
   // This ensures old competitions with races but no formal registrations still show stats
   const combinedStats = useMemo(() => {
-    // If we have registration stats with entries, use them as base
-    if (registrationStats?.totalEntries > 0) {
-      return registrationStats;
-    }
-
-    // Otherwise, calculate stats from races
-    if (!races || races.length === 0) {
-      return (
-        registrationStats || {
-          totalEntries: 0,
-          totalAthletes: 0,
-          totalClubs: 0,
-          byCategory: [],
-        }
-      );
-    }
-
+    // Merge registration stats with race stats to show all categories
     const athleteIds = new Set();
     const clubIds = new Set();
     const categoryCounts = {};
 
-    races.forEach((race) => {
-      const catId = toDocumentId(race.category);
-      const catObj = race.category;
+    // First, add stats from registration entries
+    if (registrationStats?.byCategory?.length > 0) {
+      registrationStats.byCategory.forEach((cat) => {
+        if (!categoryCounts[cat.id]) {
+          categoryCounts[cat.id] = {
+            id: cat.id,
+            name: cat.name,
+            count: 0,
+            entries: cat.entries || [],
+          };
+        }
+        categoryCounts[cat.id].count += cat.count;
+      });
+    }
 
-      // Get category name
-      let catName = "Unknown";
-      if (catObj && typeof catObj === "object") {
-        catName =
-          catObj.abbreviation || catObj.titles?.en || catObj.name || "Unknown";
-      } else if (catId && categories.length > 0) {
-        const foundCat = categories.find((c) => toDocumentId(c) === catId);
-        if (foundCat) {
+    // Then, add/merge stats from races (for categories not in registration or additional entries)
+    if (races && races.length > 0) {
+      races.forEach((race) => {
+        const catId = toDocumentId(race.category);
+        const catObj = race.category;
+
+        // Get category name
+        let catName = "Unknown";
+        if (catObj && typeof catObj === "object") {
           catName =
-            foundCat.abbreviation ||
-            foundCat.titles?.en ||
-            foundCat.name ||
+            catObj.abbreviation ||
+            catObj.titles?.en ||
+            catObj.name ||
             "Unknown";
-        }
-      }
-
-      (race.lanes || []).forEach((lane) => {
-        // Count clubs
-        const clubId = toDocumentId(lane?.club);
-        if (clubId) {
-          clubIds.add(clubId);
-        }
-
-        // Count athletes from single athlete lanes
-        const athleteId = toDocumentId(lane?.athlete);
-        if (athleteId) {
-          athleteIds.add(athleteId);
+        } else if (catId && categories.length > 0) {
+          const foundCat = categories.find((c) => toDocumentId(c) === catId);
+          if (foundCat) {
+            catName =
+              foundCat.abbreviation ||
+              foundCat.titles?.en ||
+              foundCat.name ||
+              "Unknown";
+          }
         }
 
-        // Count athletes from crew lanes
-        if (Array.isArray(lane.crew)) {
-          lane.crew.forEach((member) => {
-            const memberId = toDocumentId(member);
-            if (memberId) {
-              athleteIds.add(memberId);
-            }
-          });
-        }
+        (race.lanes || []).forEach((lane) => {
+          // Count clubs
+          const clubId = toDocumentId(lane?.club);
+          if (clubId) {
+            clubIds.add(clubId);
+          }
 
-        // Count entries per category (each lane with an athlete is an entry)
-        if (athleteId || (lane.crew && lane.crew.length > 0)) {
-          if (!categoryCounts[catId]) {
+          // Count athletes from single athlete lanes
+          const athleteId = toDocumentId(lane?.athlete);
+          if (athleteId) {
+            athleteIds.add(athleteId);
+          }
+
+          // Count athletes from crew lanes
+          if (Array.isArray(lane.crew)) {
+            lane.crew.forEach((member) => {
+              const memberId = toDocumentId(member);
+              if (memberId) {
+                athleteIds.add(memberId);
+              }
+            });
+          }
+
+          // Add category from races if not already in categoryCounts
+          if (
+            (athleteId || (lane.crew && lane.crew.length > 0)) &&
+            !categoryCounts[catId]
+          ) {
             categoryCounts[catId] = {
               id: catId,
               name: catName,
@@ -1692,18 +1722,43 @@ const CompetitionRaces = () => {
               entries: [],
             };
           }
-          categoryCounts[catId].count++;
-        }
+          // Only count race entries if category wasn't in registration stats
+          if (
+            (athleteId || (lane.crew && lane.crew.length > 0)) &&
+            !registrationStats?.byCategory?.some((c) => c.id === catId)
+          ) {
+            categoryCounts[catId].count++;
+          }
+        });
       });
-    });
+    }
+
+    // Calculate totals
+    const totalFromCategories = Object.values(categoryCounts).reduce(
+      (sum, cat) => sum + cat.count,
+      0,
+    );
+
+    // Use the maximum between registration stats and race-calculated counts
+    // This ensures we show accurate numbers even when races have more entries than registrations
+    // (e.g., old competitions where entries were deleted after races were generated)
+    const totalAthletes = Math.max(
+      registrationStats?.totalAthletes || 0,
+      athleteIds.size,
+    );
+    const totalClubs = Math.max(
+      registrationStats?.totalClubs || 0,
+      clubIds.size,
+    );
+    const totalEntries = Math.max(
+      registrationStats?.totalEntries || 0,
+      totalFromCategories,
+    );
 
     return {
-      totalEntries: Object.values(categoryCounts).reduce(
-        (sum, cat) => sum + cat.count,
-        0,
-      ),
-      totalAthletes: athleteIds.size,
-      totalClubs: clubIds.size,
+      totalEntries,
+      totalAthletes,
+      totalClubs,
       byCategory: Object.values(categoryCounts).sort((a, b) =>
         a.name.localeCompare(b.name),
       ),
@@ -1922,11 +1977,17 @@ const CompetitionRaces = () => {
     loadReferenceData();
   }, [loadReferenceData]);
 
+  // Load races, registration, and ranking after reference data is loaded
   useEffect(() => {
-    loadRaces();
-    loadRegistrationSummary();
-    loadRankingSystem();
-  }, [loadCompetition, loadRaces, loadRegistrationSummary, loadRankingSystem]);
+    // Only load registration data once when categories are first available
+    // to ensure proper category name resolution and prevent duplicate calls
+    if (categories.length > 0 && !initialDataLoadedRef.current) {
+      initialDataLoadedRef.current = true;
+      loadRaces();
+      loadRegistrationSummary();
+      loadRankingSystem();
+    }
+  }, [categories, loadRaces, loadRegistrationSummary, loadRankingSystem]);
 
   useEffect(() => {
     if (!token || !entrySearchTerm.trim()) {
@@ -2001,6 +2062,9 @@ const CompetitionRaces = () => {
         return;
       }
 
+      // Check if age verification should be bypassed (admin/jury only)
+      const bypassAge = autoGenState.bypassAgeVerification || false;
+
       // Validate gender and category if a category is selected
       if (autoGenState.category) {
         const selectedCategory = categories.find(
@@ -2062,40 +2126,43 @@ const CompetitionRaces = () => {
           }
 
           // Check age compatibility using `getAge` (more robust parsing)
-          // Use competition's season year for age calculation
-          const age = getAge(athlete, competitionSeason);
-          if (age !== null) {
-            const minAge = selectedCategory.minAge;
-            const maxAge = selectedCategory.maxAge;
-            // Update master detection based on computed age (masters commonly start at 27)
-            if (!isMaster && typeof age === "number" && age >= 27) {
-              isMaster = true;
-            }
+          // Skip age check if bypass is enabled
+          if (!bypassAge) {
+            // Use competition's season year for age calculation
+            const age = getAge(athlete, competitionSeason);
+            if (age !== null) {
+              const minAge = selectedCategory.minAge;
+              const maxAge = selectedCategory.maxAge;
+              // Update master detection based on computed age (masters commonly start at 27)
+              if (!isMaster && typeof age === "number" && age >= 27) {
+                isMaster = true;
+              }
 
-            // If category is senior and allowJuniorsInSenior is checked, skip upper age check for juniors
-            if (minAge !== undefined && age < minAge) {
-              toast.error(
-                `${formatAthleteName(athlete)} is too young for ${
-                  selectedCategory.titles?.en || selectedCategory.abbreviation
-                } (minimum age: ${minAge})`,
-              );
-              return;
-            }
+              // If category is senior and allowJuniorsInSenior is checked, skip upper age check for juniors
+              if (minAge !== undefined && age < minAge) {
+                toast.error(
+                  `${formatAthleteName(athlete)} is too young for ${
+                    selectedCategory.titles?.en || selectedCategory.abbreviation
+                  } (minimum age: ${minAge})`,
+                );
+                return;
+              }
 
-            if (
-              maxAge !== undefined &&
-              age > maxAge &&
-              !(
-                isSenior &&
-                ((allowJuniors && isJunior) || (allowMasters && isMaster))
-              )
-            ) {
-              toast.error(
-                `${formatAthleteName(athlete)} is too old for ${
-                  selectedCategory.titles?.en || selectedCategory.abbreviation
-                } (maximum age: ${maxAge})`,
-              );
-              return;
+              if (
+                maxAge !== undefined &&
+                age > maxAge &&
+                !(
+                  isSenior &&
+                  ((allowJuniors && isJunior) || (allowMasters && isMaster))
+                )
+              ) {
+                toast.error(
+                  `${formatAthleteName(athlete)} is too old for ${
+                    selectedCategory.titles?.en || selectedCategory.abbreviation
+                  } (maximum age: ${maxAge})`,
+                );
+                return;
+              }
             }
           }
         }
@@ -2627,6 +2694,7 @@ const CompetitionRaces = () => {
       autoGenState.category,
       autoGenState.allowJuniorsInSenior,
       autoGenState.allowMastersInSenior,
+      autoGenState.bypassAgeVerification,
       categories,
       registrationStats,
       raceAthleteLookup,
@@ -2635,6 +2703,7 @@ const CompetitionRaces = () => {
       competitionId,
       requiredCrewSize,
       setPendingManualCrew,
+      competition,
     ],
   );
 
@@ -2749,6 +2818,16 @@ const CompetitionRaces = () => {
     setEntries([]);
   }, []);
 
+  const handleSortBySeed = useCallback(() => {
+    setEntries((previous) =>
+      [...previous].sort((a, b) => {
+        const seedA = Number(a.seed) || 0;
+        const seedB = Number(b.seed) || 0;
+        return seedA - seedB;
+      }),
+    );
+  }, []);
+
   const relevantEntries = useMemo(() => {
     // Start with manual entries
     let result = [...entries];
@@ -2847,8 +2926,16 @@ const CompetitionRaces = () => {
     const newManualEntries = entries.filter(
       (e) => e.uid && e.uid.toString().startsWith("manual-"),
     );
+    // 3. Identify entries loaded from races (need to be saved as new registration entries)
+    const raceLoadedEntries = entries.filter(
+      (e) => e.uid && e.uid.toString().startsWith("race-"),
+    );
 
-    if (modifiedIds.length === 0 && newManualEntries.length === 0) {
+    if (
+      modifiedIds.length === 0 &&
+      newManualEntries.length === 0 &&
+      raceLoadedEntries.length === 0
+    ) {
       toast.info("No changes to save");
       return;
     }
@@ -2882,12 +2969,12 @@ const CompetitionRaces = () => {
         successCount++;
       }
 
-      // 4. Create NEW manual entries
-      // 4. Create NEW manual entries (Batched by Club)
-      if (newManualEntries.length > 0) {
+      // 4. Create NEW manual entries AND race-loaded entries (Batched by Club)
+      const allNewEntries = [...newManualEntries, ...raceLoadedEntries];
+      if (allNewEntries.length > 0) {
         // Group by Club ID to satisfy backend requirement for "A club context"
         const entriesByClub = {};
-        for (const e of newManualEntries) {
+        for (const e of allNewEntries) {
           const cId = e.clubId;
           // If no club ID, we might need a fallback or it will fail.
           // Assuming all valid entries have clubId from selector.
@@ -2940,9 +3027,13 @@ const CompetitionRaces = () => {
           successCount += clubEntries.length;
         }
 
-        // Clear manual entries from state as they are now in DB
+        // Clear manual and race-loaded entries from state as they are now in DB
         setEntries((prev) =>
-          prev.filter((e) => !e.uid.toString().startsWith("manual-")),
+          prev.filter(
+            (e) =>
+              !e.uid.toString().startsWith("manual-") &&
+              !e.uid.toString().startsWith("race-"),
+          ),
         );
       }
 
@@ -3013,6 +3104,47 @@ const CompetitionRaces = () => {
       return;
     }
 
+    // Check for existing races that would be overwritten
+    if (autoGenState.overwriteExisting) {
+      const categoryId = autoGenState.category;
+      const boatClassId = autoGenState.boatClass;
+      const journeyVal = journeyIndex;
+
+      // Find races that match the filter (same as backend deleteMany filter)
+      const matchingRaces = races.filter((r) => {
+        const rCatId = toDocumentId(r.category);
+        const rBoatId = toDocumentId(r.boatClass);
+        const rJourney = r.journeyIndex;
+
+        if (rCatId !== categoryId) return false;
+        if (rJourney !== journeyVal) return false;
+        if (boatClassId && rBoatId !== boatClassId) return false;
+        return true;
+      });
+
+      if (matchingRaces.length > 0) {
+        const completedRaces = matchingRaces.filter(
+          (r) => r.status === "completed",
+        );
+        const racesWithResults = matchingRaces.filter((r) =>
+          r.lanes?.some((l) => l.result?.elapsedMs || l.result?.finishPosition),
+        );
+
+        let warningMsg = `This will delete ${matchingRaces.length} existing race(s).`;
+        if (completedRaces.length > 0) {
+          warningMsg += `\n\n⚠️ ${completedRaces.length} race(s) have status "completed".`;
+        }
+        if (racesWithResults.length > 0) {
+          warningMsg += `\n⚠️ ${racesWithResults.length} race(s) have entered results that will be LOST.`;
+        }
+        warningMsg += "\n\nAre you sure you want to continue?";
+
+        if (!window.confirm(warningMsg)) {
+          return;
+        }
+      }
+    }
+
     const payload = {
       category: autoGenState.category,
       boatClass: autoGenState.boatClass || undefined,
@@ -3029,6 +3161,9 @@ const CompetitionRaces = () => {
       intervalMinutes: autoGenState.intervalMinutes
         ? Number(autoGenState.intervalMinutes)
         : 0,
+      distance: autoGenState.distance
+        ? Number(autoGenState.distance)
+        : undefined,
       entries: relevantEntries.map((entry) => ({
         athleteId: entry.athleteId,
         crew: entry.crew ? entry.crew.map((c) => c.id || c._id) : [],
@@ -3089,13 +3224,21 @@ const CompetitionRaces = () => {
       // setEntries([]); // Keep entries to allow generating other boat classes
       setEntrySearchTerm("");
       await loadRaces();
+      await loadRegistrationSummary(); // Refresh categories overview
     } catch (error) {
       console.error("Failed to auto-generate races", error);
       toast.error(error.message);
     } finally {
       setSubmittingAutoGen(false);
     }
-  }, [autoGenState, competitionDocumentId, entries, loadRaces, token]);
+  }, [
+    autoGenState,
+    competitionDocumentId,
+    entries,
+    loadRaces,
+    loadRegistrationSummary,
+    token,
+  ]);
 
   const submitLaneSwap = useCallback(async () => {
     if (!token || !competitionDocumentId) {
@@ -3311,6 +3454,19 @@ const CompetitionRaces = () => {
                 })}
               </span>
             </div>
+          );
+        },
+      },
+      {
+        field: "distance",
+        headerText: "Dist.",
+        width: 70,
+        textAlign: "Center",
+        template: (props) => {
+          const dist = props.distanceOverride || competition?.defaultDistance;
+          if (!dist) return <span className="text-slate-400">-</span>;
+          return (
+            <span className="text-sm font-medium text-slate-700">{dist}m</span>
           );
         },
       },
@@ -4777,136 +4933,278 @@ const CompetitionRaces = () => {
     setAutoGenState((prev) => ({ ...prev, category: categoryId }));
     // Find entries for this category and populate the start list
     const sourceStats = statsOverride || registrationStats;
-    if (sourceStats?.byCategory) {
-      const catData = sourceStats.byCategory.find((c) => c.id === categoryId);
-      if (catData) {
-        const boatClassCounts = {};
 
-        // Transform entries to the format expected by the start list
-        let newEntries = catData.entries.map((entry, index) => {
-          // Prefer the athlete's current club / active membership club when present
-          const memberships = Array.isArray(entry.athlete?.memberships)
-            ? entry.athlete.memberships
-            : [];
-          // Always use active membership for club context, prioritizing standard clubs over promotion centers
-          const activeMemberships = memberships.filter(
-            (membership) => membership?.status === "active" && membership.club,
-          );
-          // Try to find a 'club' type specifically, otherwise fall back to first active
-          const activeMembership =
-            activeMemberships.find((m) => m.club?.type === "club") ||
-            activeMemberships[0];
-          const resolvedClub =
-            activeMembership?.club || entry.athlete?.club || entry.club || null;
+    // First check if we have registration entries for this category
+    let catData = sourceStats?.byCategory?.find((c) => c.id === categoryId);
+    let hasRegistrationEntries = catData?.entries?.length > 0;
 
-          // Determine boat class ID for seeding
-          const bcId =
-            entry.boatClass?._id ||
-            entry.boatClass?.id ||
-            (typeof entry.boatClass === "string" ? entry.boatClass : "unknown");
-          if (!boatClassCounts[bcId]) {
-            boatClassCounts[bcId] = 0;
-          }
-          boatClassCounts[bcId]++;
-
-          return {
-            id: entry._id,
-            uid: entry._id || `gen-${index}-${Date.now()}`,
-            athleteId:
-              toDocumentId(entry.athlete) ||
-              (entry.crew && entry.crew.length > 0
-                ? toDocumentId(entry.crew[0])
-                : null) ||
-              entry._id,
-            athlete: entry.athlete,
-            crew: entry.crew,
-            clubId: resolvedClub?._id || resolvedClub || entry.club?._id,
-            clubName: resolveClubLabel(resolvedClub) || entry.club?.name,
-            clubCode: resolvedClub?.code || entry.club?.code,
-            category: entry.category,
-            boatClass: entry.boatClass,
-            crewNumber: entry.crewNumber,
-            seed: boatClassCounts[bcId], // Seed per boat class
-            notes: entry.notes || "",
-          };
-        });
-
-        // Check for existing races to preserve seeds/bibs
-        const existingRaces = races.filter((r) => {
+    // If no registration entries, try to build entries from existing races
+    if (!hasRegistrationEntries) {
+      // Filter and sort races by order to get correct sequence
+      const existingRaces = races
+        .filter((r) => {
           const rCatId = toDocumentId(r.category);
           return rCatId === categoryId;
-        });
+        })
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
 
-        if (existingRaces.length > 0) {
-          const assignmentMap = new Map();
-          existingRaces.forEach((race) => {
-            if (race.lanes) {
-              race.lanes.forEach((lane) => {
-                let key = null;
-                if (lane.athlete) {
-                  key = toDocumentId(lane.athlete);
-                } else if (lane.crew && lane.crew.length > 0) {
-                  key = toDocumentId(lane.crew[0]);
-                }
+      if (existingRaces.length > 0) {
+        // Extract race settings from existing races (sorted by order)
+        const firstRace = existingRaces[0];
+        const lastRace = existingRaces[existingRaces.length - 1];
 
-                if (key) {
-                  assignmentMap.set(key, {
-                    seed: lane.seed,
-                  });
-                }
+        // Calculate max lanes from existing races
+        const maxLanesInRaces = Math.max(
+          ...existingRaces.map((r) => (r.lanes || []).length),
+        );
+
+        // Extract start time from first race
+        let startTimeStr = "";
+        if (firstRace.startTime) {
+          const startDate = new Date(firstRace.startTime);
+          if (!isNaN(startDate.getTime())) {
+            const pad = (n) => n.toString().padStart(2, "0");
+            startTimeStr = `${startDate.getFullYear()}-${pad(startDate.getMonth() + 1)}-${pad(startDate.getDate())}T${pad(startDate.getHours())}:${pad(startDate.getMinutes())}`;
+          }
+        }
+
+        // Calculate interval between races
+        let intervalMinutes = 10;
+        if (
+          existingRaces.length > 1 &&
+          firstRace.startTime &&
+          existingRaces[1].startTime
+        ) {
+          const first = new Date(firstRace.startTime).getTime();
+          const second = new Date(existingRaces[1].startTime).getTime();
+          if (!isNaN(first) && !isNaN(second)) {
+            intervalMinutes = Math.round((second - first) / 60000);
+          }
+        }
+
+        // Get boat class from first race
+        const raceBoatClassId = toDocumentId(firstRace.boatClass);
+
+        // Get distance from first race (if set)
+        const raceDistance = firstRace.distanceOverride;
+
+        // Update auto-gen state with race settings
+        setAutoGenState((prev) => ({
+          ...prev,
+          lanesPerRace:
+            maxLanesInRaces > 0
+              ? maxLanesInRaces.toString()
+              : prev.lanesPerRace,
+          startTime: startTimeStr || prev.startTime,
+          intervalMinutes:
+            intervalMinutes > 0
+              ? intervalMinutes.toString()
+              : prev.intervalMinutes,
+          startRaceNumber: firstRace.order
+            ? firstRace.order.toString()
+            : prev.startRaceNumber,
+          sessionLabel: firstRace.sessionLabel || prev.sessionLabel,
+          racePrefix:
+            firstRace.name?.replace(/\s*\d+$/, "").trim() || prev.racePrefix,
+          boatClass: raceBoatClassId || prev.boatClass,
+          journeyIndex: firstRace.journeyIndex
+            ? firstRace.journeyIndex.toString()
+            : prev.journeyIndex,
+          distance: raceDistance ? raceDistance.toString() : prev.distance,
+        }));
+
+        // Build entries from race lanes
+        const entriesFromRaces = [];
+        const seenAthletes = new Set();
+
+        existingRaces.forEach((race) => {
+          (race.lanes || []).forEach((lane, laneIndex) => {
+            const athleteId = toDocumentId(lane.athlete);
+            const crewKey =
+              lane.crew?.length > 0
+                ? lane.crew.map((c) => toDocumentId(c)).join("-")
+                : athleteId;
+
+            if (crewKey && !seenAthletes.has(crewKey)) {
+              seenAthletes.add(crewKey);
+              entriesFromRaces.push({
+                _id: `race-${race._id}-lane-${laneIndex}`,
+                athlete: lane.athlete,
+                crew: lane.crew || [],
+                club: lane.club,
+                boatClass: race.boatClass,
+                category: race.category,
+                seed: lane.seed,
+                crewNumber: lane.crewNumber,
+                notes: lane.notes || "",
               });
             }
           });
-
-          newEntries = newEntries.map((entry) => {
-            const existing = assignmentMap.get(entry.athleteId);
-            if (existing) {
-              return {
-                ...entry,
-                seed: existing.seed || entry.seed,
-              };
-            }
-            return entry;
-          });
-        }
-
-        setEntries([]);
-
-        // Auto-select boat class if all entries share the same one
-        const uniqueBoatClasses = new Set(
-          catData.entries
-            .map(
-              (e) =>
-                e.boatClass?.id ||
-                (typeof e.boatClass === "string" ? e.boatClass : null),
-            )
-            .filter(Boolean),
-        );
-
-        setAutoGenState((prev) => {
-          if (uniqueBoatClasses.size === 1) {
-            const singleBoatClassId = uniqueBoatClasses.values().next().value;
-            // Always lock to the single available boat class
-            return {
-              ...prev,
-              boatClass: singleBoatClassId,
-            };
-          }
-
-          // If multiple boat classes, check if current selection is still valid
-          if (prev.boatClass && uniqueBoatClasses.has(prev.boatClass)) {
-            return prev;
-          }
-
-          // Otherwise reset if invalid or empty
-          return {
-            ...prev,
-            boatClass: "",
-          };
         });
 
-        toast.info(`Loaded ${newEntries.length} entries for ${catData.name}`);
+        if (entriesFromRaces.length > 0) {
+          // Get category name
+          const catObj = existingRaces[0]?.category;
+          let catName = "Unknown";
+          if (catObj && typeof catObj === "object") {
+            catName =
+              catObj.abbreviation ||
+              catObj.titles?.en ||
+              catObj.name ||
+              "Unknown";
+          } else if (categoryId && categories.length > 0) {
+            const foundCat = categories.find(
+              (c) => toDocumentId(c) === categoryId,
+            );
+            if (foundCat) {
+              catName =
+                foundCat.abbreviation ||
+                foundCat.titles?.en ||
+                foundCat.name ||
+                "Unknown";
+            }
+          }
+
+          catData = {
+            id: categoryId,
+            name: catName,
+            count: entriesFromRaces.length,
+            entries: entriesFromRaces,
+          };
+          hasRegistrationEntries = true; // We now have entries from races
+        }
       }
+    }
+
+    if (catData && catData.entries?.length > 0) {
+      const boatClassCounts = {};
+
+      // Transform entries to the format expected by the start list
+      let newEntries = catData.entries.map((entry, index) => {
+        // Prefer the athlete's current club / active membership club when present
+        const memberships = Array.isArray(entry.athlete?.memberships)
+          ? entry.athlete.memberships
+          : [];
+        // Always use active membership for club context, prioritizing standard clubs over promotion centers
+        const activeMemberships = memberships.filter(
+          (membership) => membership?.status === "active" && membership.club,
+        );
+        // Try to find a 'club' type specifically, otherwise fall back to first active
+        const activeMembership =
+          activeMemberships.find((m) => m.club?.type === "club") ||
+          activeMemberships[0];
+        const resolvedClub =
+          activeMembership?.club || entry.athlete?.club || entry.club || null;
+
+        // Determine boat class ID for seeding
+        const bcId =
+          entry.boatClass?._id ||
+          entry.boatClass?.id ||
+          (typeof entry.boatClass === "string" ? entry.boatClass : "unknown");
+        if (!boatClassCounts[bcId]) {
+          boatClassCounts[bcId] = 0;
+        }
+        boatClassCounts[bcId]++;
+
+        return {
+          id: entry._id,
+          uid: entry._id || `gen-${index}-${Date.now()}`,
+          athleteId:
+            toDocumentId(entry.athlete) ||
+            (entry.crew && entry.crew.length > 0
+              ? toDocumentId(entry.crew[0])
+              : null) ||
+            entry._id,
+          athlete: entry.athlete,
+          crew: entry.crew,
+          clubId: resolvedClub?._id || resolvedClub || entry.club?._id,
+          clubName: resolveClubLabel(resolvedClub) || entry.club?.name,
+          clubCode: resolvedClub?.code || entry.club?.code,
+          category: entry.category,
+          boatClass: entry.boatClass,
+          crewNumber: entry.crewNumber,
+          seed: boatClassCounts[bcId], // Seed per boat class
+          notes: entry.notes || "",
+        };
+      });
+
+      // Check for existing races to preserve seeds/bibs
+      const existingRaces = races.filter((r) => {
+        const rCatId = toDocumentId(r.category);
+        return rCatId === categoryId;
+      });
+
+      if (existingRaces.length > 0) {
+        const assignmentMap = new Map();
+        existingRaces.forEach((race) => {
+          if (race.lanes) {
+            race.lanes.forEach((lane) => {
+              let key = null;
+              if (lane.athlete) {
+                key = toDocumentId(lane.athlete);
+              } else if (lane.crew && lane.crew.length > 0) {
+                key = toDocumentId(lane.crew[0]);
+              }
+
+              if (key) {
+                assignmentMap.set(key, {
+                  seed: lane.seed,
+                  crewNumber: lane.crewNumber,
+                });
+              }
+            });
+          }
+        });
+
+        newEntries = newEntries.map((entry) => {
+          const existing = assignmentMap.get(entry.athleteId);
+          if (existing) {
+            return {
+              ...entry,
+              seed: existing.seed || entry.seed,
+              crewNumber: existing.crewNumber ?? entry.crewNumber,
+            };
+          }
+          return entry;
+        });
+      }
+
+      setEntries(newEntries);
+
+      // Auto-select boat class if all entries share the same one
+      const uniqueBoatClasses = new Set(
+        catData.entries
+          .map(
+            (e) =>
+              e.boatClass?.id ||
+              (typeof e.boatClass === "string" ? e.boatClass : null),
+          )
+          .filter(Boolean),
+      );
+
+      setAutoGenState((prev) => {
+        if (uniqueBoatClasses.size === 1) {
+          const singleBoatClassId = uniqueBoatClasses.values().next().value;
+          // Always lock to the single available boat class
+          return {
+            ...prev,
+            boatClass: singleBoatClassId,
+          };
+        }
+
+        // If multiple boat classes, check if current selection is still valid
+        if (prev.boatClass && uniqueBoatClasses.has(prev.boatClass)) {
+          return prev;
+        }
+
+        // Otherwise reset if invalid or empty
+        return {
+          ...prev,
+          boatClass: "",
+        };
+      });
+
+      toast.info(`Loaded ${newEntries.length} entries for ${catData.name}`);
     }
   };
 
@@ -5182,6 +5480,20 @@ const CompetitionRaces = () => {
                   />
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="autoDistance">Distance (m)</Label>
+                  <Input
+                    id="autoDistance"
+                    name="distance"
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={autoGenState.distance}
+                    onChange={handleAutoGenFieldChange}
+                    placeholder="Default"
+                  />
+                </div>
+
                 <div className="flex items-center gap-2 pb-2">
                   <input
                     id="autoOverwrite"
@@ -5240,6 +5552,25 @@ const CompetitionRaces = () => {
                     </Label>
                   </div>
                 )}
+                {(user?.role === "admin" ||
+                  user?.role === "jury_president") && (
+                  <div className="flex items-center gap-2 pb-2 text-amber-600">
+                    <input
+                      id="bypassAgeVerification"
+                      name="bypassAgeVerification"
+                      type="checkbox"
+                      checked={autoGenState.bypassAgeVerification || false}
+                      onChange={handleAutoGenFieldChange}
+                      className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <Label
+                      htmlFor="bypassAgeVerification"
+                      className="text-sm font-medium"
+                    >
+                      Bypass age verification (for past competitions)
+                    </Label>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -5262,6 +5593,15 @@ const CompetitionRaces = () => {
                       }
                       className="w-56"
                     />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSortBySeed}
+                      disabled={entries.length < 2}
+                      title="Sort entries by seed number"
+                    >
+                      Sort by Seed
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
