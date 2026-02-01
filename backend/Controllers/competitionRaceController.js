@@ -342,6 +342,7 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
       seed: Number.isFinite(seedValue) ? seedValue : index + 1,
       clubId: toObjectId(entry.clubId || entry.club || null),
       notes: normaliseString(entry.notes),
+      crewNumber: entry.crewNumber,
     };
   });
 
@@ -450,7 +451,11 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
       entry.clubId,
     );
 
-    const crewNumber = crewNumberMap.get(representative._id.toString());
+    // Use crewNumber from request if provided, otherwise fallback to CompetitionEntry lookup
+    const crewNumber =
+      entry.crewNumber !== undefined
+        ? entry.crewNumber
+        : crewNumberMap.get(representative._id.toString());
 
     return {
       athlete: athleteDoc,
@@ -485,6 +490,7 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
     startRaceNumber,
     startTime,
     intervalMinutes = 0,
+    distance,
   } = req.body || {};
 
   const categoryId = toObjectId(category);
@@ -627,7 +633,13 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
     "Race";
 
   const racesToInsert = entryChunks.map((chunk, index) => {
-    const lanes = chunk.map((entry, laneIndex) => ({
+    // Sort chunk by seed to ensure seeds are in order within the race
+    const sortedChunk = [...chunk].sort(
+      (a, b) => (a.seed || 0) - (b.seed || 0),
+    );
+
+    const lanes = sortedChunk.map((entry, laneIndex) => ({
+      // Lane number matches the position (1, 2, 3...) based on seed order
       lane: laneIndex + 1,
       // Only set athlete if it's NOT a crew boat (or crew is empty)
       // This prevents the frontend from prioritizing the single athlete display over the crew display
@@ -660,6 +672,7 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
       name: `${prefixLabel} ${index + 1}`, // Keep name as "Heat 1", "Heat 2" etc. relative to this batch
       order: currentOrder,
       startTime: currentStartTime,
+      distanceOverride: distance ? Number(distance) : undefined,
       status: "scheduled",
       lanes,
       createdBy: req.user?.id,
@@ -717,6 +730,14 @@ export const listRaces = asyncHandler(async (req, res) => {
   const races = await CompetitionRace.find(query)
     .sort({ journeyIndex: 1, order: 1, startTime: 1 })
     .populate({
+      path: "category",
+      select: "abbreviation titles type gender",
+    })
+    .populate({
+      path: "boatClass",
+      select: "code names discipline crewSize",
+    })
+    .populate({
       path: "lanes.athlete",
       select:
         "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender",
@@ -746,6 +767,14 @@ export const getRace = asyncHandler(async (req, res) => {
     _id: raceId,
     competition: competition._id,
   })
+    .populate({
+      path: "category",
+      select: "abbreviation titles name gender ageGroup",
+    })
+    .populate({
+      path: "boatClass",
+      select: "abbreviation names crewSize",
+    })
     .populate({
       path: "lanes.athlete",
       select:
@@ -1024,8 +1053,8 @@ const sanitiseResultsUpdate = (lanes = []) => {
       continue;
     }
     const laneNumber = Number(laneResult.lane ?? laneResult.laneNumber);
-    if (!Number.isInteger(laneNumber) || laneNumber < 1 || laneNumber > 8) {
-      throw new Error("Lane numbers must be between 1 and 8");
+    if (!Number.isInteger(laneNumber) || laneNumber < 1 || laneNumber > 100) {
+      throw new Error("Lane numbers must be between 1 and 100");
     }
 
     const update = {
@@ -1033,31 +1062,34 @@ const sanitiseResultsUpdate = (lanes = []) => {
       result: {},
     };
 
-    if (laneResult.status) {
-      if (!LANE_RESULT_STATUSES.includes(laneResult.status)) {
+    // Support both flat structure and nested result object
+    const resultData = laneResult.result || laneResult;
+
+    if (resultData.status) {
+      if (!LANE_RESULT_STATUSES.includes(resultData.status)) {
         throw new Error("Unsupported lane result status");
       }
-      update.result.status = laneResult.status;
+      update.result.status = resultData.status;
     }
 
-    if (laneResult.finishPosition !== undefined) {
-      const finishPosition = Number(laneResult.finishPosition);
+    if (resultData.finishPosition !== undefined) {
+      const finishPosition = Number(resultData.finishPosition);
       if (!Number.isInteger(finishPosition) || finishPosition < 1) {
         throw new Error("Finish position must be a positive integer");
       }
       update.result.finishPosition = finishPosition;
     }
 
-    if (laneResult.elapsedMs !== undefined) {
-      const elapsedMs = Number(laneResult.elapsedMs);
+    if (resultData.elapsedMs !== undefined) {
+      const elapsedMs = Number(resultData.elapsedMs);
       if (Number.isNaN(elapsedMs) || elapsedMs < 0) {
         throw new Error("Elapsed time must be zero or greater");
       }
       update.result.elapsedMs = elapsedMs;
     }
 
-    if (laneResult.notes) {
-      update.result.notes = laneResult.notes.toString().trim();
+    if (resultData.notes) {
+      update.result.notes = resultData.notes.toString().trim();
     }
 
     updates.push(update);

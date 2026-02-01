@@ -14,6 +14,7 @@ import {
   Sort,
   Resize,
   RowDD,
+  PdfExport,
 } from "@syncfusion/ej2-react-grids";
 
 const generateGridId = () => `grid-${Math.random().toString(36).slice(2, 9)}`;
@@ -36,14 +37,22 @@ export const DataGrid = React.forwardRef(
       allowRowDragAndDrop = false,
       onRowDrop,
       rowDropTargetID,
+      showExport = true,
+      showColumnChooser = true,
+      rowHeight = 100,
+      showPdfExport = false,
     },
     ref
   ) => {
     const internalGridRef = useRef(null);
     const resolvedGridId = useMemo(() => gridId || generateGridId(), [gridId]);
 
-    // Expose the internal grid instance to the parent ref if provided
-    React.useImperativeHandle(ref, () => internalGridRef.current);
+    // Expose the internal grid instance and export methods
+    React.useImperativeHandle(ref, () => ({
+      ...internalGridRef.current, // Expose all internal grid properties/methods
+      excelExport: (...args) => internalGridRef.current?.excelExport(...args),
+      pdfExport: (...args) => internalGridRef.current?.pdfExport(...args),
+    }));
 
   const resolvedPageSize = useMemo(() => {
     const candidate = Number(pageSize);
@@ -52,13 +61,81 @@ export const DataGrid = React.forwardRef(
       : DEFAULT_PAGE_SIZE;
   }, [pageSize]);
 
+  const pagerTemplate = useCallback((props) => {
+    // Syncfusion pager template props: currentPage, pageSize, pageCount (total pages), totalRecordsCount
+    const { currentPage, totalPages, totalRecordsCount, pageSize } = props;
+    const start = (currentPage - 1) * pageSize + 1;
+    const end = Math.min(currentPage * pageSize, totalRecordsCount);
+
+    const handlePageSizeChange = (e) => {
+      if (internalGridRef.current) {
+        internalGridRef.current.pageSettings.pageSize = parseInt(e.target.value, 10);
+      }
+    };
+
+    const goToPage = (num) => {
+      if (internalGridRef.current) {
+        internalGridRef.current.goToPage(num);
+      }
+    };
+
+    return (
+      <div className="flex w-full flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-white px-6 py-4">
+        <div className="text-sm text-slate-500">
+          Showing <span className="font-medium text-slate-900">{start}</span> to{" "}
+          <span className="font-medium text-slate-900">{end}</span> of{" "}
+          <span className="font-medium text-slate-900">{totalRecordsCount}</span>{" "}
+          results
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-500">Rows per page</span>
+            <select
+              className="h-8 rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={pageSize}
+              onChange={handlePageSizeChange}
+            >
+              {[5, 10, 20, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => goToPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white"
+              title="Previous Page"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <span className="min-w-[4rem] text-center text-sm font-medium text-slate-700">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => goToPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white"
+              title="Next Page"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }, []);
+
   const pageSettings = useMemo(
     () => ({
       pageSize: resolvedPageSize,
-      pageSizes: [resolvedPageSize, resolvedPageSize * 2, resolvedPageSize * 4],
-      pageCount: 3,
+      template: pagerTemplate,
     }),
-    [resolvedPageSize]
+    [resolvedPageSize, pagerTemplate]
   );
 
   const selectionSettings = useMemo(
@@ -86,11 +163,14 @@ export const DataGrid = React.forwardRef(
 
   const toolbarItems = useMemo(
     () => {
-      const items = ["ColumnChooser", "ExcelExport"];
-      if (showSearch) items.unshift("Search");
-      return items;
+      const items = [];
+      if (showSearch) items.push("Search");
+      if (showColumnChooser) items.push("ColumnChooser");
+      if (showExport) items.push("ExcelExport");
+      if (showPdfExport) items.push("PdfExport");
+      return items.length > 0 ? items : undefined;
     },
-    [showSearch]
+    [showSearch, showExport, showColumnChooser, showPdfExport]
   );
 
   const emptyRecordTemplate = useMemo(
@@ -106,6 +186,8 @@ export const DataGrid = React.forwardRef(
   const toolbarClick = (args) => {
     if (args.item?.id === `${resolvedGridId}_excelexport`) {
       internalGridRef.current?.excelExport();
+    } else if (args.item?.id === `${resolvedGridId}_pdfexport`) {
+      internalGridRef.current?.pdfExport();
     }
   };
 
@@ -138,9 +220,10 @@ export const DataGrid = React.forwardRef(
         allowFiltering
         allowResizing
         allowExcelExport
+        allowPdfExport
         showColumnChooser
         gridLines="Horizontal"
-        rowHeight={100}
+        rowHeight={rowHeight}
         toolbar={toolbarItems}
         toolbarClick={toolbarClick}
         pageSettings={pageSettings}
@@ -191,6 +274,7 @@ export const DataGrid = React.forwardRef(
             Sort,
             Resize,
             RowDD,
+            PdfExport,
           ]}
         />
       </GridComponent>

@@ -38,6 +38,7 @@ const DEFAULT_FORM = {
   titleFr: "",
   titleAr: "",
   isActive: true,
+  isPara: false,
 };
 
 const CategoryManagement = () => {
@@ -187,6 +188,7 @@ const CategoryManagement = () => {
       titleFr: category.titles?.fr || "",
       titleAr: category.titles?.ar || "",
       isActive: Boolean(category.isActive),
+      isPara: Boolean(category.isPara),
     });
     setDialogOpen(true);
   }, []);
@@ -226,6 +228,7 @@ const CategoryManagement = () => {
         ar: formState.titleAr.trim() || undefined,
       },
       isActive: Boolean(formState.isActive),
+      isPara: Boolean(formState.isPara),
     };
 
     const response = await fetch(`${API_BASE_URL}/api/categories`, {
@@ -264,6 +267,7 @@ const CategoryManagement = () => {
         ar: formState.titleAr.trim() || undefined,
       },
       isActive: Boolean(formState.isActive),
+      isPara: Boolean(formState.isPara),
     };
 
     const response = await fetch(
@@ -445,8 +449,13 @@ const CategoryManagement = () => {
 
     return (
       <div className="flex flex-col text-xs text-slate-600">
-        <span className="font-medium text-slate-900">
+        <span className="flex items-center gap-2 font-medium text-slate-900">
           {category.abbreviation}
+          {category.isPara ? (
+            <span className="inline-flex items-center rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-700 ring-1 ring-inset ring-blue-700/10">
+              Para
+            </span>
+          ) : null}
         </span>
         {titles ? <span>{titles}</span> : <span>Untitled</span>}
       </div>
@@ -852,6 +861,20 @@ const CategoryManagement = () => {
                     <option value="true">Active</option>
                     <option value="false">Inactive</option>
                   </Select>
+                </div>
+                <div className="flex items-end pb-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="isPara"
+                      checked={formState.isPara || false}
+                      onChange={handleFormChange}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700">
+                      Para category
+                    </span>
+                  </label>
                 </div>
               </div>
               <div className="mt-6 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-end">

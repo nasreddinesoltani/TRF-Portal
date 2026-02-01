@@ -112,6 +112,7 @@ const defaultForm = {
   nationality: "",
   cin: "",
   passportNumber: "",
+  isPara: false,
 };
 
 const todayIsoDate = () => new Date().toISOString().split("T")[0];
@@ -369,6 +370,7 @@ const CreateAthlete = () => {
       nationality: athlete.nationality || "",
       cin: athlete.cin || "",
       passportNumber: athlete.passportNumber || "",
+      isPara: athlete.isPara || false,
     });
 
     const activeMembership = Array.isArray(athlete.memberships)
@@ -939,8 +941,11 @@ const CreateAthlete = () => {
   }, [editFormData]);
 
   const handleInputChange = (event) => {
-    const { name, value } = event.target;
-    setFormData((previous) => ({ ...previous, [name]: value }));
+    const { name, value, type, checked } = event.target;
+    setFormData((previous) => ({
+      ...previous,
+      [name]: type === "checkbox" ? checked : value,
+    }));
   };
 
   const handleClubSelectChange = (event) => {
@@ -948,9 +953,11 @@ const CreateAthlete = () => {
   };
 
   const handleEditInputChange = (event) => {
-    const { name, value } = event.target;
+    const { name, value, type, checked } = event.target;
     setEditFormData((previous) =>
-      previous ? { ...previous, [name]: value } : previous,
+      previous
+        ? { ...previous, [name]: type === "checkbox" ? checked : value }
+        : previous,
     );
   };
 
@@ -2702,6 +2709,20 @@ const CreateAthlete = () => {
                         className="h-10"
                       />
                     </div>
+                    <div className="flex items-end pb-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          name="isPara"
+                          checked={editFormData.isPara || false}
+                          onChange={handleEditInputChange}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700">
+                          Para athlete
+                        </span>
+                      </label>
+                    </div>
                     <div className="space-y-1.5">
                       <Label
                         htmlFor="editClub"
@@ -2953,6 +2974,20 @@ const CreateAthlete = () => {
               onChange={handleInputChange}
               placeholder="Optional"
             />
+          </div>
+          <div className="flex items-end pb-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name="isPara"
+                checked={formData.isPara || false}
+                onChange={handleInputChange}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-slate-700">
+                Para athlete
+              </span>
+            </label>
           </div>
           <div className="space-y-2">
             <Label htmlFor="cin">National ID / CIN</Label>

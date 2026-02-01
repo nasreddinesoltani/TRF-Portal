@@ -48,6 +48,11 @@ const categorySchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+    isPara: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

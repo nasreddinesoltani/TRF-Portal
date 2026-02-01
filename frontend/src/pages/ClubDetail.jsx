@@ -744,6 +744,7 @@ const ClubDetail = () => {
     cin: "",
     passportNumber: "",
     clubId: "",
+    isPara: false,
   });
   const [editSubmitting, setEditSubmitting] = useState(false);
 
@@ -1319,6 +1320,7 @@ const ClubDetail = () => {
         cin: athlete.cin || "",
         passportNumber: athlete.passportNumber || "",
         clubId: athlete.membershipClubId || effectiveClubId || "",
+        isPara: athlete.isPara || false,
       });
     },
     [effectiveClubId]
@@ -1336,6 +1338,7 @@ const ClubDetail = () => {
       cin: "",
       passportNumber: "",
       clubId: "",
+      isPara: false,
     });
     setEditSubmitting(false);
   }, []);
@@ -1361,6 +1364,7 @@ const ClubDetail = () => {
           gender: editForm.gender || undefined,
           cin: editForm.cin.trim() || undefined,
           passportNumber: editForm.passportNumber.trim() || undefined,
+          isPara: Boolean(editForm.isPara),
         };
 
         const currentClubId =
@@ -3149,6 +3153,21 @@ const ClubDetail = () => {
                     updateEditForm("passportNumber", event.target.value)
                   }
                 />
+              </div>
+              <div className="space-y-2 flex flex-col justify-end pb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editForm.isPara || false}
+                    onChange={(event) =>
+                      updateEditForm("isPara", event.target.checked)
+                    }
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">
+                    Para athlete
+                  </span>
+                </label>
               </div>
               {isAdmin ? (
                 <div className="space-y-2">

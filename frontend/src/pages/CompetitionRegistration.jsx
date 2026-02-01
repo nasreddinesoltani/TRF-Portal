@@ -7,6 +7,11 @@ import { Button } from "../components/ui/button";
 import { DataGrid } from "../components/DataGrid";
 import { Input } from "../components/ui/input";
 import { Select } from "../components/ui/select";
+import {
+  getAthleteInitials,
+  getAthletePhotoUrl,
+  getAthleteLicenseLabel,
+} from "../lib/athlete";
 
 const API_BASE_URL = "";
 
@@ -732,6 +737,62 @@ const CompetitionRegistration = () => {
   );
 
   const [isProcessingAll, setIsProcessingAll] = useState(false);
+  const submittedGridRef = React.useRef(null);
+
+  const handleSubmittedExcelExport = useCallback(() => {
+    submittedGridRef.current?.excelExport();
+  }, []);
+
+  const handleSubmittedPdfExport = useCallback(() => {
+    const header = {
+      fromTop: 0,
+      height: 80,
+      contents: [
+        {
+          type: "Text",
+          value:
+            competition?.names?.en || competition?.code || "Competition Entries",
+          position: { x: 0, y: 0 },
+          style: {
+            textBrushColor: "#000000",
+            fontSize: 18,
+            fontName: "Helvetica-Bold",
+          },
+        },
+        {
+          type: "Text",
+          value: `Season: ${
+            competition?.season || "-"
+          }   |   Submitted Entries Report`,
+          position: { x: 0, y: 30 },
+          style: { textBrushColor: "#555555", fontSize: 12 },
+        },
+        {
+          type: "Line",
+          style: { penColor: "#000000", penSize: 0.5, dashStyle: "Solid" },
+          points: { x1: 0, y1: 60, x2: 700, y2: 60 },
+        },
+      ],
+    };
+
+    submittedGridRef.current?.pdfExport({
+      header,
+      fileName: `Entries_${competition?.code || "Export"}.pdf`,
+      pageOrientation: "Landscape",
+      theme: {
+        header: {
+          fontName: "Helvetica-Bold",
+          fontSize: 10,
+          bold: true,
+          border: { color: "#CCCCCC", dashStyle: "Solid" },
+        },
+        record: {
+          fontName: "Helvetica",
+          fontSize: 9,
+        },
+      },
+    });
+  }, [competition]);
 
   const handleApproveAll = useCallback(async () => {
     if (!summaryCanManageEntries) return;
@@ -790,35 +851,70 @@ const CompetitionRegistration = () => {
                 ? `${entry.club.code} ${entry.crewNumber}`
                 : `${entry.crew.length} Athletes`;
             return (
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-slate-900">
-                  {teamName}
-                </p>
-                <div
-                  className="text-xs text-slate-500 truncate"
-                  title={entry.crew
-                    .map((a) => `${a.firstName} ${a.lastName}`)
-                    .join(", ")}
-                >
-                  {entry.crew
-                    .map((a) => `${a.firstName} ${a.lastName}`)
-                    .join(", ")}
+              <div className="flex items-center gap-3 py-1">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-xs font-bold text-slate-500">
+                  {entry.crew.length}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-900 truncate">
+                    {teamName}
+                  </div>
+                  <div
+                    className="text-xs text-slate-500 truncate"
+                    title={entry.crew
+                      .map((a) => `${a.firstName} ${a.lastName}`)
+                      .join(", ")}
+                  >
+                    {entry.crew.map((a) => a.lastName).join(", ")}
+                  </div>
                 </div>
               </div>
             );
           }
+
+          const athlete = entry?.athlete;
+          if (!athlete) return null;
+          
+          const photoUrl = getAthletePhotoUrl(athlete);
+          const initials = getAthleteInitials(athlete);
+          const displayName = `${athlete.firstName} ${athlete.lastName}`;
+
           return (
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-slate-900">
-                {`${entry?.athlete?.firstName || ""} ${
-                  entry?.athlete?.lastName || ""
-                }`.trim() || "Unnamed athlete"}
-              </p>
-              <p className="text-xs text-slate-500">
-                {entry?.athlete?.licenseNumber || "No license"}
-              </p>
+            <div className="flex items-center gap-3 py-1">
+              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 shadow-sm">
+                {photoUrl ? (
+                  <img
+                    src={photoUrl}
+                    alt={displayName}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className="text-xs font-semibold text-slate-400">
+                    {initials}
+                  </span>
+                )}
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {displayName}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {athlete.licenseNumber || "No license"}
+                </div>
+              </div>
             </div>
           );
+        },
+        field: "athleteName", // Virtual field for export
+        valueAccessor: (field, data) => {
+          if (data?.crew && data.crew.length > 1) {
+            return data.crew
+                .map((a) => `${a.firstName} ${a.lastName}`)
+                .join(", ");
+          }
+          const athlete = data?.athlete;
+          return athlete ? `${athlete.firstName} ${athlete.lastName} (${athlete.licenseNumber})` : "";
         },
       },
     ];
@@ -835,6 +931,8 @@ const CompetitionRegistration = () => {
             <p className="text-xs text-slate-500">{entry?.club?.code || ""}</p>
           </div>
         ),
+        field: "clubName",
+        valueAccessor: (field, data) => data?.club?.name || "",
       });
     }
 
@@ -852,6 +950,8 @@ const CompetitionRegistration = () => {
             </p>
           </div>
         ),
+        field: "categoryName",
+        valueAccessor: (field, data) => data?.category?.abbreviation || "",
       },
       {
         headerText: "Status",
@@ -872,10 +972,13 @@ const CompetitionRegistration = () => {
             </span>
           );
         },
+        field: "status",
       },
       {
         headerText: "Submitted",
         width: 200,
+        field: "submittedAt",
+        valueAccessor: (field, data) => data?.submittedAt ? new Date(data.submittedAt).toLocaleString() : "",
         template: (entry) => {
           const submitted = entry?.submittedAt
             ? new Date(entry.submittedAt).toLocaleString()
@@ -893,7 +996,9 @@ const CompetitionRegistration = () => {
       },
       {
         headerText: "Actions",
-        width: 260,
+        width: 120,
+        allowExcelExport: false,
+        allowPdfExport: false,
         template: (entry) => {
           const isProcessing = actionEntryId === entry?.id;
           const buttons = [];
@@ -979,27 +1084,57 @@ const CompetitionRegistration = () => {
     summaryCanWithdraw,
   ]);
 
+  const renderAthleteSummary = useCallback((row) => {
+    const athlete = row.athlete;
+    if (!athlete) return null;
+
+    const photoUrl = getAthletePhotoUrl(athlete);
+    const initials = getAthleteInitials(athlete);
+    const displayName = `${athlete.firstName} ${athlete.lastName}`;
+
+    return (
+      <div className="flex items-center gap-3 py-1">
+        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 shadow-sm">
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              alt={displayName}
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <span className="text-xs font-semibold text-slate-400">
+              {initials}
+            </span>
+          )}
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-slate-900">
+            {displayName}
+          </div>
+          <div className="text-xs text-slate-500">
+            {athlete.licenseNumber}
+          </div>
+        </div>
+      </div>
+    );
+  }, []);
+
   const eligibleColumns = useMemo(
     () => [
       {
-        field: "athlete.firstName",
-        headerText: "First Name",
-        width: 120,
-      },
-      {
+        headerText: "Athlete",
         field: "athlete.lastName",
-        headerText: "Last Name",
-        width: 120,
-      },
-      {
-        field: "athlete.licenseNumber",
-        headerText: "License",
-        width: 100,
+        width: 250,
+        template: renderAthleteSummary,
       },
       {
         field: "athlete.gender",
         headerText: "Gender",
         width: 80,
+        template: (row) => (
+          <span className="capitalize">{row?.athlete?.gender}</span>
+        ),
       },
       {
         field: "assignment.ageOnCutoff",
@@ -1008,7 +1143,7 @@ const CompetitionRegistration = () => {
         textAlign: "Center",
       },
     ],
-    [],
+    [renderAthleteSummary]
   );
 
   const registrationStatus = competition?.registrationStatus || "not_open";
@@ -1057,42 +1192,6 @@ const CompetitionRegistration = () => {
         </div>
       </div>
 
-      {/* Category Legend */}
-      {availableCategories.length > 0 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Competition Categories
-          </h2>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {availableCategories.map((category) => (
-              <div
-                key={category.id}
-                className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm"
-              >
-                <span className="shrink-0 rounded bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-700">
-                  {category.abbreviation || "—"}
-                </span>
-                <div className="min-w-0 flex-1 text-xs leading-relaxed text-slate-600">
-                  <span className="font-medium text-slate-800">
-                    {category.titleEn || category.title || "—"}
-                  </span>
-                  {category.titleAr && (
-                    <span dir="rtl" className="mx-1">
-                      • {category.titleAr}
-                    </span>
-                  )}
-                  {category.titleFr && (
-                    <span className="text-slate-500">
-                      {" "}
-                      • {category.titleFr}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {loadingSummary ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
@@ -1138,9 +1237,12 @@ const CompetitionRegistration = () => {
                           key={categoryOption.id}
                           value={categoryOption.id}
                         >
-                          {categoryOption.abbreviation ||
-                            categoryOption.title ||
-                            "Category"}
+                          {categoryOption.abbreviation && categoryOption.titleEn
+                            ? `${categoryOption.abbreviation} - ${categoryOption.titleEn}`
+                            : categoryOption.abbreviation ||
+                              categoryOption.titleEn ||
+                              categoryOption.title ||
+                              "Category"}
                         </option>
                       ))}
                     </Select>
@@ -1168,9 +1270,11 @@ const CompetitionRegistration = () => {
                           key={boatClassOption.id}
                           value={boatClassOption.id}
                         >
-                          {boatClassOption.code ||
-                            boatClassOption.name ||
-                            "Boat class"}
+                          {boatClassOption.code && boatClassOption.name
+                            ? `${boatClassOption.code} - ${boatClassOption.name}`
+                            : boatClassOption.code ||
+                              boatClassOption.name ||
+                              "Boat class"}
                         </option>
                       ))}
                     </Select>
@@ -1200,7 +1304,11 @@ const CompetitionRegistration = () => {
                         : "Select a category to load athletes"
                     }
                     gridId="competition-registration-eligible"
-                    pageSize={8}
+                    pageSize={5}
+                    rowHeight={60}
+                    showSearch={false}
+                    showExport={false}
+                    showColumnChooser={false}
                     selectionType="Single"
                     onRowSelected={handleEligibleSelected}
                     onRowDeselected={handleEligibleDeselected}
@@ -1437,7 +1545,54 @@ const CompetitionRegistration = () => {
                     {entries.length} total
                   </span>
                 </div>
-                {summaryCanManageEntries && entryStatusCounts.pending > 0 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 border-emerald-200"
+                    onClick={handleSubmittedExcelExport}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                      <path d="M4 11h16" />
+                      <path d="M4 16h16" />
+                      <line x1="8" x2="8" y1="3" y2="21" />
+                    </svg>
+                    Excel
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 hover:text-rose-800 border-rose-200"
+                    onClick={handleSubmittedPdfExport}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    PDF
+                  </Button>
+                  {summaryCanManageEntries && entryStatusCounts.pending > 0 && (
                   <Button
                     size="sm"
                     onClick={handleApproveAll}
@@ -1447,13 +1602,19 @@ const CompetitionRegistration = () => {
                   </Button>
                 )}
               </div>
+              </div>
               <DataGrid
+                ref={submittedGridRef}
                 data={entries}
                 columns={entryColumns}
+                gridId="competition-submitted-entries"
+                pageSize={5}
+                rowHeight={60}
+                showSearch={false}
+                showExport={false}
+                showColumnChooser={false}
                 loading={loadingSummary && !entries.length}
                 emptyMessage="No entries have been submitted yet"
-                gridId="competition-registration-entries"
-                pageSize={10}
               />
             </div>
           </section>
@@ -1548,20 +1709,33 @@ const CompetitionRegistration = () => {
                 Categories in scope
               </h3>
               {availableCategories.length ? (
-                <div className="flex flex-wrap gap-2">
-                  {availableCategories.slice(0, 8).map((category) => (
-                    <span
+                <div className="space-y-2">
+                  {availableCategories.map((category) => (
+                    <div
                       key={category.id}
-                      className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+                      className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm"
                     >
-                      {category.abbreviation || category.title || "Category"}
-                    </span>
+                      <span className="shrink-0 rounded bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-700">
+                        {category.abbreviation || "—"}
+                      </span>
+                      <div className="min-w-0 flex-1 text-xs leading-relaxed text-slate-600">
+                        <span className="font-medium text-slate-800">
+                          {category.titleEn || category.title || "—"}
+                        </span>
+                        {category.titleAr && (
+                          <span dir="rtl" className="mx-1">
+                            • {category.titleAr}
+                          </span>
+                        )}
+                        {category.titleFr && (
+                          <span className="text-slate-500">
+                            {" "}
+                            • {category.titleFr}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   ))}
-                  {availableCategories.length > 8 ? (
-                    <span className="text-xs text-slate-500">
-                      +{availableCategories.length - 8} more
-                    </span>
-                  ) : null}
                 </div>
               ) : (
                 <p className="text-xs text-slate-500">

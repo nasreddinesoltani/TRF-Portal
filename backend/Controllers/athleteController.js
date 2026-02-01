@@ -594,6 +594,7 @@ export const createAthlete = asyncHandler(async (req, res) => {
     documents = {},
     membership,
     licenseStatus,
+    isPara,
   } = req.body;
 
   const allowedMembershipStatuses = [
@@ -707,6 +708,7 @@ export const createAthlete = asyncHandler(async (req, res) => {
         licenseStatus: normalizedLicenseStatus,
         documents,
         memberships: membershipEntries,
+        isPara: Boolean(isPara),
         createdBy: req.user?.id,
       });
 
@@ -784,6 +786,7 @@ export const updateAthlete = asyncHandler(async (req, res) => {
     documents,
     membership,
     licenseStatus,
+    isPara,
   } = req.body;
 
   const candidateFirstNameAr =
@@ -906,6 +909,10 @@ export const updateAthlete = asyncHandler(async (req, res) => {
     }
 
     athlete.licenseStatus = normalizedLicenseStatus;
+  }
+
+  if (isPara !== undefined) {
+    athlete.isPara = Boolean(isPara);
   }
 
   const requestedClubId = membership?.clubId;

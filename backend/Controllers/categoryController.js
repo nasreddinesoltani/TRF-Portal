@@ -63,6 +63,7 @@ export const createCategory = asyncHandler(async (req, res) => {
     maxAge,
     titles,
     isActive = true,
+    isPara = false,
   } = req.body;
 
   if (!abbreviation || typeof abbreviation !== "string") {
@@ -107,6 +108,7 @@ export const createCategory = asyncHandler(async (req, res) => {
     maxAge: maxAgeValue,
     titles: normaliseTitles(titles),
     isActive: Boolean(isActive),
+    isPara: Boolean(isPara),
   });
 
   res.status(201).json({
@@ -128,7 +130,7 @@ export const updateCategory = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Category not found" });
   }
 
-  const { abbreviation, gender, minAge, maxAge, titles, isActive } = req.body;
+  const { abbreviation, gender, minAge, maxAge, titles, isActive, isPara } = req.body;
 
   if (abbreviation !== undefined) {
     if (!abbreviation) {
@@ -184,6 +186,10 @@ export const updateCategory = asyncHandler(async (req, res) => {
 
   if (isActive !== undefined) {
     category.isActive = Boolean(isActive);
+  }
+
+  if (isPara !== undefined) {
+    category.isPara = Boolean(isPara);
   }
 
   await category.save();

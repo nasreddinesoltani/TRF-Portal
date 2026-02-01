@@ -197,7 +197,7 @@ const resolveClubContext = async (req, { requireClub = false } = {}) => {
     targetClubId = toObjectId(req.user?.clubId);
     if (!targetClubId) {
       throw new Error(
-        "Club account is missing an associated club. Please contact an administrator."
+        "Club account is missing an associated club. Please contact an administrator.",
       );
     }
   } else {
@@ -256,7 +256,7 @@ const findSeasonAssignment = (athlete, season) => {
       assignment &&
       assignment.type === "national" &&
       assignment.season === season &&
-      assignment.category
+      assignment.category,
   );
 };
 
@@ -494,8 +494,8 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
     competition.allowedCategories.length > 0
       ? new Set(
           competition.allowedCategories.map((category) =>
-            category?._id?.toString?.()
-          )
+            category?._id?.toString?.(),
+          ),
         )
       : null;
 
@@ -530,7 +530,17 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
     searchFilters.push({ licenseNumber: regex });
   }
 
+  // Fetch the selected category to check its para status
+  let selectedCategoryDoc = null;
+  if (categoryId) {
+    selectedCategoryDoc = await Category.findById(categoryId)
+      .select("abbreviation titles gender minAge maxAge isPara")
+      .lean();
+  }
+
+  // Build the athlete query with para filtering
   const athleteQuery = {
+    licenseStatus: "active",
     memberships: {
       $elemMatch: {
         club: clubContext.clubId,
@@ -547,13 +557,20 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
     },
   };
 
+  // Filter by para status if a category is selected
+  if (selectedCategoryDoc) {
+    // If selected category is para, only show para athletes
+    // If selected category is not para, only show non-para athletes
+    athleteQuery.isPara = selectedCategoryDoc.isPara === true ? true : { $ne: true };
+  }
+
   if (searchFilters.length) {
     athleteQuery.$or = searchFilters;
   }
 
   const athletes = await Athlete.find(athleteQuery)
     .select(
-      "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships"
+      "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isPara",
     )
     .limit(numericLimit)
     .sort({ lastName: 1, firstName: 1 })
@@ -578,7 +595,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
     : [];
 
   const categoryMap = new Map(
-    categoryDocs.map((category) => [category._id.toString(), category])
+    categoryDocs.map((category) => [category._id.toString(), category]),
   );
 
   const eligibleAthletes = athletes
@@ -604,7 +621,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
           !athleteFitsCategory(
             assignment,
             requestedCategoryDoc,
-            competition.allowUpCategory
+            competition.allowUpCategory,
           )
         ) {
           return null;
@@ -615,7 +632,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
         !ensureMembershipForClub(
           athlete,
           clubContext.clubId,
-          competition.season
+          competition.season,
         )
       ) {
         return null;
@@ -673,18 +690,19 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Competition not found" });
   }
 
-  const effectiveStatus = resolveEffectiveRegistrationStatus(competition);
-  if (effectiveStatus !== "open") {
-    return res
-      .status(400)
-      .json({ message: "Registration is not open for this competition" });
-  }
-
   const role = req.user?.role;
   if (!roleIsClubManager(role) && !hasManagementPrivileges(role)) {
     return res
       .status(403)
       .json({ message: "You are not allowed to register athletes" });
+  }
+
+  // Admins and jury presidents can bypass registration window checks
+  const effectiveStatus = resolveEffectiveRegistrationStatus(competition);
+  if (effectiveStatus !== "open" && !hasManagementPrivileges(role)) {
+    return res
+      .status(400)
+      .json({ message: "Registration is not open for this competition" });
   }
 
   let clubContext;
@@ -745,7 +763,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
     _id: { $in: Array.from(allAthleteIds) },
   })
     .select(
-      "firstName lastName licenseNumber gender birthDate categoryAssignments memberships licenseStatus documentsStatus documentsIssues"
+      "firstName lastName licenseNumber gender birthDate categoryAssignments memberships licenseStatus documentsStatus documentsIssues",
     )
     .lean();
 
@@ -788,8 +806,8 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
     competition.allowedCategories.length > 0
       ? new Set(
           competition.allowedCategories.map((category) =>
-            category?._id?.toString?.()
-          )
+            category?._id?.toString?.(),
+          ),
         )
       : null;
 
@@ -856,33 +874,37 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         return res.status(400).json({ message: `Athlete not found: ${idStr}` });
       }
 
-      const allowMultiple = 
-        competition.discipline === "beach" || 
-        competition.discipline === "coastal" || 
+      const allowMultiple =
+        competition.discipline === "beach" ||
+        competition.discipline === "coastal" ||
         req.body.bypassMultipleEntries === true;
 
       if (busyAthleteIds.has(idStr)) {
         if (!allowMultiple) {
-          const athleteName = athlete 
+          const athleteName = athlete
             ? `${athlete.firstName || "Athlete"} ${athlete.lastName || idStr}`
             : `Athlete ${idStr}`;
-            
+
           return res.status(400).json({
             message: `${athleteName} is already registered for this competition`,
           });
         }
-        
+
         // If multiple are allowed, check for EXACT duplicate (same athlete, same category, same boat class)
-        const isDuplicateEvent = existingEntries.some(e => {
-          const isSameAthlete = (e.athlete?.toString() === idStr) || 
-                                (Array.isArray(e.crew) && e.crew.some(m => m.toString() === idStr));
-          const isSameCategory = e.category?.toString() === entry.categoryId?.toString();
-          const isSameBoatClass = e.boatClass?.toString() === entry.boatClassId?.toString();
+        const isDuplicateEvent = existingEntries.some((e) => {
+          const isSameAthlete =
+            e.athlete?.toString() === idStr ||
+            (Array.isArray(e.crew) &&
+              e.crew.some((m) => m.toString() === idStr));
+          const isSameCategory =
+            e.category?.toString() === entry.categoryId?.toString();
+          const isSameBoatClass =
+            e.boatClass?.toString() === entry.boatClassId?.toString();
           return isSameAthlete && isSameCategory && isSameBoatClass;
         });
 
         if (isDuplicateEvent) {
-          const athleteName = athlete 
+          const athleteName = athlete
             ? `${athlete.firstName || "Athlete"} ${athlete.lastName || idStr}`
             : `Athlete ${idStr}`;
           return res.status(400).json({
@@ -895,7 +917,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         !ensureMembershipForClub(
           athlete,
           clubContext.clubId,
-          competition.season
+          competition.season,
         )
       ) {
         return res.status(400).json({
@@ -906,12 +928,15 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       // Validate license status - athlete must have all documents approved
       // BYPASS: If is a historical season, we allow admins to bypass document validation
       const currentYear = new Date().getFullYear();
-      const isHistoricalSeason = competition.season && competition.season < currentYear;
+      const isHistoricalSeason =
+        competition.season && competition.season < currentYear;
 
       if (!isHistoricalSeason && athlete.licenseStatus !== "active") {
-        const issuesList = Array.isArray(athlete.documentsIssues) && athlete.documentsIssues.length > 0
-          ? ` (${athlete.documentsIssues.join(", ")})`
-          : "";
+        const issuesList =
+          Array.isArray(athlete.documentsIssues) &&
+          athlete.documentsIssues.length > 0
+            ? ` (${athlete.documentsIssues.join(", ")})`
+            : "";
         return res.status(400).json({
           message: `${athlete.firstName} ${athlete.lastName} does not have an active license - documents incomplete${issuesList}`,
         });
@@ -929,7 +954,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         !athleteFitsCategory(
           assignment,
           categoryDoc,
-          competition.allowUpCategory
+          competition.allowUpCategory,
         )
       ) {
         return res.status(400).json({
@@ -1092,7 +1117,9 @@ export const updateEntry = asyncHandler(async (req, res) => {
 
   const role = req.user?.role;
   if (!hasManagementPrivileges(role)) {
-    return res.status(403).json({ message: "Not authorized to update entries" });
+    return res
+      .status(403)
+      .json({ message: "Not authorized to update entries" });
   }
 
   const competition = await Competition.findById(competitionId).lean();
@@ -1110,12 +1137,12 @@ export const updateEntry = asyncHandler(async (req, res) => {
   }
 
   let updated = false;
-  
+
   if (seed !== undefined) {
     entry.seed = seed === "" || seed === null ? null : Number(seed);
     updated = true;
   }
-  
+
   if (notes !== undefined) {
     entry.notes = notes;
     updated = true;
@@ -1160,9 +1187,9 @@ export const deleteEntry = asyncHandler(async (req, res) => {
 
   await CompetitionEntry.deleteOne({ _id: entry._id });
 
-  return res.json({ 
-    message: "Entry permanently deleted", 
-    deleted: true, 
-    entryId: entry._id.toString() 
+  return res.json({
+    message: "Entry permanently deleted",
+    deleted: true,
+    entryId: entry._id.toString(),
   });
 });

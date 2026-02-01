@@ -160,12 +160,26 @@ const pickMatchingCategory = (categories, gender, age) => {
 
   // For adults (19+), prioritize Senior over U23/Master
   if (age >= 19) {
-    // First, try to find a Senior category
-    const seniorCategory = matchingCategories.find(
-      (cat) => isSeniorCategory(cat) && !isSecondaryAdultCategory(cat),
+    // First, try to find a gender-specific Senior category (SM/SW)
+    const genderSpecificSenior = matchingCategories.find(
+      (cat) =>
+        isSeniorCategory(cat) &&
+        !isSecondaryAdultCategory(cat) &&
+        cat.gender !== "mixed",
     );
-    if (seniorCategory) {
-      return seniorCategory;
+    if (genderSpecificSenior) {
+      return genderSpecificSenior;
+    }
+
+    // Fall back to mixed Senior category (SMix) if no gender-specific found
+    const mixedSenior = matchingCategories.find(
+      (cat) =>
+        isSeniorCategory(cat) &&
+        !isSecondaryAdultCategory(cat) &&
+        cat.gender === "mixed",
+    );
+    if (mixedSenior) {
+      return mixedSenior;
     }
 
     // If no Senior found, filter out secondary categories if we have other options

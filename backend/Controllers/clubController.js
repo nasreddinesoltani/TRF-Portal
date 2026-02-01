@@ -615,7 +615,8 @@ export const getClubSummary = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(5)
     .select(
-      "firstName lastName firstNameAr lastNameAr licenseNumber status memberships createdAt cin passportNumber"
+      "firstName lastName firstNameAr lastNameAr licenseNumber status isPara memberships createdAt cin passportNumber"
+
     )
     .lean();
 
@@ -637,6 +638,7 @@ export const getClubSummary = asyncHandler(async (req, res) => {
       licenseNumber: athlete.licenseNumber,
       cin: athlete.cin,
       passportNumber: athlete.passportNumber,
+      isPara: athlete.isPara,
       status: athlete.status,
       membershipStatus: membership?.status,
       createdAt: athlete.createdAt,
@@ -753,6 +755,7 @@ const buildAthleteClubView = (athlete, clubId, seasonYear) => {
     passportNumber: athlete.passportNumber,
     birthDate: athlete.birthDate,
     gender: athlete.gender,
+    isPara: athlete.isPara,
     athleteStatus: athlete.status,
     status: athlete.status,
     licenseStatus: athlete.licenseStatus || "inactive",
@@ -820,7 +823,8 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
   // They will be filtered/processed by normalizeClubMembership later
   const athletesRaw = await Athlete.find({ "memberships.club": id })
     .select(
-      "firstName lastName firstNameAr lastNameAr licenseNumber cin passportNumber birthDate gender status licenseStatus documentsStatus documentsIssues memberships documents createdAt updatedAt categoryAssignments"
+      "firstName lastName firstNameAr lastNameAr licenseNumber cin passportNumber birthDate gender isPara status licenseStatus documentsStatus documentsIssues memberships documents createdAt updatedAt categoryAssignments"
+
     )
     .populate("memberships.club", "name code");
 

@@ -246,6 +246,11 @@ const athleteSchema = new mongoose.Schema(
       default: () => [],
     },
     memberships: [membershipSchema],
+    isPara: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

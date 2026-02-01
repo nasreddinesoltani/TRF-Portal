@@ -147,9 +147,11 @@ const raceSchema = new mongoose.Schema(
             }
             seen.add(lane.lane);
           }
-          return value.length <= 8;
+          // Max 100 lanes to accommodate all disciplines (indoor/beach can have many lanes)
+          // Discipline-specific limits are enforced in the controller
+          return value.length <= 100;
         },
-        message: "Lane assignments must be unique and cannot exceed 8 lanes",
+        message: "Lane assignments must be unique and cannot exceed 100 lanes",
       },
     },
     notes: {
