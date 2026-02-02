@@ -63,8 +63,13 @@ export const DataGrid = React.forwardRef(
 
   const pagerTemplate = useCallback((props) => {
     // Syncfusion pager template props: currentPage, pageSize, pageCount (total pages), totalRecordsCount
-    const { currentPage, totalPages, totalRecordsCount, pageSize } = props;
-    const start = (currentPage - 1) * pageSize + 1;
+    const { 
+      currentPage = 1, 
+      totalPages = 1, 
+      totalRecordsCount = 0, 
+      pageSize = resolvedPageSize || 10 
+    } = props;
+    const start = totalRecordsCount > 0 ? (currentPage - 1) * pageSize + 1 : 0;
     const end = Math.min(currentPage * pageSize, totalRecordsCount);
 
     const handlePageSizeChange = (e) => {

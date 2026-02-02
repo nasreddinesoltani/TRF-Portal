@@ -427,6 +427,15 @@ const CompetitionRegistration = () => {
       return "";
     });
   }, [availableBoatClasses]);
+  
+  const boatClassMap = useMemo(() => {
+    const map = new Map();
+    boatClasses.forEach((bc) => {
+      const id = toDocumentId(bc);
+      if (id) map.set(id, bc);
+    });
+    return map;
+  }, [boatClasses]);
 
   const entryStatusCounts = useMemo(() => {
     return entries.reduce(
@@ -1169,7 +1178,7 @@ const CompetitionRegistration = () => {
         },
       },
     ],
-    [renderAthleteSummary]
+    [renderAthleteSummary, boatClassMap, selectedBoatClassId]
   );
 
   const registrationStatus = competition?.registrationStatus || "not_open";
