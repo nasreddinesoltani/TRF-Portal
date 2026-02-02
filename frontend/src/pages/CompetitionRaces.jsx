@@ -7,6 +7,7 @@ import { Input } from "../components/ui/input";
 import { Select } from "../components/ui/select";
 import { Label } from "../components/ui/label";
 import { DataGrid } from "../components/DataGrid";
+import { generateRaceCode, formatCategoryAbbreviation } from "../lib/rowing";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -194,100 +195,7 @@ const formatAthleteName = (athlete) => {
   return athlete.licenseNumber || "Unknown athlete";
 };
 
-/**
- * Generate World Rowing style race code
- * - Senior categories: M1x, W2x, M8+ (no category prefix, just gender + boat)
- * - Lightweight: LM1x, LW2x (L + gender + boat)
- * - U23 Lightweight: BLM1x, BLW2x (category + L + gender + boat)
- * - Other categories: JM1x, BW2x, bM4x (category abbreviation + boat)
- *
- * For coastal/beach boats that already include gender (CM1x, CW1x, CMix2x),
- * we use them directly without adding category prefix for Senior,
- * or add category prefix for non-Senior categories.
- *
- * @param {Object} category - Category object with abbreviation, gender, type
- * @param {Object} boatClass - BoatClass object with code, weightClass
- * @returns {string} Race code like "M1x", "LM1x", "JW2x", "CM1x", etc.
- */
-const generateRaceCode = (category, boatClass) => {
-  let boatCode = boatClass?.code || "1X";
-  const catAbbr = category?.abbreviation || "";
-  const catGender = category?.gender || "mixed";
-  const weightClass = boatClass?.weightClass || "open";
-
-  // Check if boat code starts with L (legacy lightweight code like LW1x, LM1x)
-  // In this case, extract the pure boat code (1x, 2x) for proper formatting
-  const hasLegacyLightweightPrefix =
-    boatCode.match(/^L[MW]?\d/i) || boatCode.match(/^LW?\d/i);
-  if (hasLegacyLightweightPrefix) {
-    // Remove the L or LW/LM prefix to get the pure boat code
-    boatCode = boatCode.replace(/^L[MW]?/i, "");
-  }
-
-  // Determine if this is a lightweight boat
-  const isLightweight =
-    weightClass === "lightweight" || hasLegacyLightweightPrefix;
-
-  // Check if this is a coastal/beach boat (already has gender in code)
-  const isCoastalBoat = boatCode.startsWith("C") || boatCode.startsWith("c");
-
-  // Senior categories (SM, SW, Senior, or abbreviations starting with S for senior)
-  // For international standard: Senior uses M/W directly without category prefix
-  const isSeniorCategory =
-    catAbbr.toUpperCase() === "SM" ||
-    catAbbr.toUpperCase() === "SW" ||
-    catAbbr.toUpperCase() === "S" ||
-    (category?.titles?.en || "").toLowerCase().includes("senior");
-
-  // Gender prefix for race codes
-  const genderPrefix =
-    catGender === "women" ? "W" : catGender === "mixed" ? "Mix" : "M";
-
-  if (isSeniorCategory) {
-    if (isCoastalBoat) {
-      // Coastal boats already have gender: CM1x, CW1x, CMix2x
-      // For lightweight coastal, prefix with L
-      return isLightweight ? `L${boatCode}` : boatCode;
-    }
-    // For classic boats, use [L]M/W + boat code (World Rowing senior standard)
-    // LM1x for Lightweight Men, M1x for Open Men
-    return isLightweight
-      ? `L${genderPrefix}${boatCode}`
-      : `${genderPrefix}${boatCode}`;
-  }
-
-  // For non-senior categories, use category abbreviation + boat code
-  // Examples: JM1x (Junior Men), BW2x (U23 Women), bM4x (Benjamin Male)
-  // For lightweight: JLM1x (Junior Lightweight Men), BLW1x (U23 Lightweight Women)
-  if (isCoastalBoat) {
-    // For coastal boats with non-senior category, prefix with category
-    // e.g., JCM1x for Junior Coastal Men's Solo
-    return isLightweight ? `${catAbbr}L${boatCode}` : `${catAbbr}${boatCode}`;
-  }
-
-  // Standard format: category abbreviation + [L if lightweight] + gender + boat
-  // For lightweight non-senior: BLM1x (U23 Lightweight Men), JLW2x (Junior Lightweight Women)
-  // Note: If catAbbr already includes gender (JM, JW, BM, BW), we use it directly
-  // Otherwise, we need to construct it properly
-  const catHasGender =
-    catAbbr.endsWith("M") || catAbbr.endsWith("W") || catAbbr.endsWith("Mix");
-
-  if (catHasGender) {
-    // Category already has gender suffix (JM, JW, BM, BW, etc.)
-    // For lightweight, insert L before the gender: JM -> JLM, BW -> BLW
-    if (isLightweight) {
-      const catBase = catAbbr.slice(0, -1); // Remove the gender suffix (M, W)
-      const catGenderSuffix = catAbbr.slice(-1); // Get the gender suffix
-      return `${catBase}L${catGenderSuffix}${boatCode}`;
-    }
-    return `${catAbbr}${boatCode}`;
-  }
-
-  // Category doesn't have gender suffix, add gender
-  return isLightweight
-    ? `${catAbbr}L${genderPrefix}${boatCode}`
-    : `${catAbbr}${genderPrefix}${boatCode}`;
-};
+// generateRaceCode replaced by shared utility from ../lib/rowing.js
 
 // Format milliseconds to MM:SS.cc or SS.cc (centiseconds - 2 digits)
 const formatElapsedTime = (ms) => {

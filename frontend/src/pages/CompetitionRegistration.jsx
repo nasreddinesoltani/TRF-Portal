@@ -12,6 +12,7 @@ import {
   getAthletePhotoUrl,
   getAthleteLicenseLabel,
 } from "../lib/athlete";
+import { formatCategoryAbbreviation } from "../lib/rowing";
 
 const API_BASE_URL = "";
 
@@ -943,7 +944,7 @@ const CompetitionRegistration = () => {
         template: (entry) => (
           <div className="space-y-1">
             <span className="text-sm font-medium text-slate-800">
-              {entry?.category?.abbreviation || "—"}
+              {formatCategoryAbbreviation(entry?.category, entry?.boatClass) || "—"}
             </span>
             <p className="text-xs text-slate-500">
               {entry?.category?.titles?.en || ""}
@@ -951,7 +952,18 @@ const CompetitionRegistration = () => {
           </div>
         ),
         field: "categoryName",
-        valueAccessor: (field, data) => data?.category?.abbreviation || "",
+        valueAccessor: (field, data) => formatCategoryAbbreviation(data?.category, data?.boatClass),
+      },
+      {
+        headerText: "Boat Class",
+        width: 120,
+        template: (entry) => (
+          <span className="text-sm font-medium text-slate-600">
+            {entry?.boatClass?.code || "—"}
+          </span>
+        ),
+        field: "boatClass",
+        valueAccessor: (field, data) => data?.boatClass?.code || "",
       },
       {
         headerText: "Status",
@@ -1141,6 +1153,20 @@ const CompetitionRegistration = () => {
         headerText: "Age",
         width: 60,
         textAlign: "Center",
+      },
+      {
+        field: "category.abbreviation",
+        headerText: "Category",
+        width: 100,
+        textAlign: "Center",
+        template: (row) => {
+          const selectedBoatClass = boatClassMap.get(selectedBoatClassId);
+          return (
+            <span className="font-semibold text-blue-700">
+              {formatCategoryAbbreviation(row?.category, selectedBoatClass) || "—"}
+            </span>
+          );
+        },
       },
     ],
     [renderAthleteSummary]
@@ -1456,7 +1482,10 @@ const CompetitionRegistration = () => {
                               <span className="font-semibold text-slate-800">
                                 Assigned category:
                               </span>{" "}
-                              {selectedAthlete.category?.abbreviation || "—"}
+                              {formatCategoryAbbreviation(
+                                selectedAthlete.category,
+                                boatClassMap.get(selectedBoatClassId)
+                              ) || "—"}
                             </p>
                             <p>
                               <span className="font-semibold text-slate-800">

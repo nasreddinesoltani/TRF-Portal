@@ -429,9 +429,21 @@ const AthleteCard = ({
 
         {/* Name & Info */}
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-slate-900 leading-tight">
-            {athlete.fullName || "Unnamed"}
-          </h3>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <h3 className="text-sm font-semibold text-slate-900 leading-tight">
+              {athlete.fullName || "Unnamed"}
+            </h3>
+            {athlete.isPara && (
+              <span className="inline-flex items-center rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                Para
+              </span>
+            )}
+            {athlete.nationalCategory?.abbreviation && (
+              <span className="inline-flex items-center rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-700/10">
+                {athlete.nationalCategory.abbreviation}
+              </span>
+            )}
+          </div>
           {athlete.fullNameAr && (
             <p className="text-xs text-slate-500 leading-tight">
               {athlete.fullNameAr}

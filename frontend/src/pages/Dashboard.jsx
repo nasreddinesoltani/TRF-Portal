@@ -598,8 +598,17 @@ function Dashboard() {
                         <tbody className="divide-y divide-slate-100">
                           {recentAthletes.map((athlete) => (
                             <tr key={athlete.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4 font-medium text-slate-900">
-                                {`${athlete.firstName} ${athlete.lastName}`}
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                  <span className="font-medium text-slate-900">
+                                    {`${athlete.firstName} ${athlete.lastName}`}
+                                  </span>
+                                  {athlete.nationalCategory?.abbreviation && (
+                                    <span className="text-[10px] font-bold text-emerald-600 uppercase">
+                                      {athlete.nationalCategory.abbreviation}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-6 py-4 text-center text-slate-600">
                                 <span className="bg-slate-100 px-2 py-1 rounded text-xs font-mono">{athlete.licenseNumber || "N/A"}</span>

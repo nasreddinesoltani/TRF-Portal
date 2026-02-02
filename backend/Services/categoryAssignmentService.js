@@ -119,40 +119,34 @@ const isSeniorCategory = (category) => {
   );
 };
 
-const pickMatchingCategory = (categories, gender, age) => {
+const pickMatchingCategory = (categories, gender, age, isPara = false) => {
   if (!Array.isArray(categories) || typeof age !== "number") {
     return null;
   }
 
   const allowedGenders =
-    GENDER_TO_CATEGORY_GENDER[gender] ?? ALL_CATEGORY_GENDERS;
+    GENDER_TO_CATEGORY_GENDER[gender] ?? [];
 
-  // Separate categories into Senior and others for adults (19+)
-  const matchingCategories = [];
-
-  for (const category of categories) {
-    // Mixed categories match any athlete gender
-    // Gender-specific categories must match the athlete's allowed genders
-    if (
-      category.gender !== "mixed" &&
-      !allowedGenders.includes(category.gender)
-    ) {
-      continue;
+  // Filter categories by gender, age, and Para status
+  const matchingCategories = categories.filter((category) => {
+    // 1. Match Gender: Must be specifically Men or Women as per the athlete's gender
+    // Individual athletes should never be assigned to "mixed" categories
+    if (!allowedGenders.includes(category.gender)) {
+      return false;
     }
 
-    const minAge = Number.isFinite(category.minAge)
-      ? category.minAge
-      : -Infinity;
-    const maxAge = Number.isFinite(category.maxAge)
-      ? category.maxAge
-      : Infinity;
-
-    if (age < minAge || age > maxAge) {
-      continue;
+    // 2. Match Para status
+    const categoryIsPara = Boolean(category.isPara);
+    if (categoryIsPara !== Boolean(isPara)) {
+      return false;
     }
 
-    matchingCategories.push(category);
-  }
+    // 3. Match Age range
+    const minAge = Number.isFinite(category.minAge) ? category.minAge : -Infinity;
+    const maxAge = Number.isFinite(category.maxAge) ? category.maxAge : Infinity;
+
+    return age >= minAge && age <= maxAge;
+  });
 
   if (matchingCategories.length === 0) {
     return null;
@@ -160,29 +154,15 @@ const pickMatchingCategory = (categories, gender, age) => {
 
   // For adults (19+), prioritize Senior over U23/Master
   if (age >= 19) {
-    // First, try to find a gender-specific Senior category (SM/SW)
-    const genderSpecificSenior = matchingCategories.find(
-      (cat) =>
-        isSeniorCategory(cat) &&
-        !isSecondaryAdultCategory(cat) &&
-        cat.gender !== "mixed",
+    // Try to find a primary Senior category
+    const primarySenior = matchingCategories.find(
+      (cat) => isSeniorCategory(cat) && !isSecondaryAdultCategory(cat),
     );
-    if (genderSpecificSenior) {
-      return genderSpecificSenior;
+    if (primarySenior) {
+      return primarySenior;
     }
 
-    // Fall back to mixed Senior category (SMix) if no gender-specific found
-    const mixedSenior = matchingCategories.find(
-      (cat) =>
-        isSeniorCategory(cat) &&
-        !isSecondaryAdultCategory(cat) &&
-        cat.gender === "mixed",
-    );
-    if (mixedSenior) {
-      return mixedSenior;
-    }
-
-    // If no Senior found, filter out secondary categories if we have other options
+    // If no primary Senior found, filter out secondary categories if we have other options
     const primaryCategories = matchingCategories.filter(
       (cat) => !isSecondaryAdultCategory(cat),
     );
@@ -191,7 +171,7 @@ const pickMatchingCategory = (categories, gender, age) => {
     }
   }
 
-  // For youth or if no primary category found, use original logic
+  // Use original "most specific" logic for youth or fallback
   return pickBestFromList(matchingCategories);
 };
 
@@ -317,7 +297,7 @@ export const ensureNationalCategoryForAthlete = async (
     return true;
   });
 
-  const category = pickMatchingCategory(categories, athlete.gender, age);
+  const category = pickMatchingCategory(categories, athlete.gender, age, athlete.isPara);
 
   const existingIndex = assignments.findIndex(
     (entry) =>
@@ -363,6 +343,8 @@ export const ensureNationalCategoryForAthlete = async (
       { _id: athlete._id },
       { $set: { categoryAssignments: assignments } },
     );
+    // Update the object in memory to avoid stale data in subsequent processing
+    athlete.categoryAssignments = assignments;
     return true;
   }
 

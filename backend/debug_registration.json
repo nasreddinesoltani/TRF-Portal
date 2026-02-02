@@ -1,0 +1,830 @@
+{
+  "competitions": [
+    {
+      "_id": "697ccd9584ca5df77c1377b2",
+      "code": "TRF-INDOOR-2026",
+      "names": {
+        "en": "Tunisia Rowing Indoor 2026",
+        "fr": "Championnat de Tunisie d'Aviron en Salle 2026",
+        "ar": "بطولة تونس للتجديف داخل القاعة 2026"
+      },
+      "discipline": "indoor",
+      "competitionType": "single_day",
+      "season": 2026,
+      "startDate": "2026-02-07T00:00:00.000Z",
+      "endDate": "2026-02-07T00:00:00.000Z",
+      "venue": {
+        "name": "Salle Hammadi Ben Ammar",
+        "city": "La Goulette",
+        "country": "Tunisia"
+      },
+      "status": "published",
+      "registrationStatus": "not_open",
+      "resultsStatus": "pending",
+      "registrationWindow": {
+        "openAt": "2026-01-30T00:00:00.000Z",
+        "closeAt": "2026-02-04T00:00:00.000Z"
+      },
+      "allowUpCategory": true,
+      "allowedCategories": [
+        "690e13005463e222d54b57c8",
+        "690e145b5463e222d54b57cb",
+        "697b68f78e51ca155bd546c6",
+        "697b69468e51ca155bd546c9",
+        "697b6e1f8e51ca155bd546cc",
+        "697b6e8b8e51ca155bd546cf",
+        "690e15a75463e222d54b57da",
+        "690e14d45463e222d54b57ce",
+        "690e17315463e222d54b57dd",
+        "690e18335463e222d54b57e0",
+        "690e19e65463e222d54b57e3",
+        "690e1a205463e222d54b57e6",
+        "690e1a645463e222d54b57e9",
+        "690e1a935463e222d54b57ec",
+        "690e226f5463e222d54b57ef",
+        "690e23085463e222d54b57f2",
+        "69735ebc290514a4cb54fe90",
+        "69735f1e290514a4cb54fe96",
+        "690e256c5463e222d54b57f9",
+        "690e25cc5463e222d54b57fc",
+        "6973a6215f2c76975cf2fa8b",
+        "6973a6935f2c76975cf2fa8e",
+        "6973a7d35f2c76975cf2fa91",
+        "6973a82e5f2c76975cf2fa94",
+        "6973a88d5f2c76975cf2fa97",
+        "6973a9945f2c76975cf2faa1",
+        "6973aaa65f2c76975cf2faaa",
+        "6973acaa5f2c76975cf2fab7",
+        "6973aecf5f2c76975cf2faba",
+        "6973af4d5f2c76975cf2fabd",
+        "6973b0115f2c76975cf2fac3",
+        "6973afa45f2c76975cf2fac0"
+      ],
+      "allowedBoatClasses": [
+        "6973869c5ec5027cea7eaf5e",
+        "6973837e9b663c8204702e5e"
+      ],
+      "defaultDistance": 2000,
+      "createdBy": "68e8ee7829e67c3f4566b915",
+      "updatedBy": "68e8ee7829e67c3f4566b915",
+      "categoryDistances": [],
+      "stages": [],
+      "createdAt": "2026-01-30T15:26:13.487Z",
+      "updatedAt": "2026-01-30T15:26:26.407Z",
+      "__v": 0,
+      "publishedAt": "2026-01-30T15:26:26.405Z"
+    },
+    {
+      "_id": "68ed0577ddf8e851c06cf16a",
+      "name": "Championnat de Tunisie",
+      "description": "",
+      "location": {
+        "name": "Tunis Lake"
+      },
+      "startDate": "2025-11-30T00:00:00.000Z",
+      "endDate": "2025-11-30T00:00:00.000Z",
+      "registrationDeadline": "2025-10-20T00:00:00.000Z",
+      "races": [],
+      "organizer": "68e8ee7829e67c3f4566b913",
+      "status": "published",
+      "maxTeamsPerRace": 8,
+      "createdAt": "2025-10-13T13:58:15.821Z",
+      "updatedAt": "2026-01-23T11:18:03.711Z",
+      "__v": 3,
+      "type": "Sprint",
+      "allowUpCategory": false,
+      "allowedBoatClasses": [
+        "6915b96b925c07100b26120b",
+        "6915b96b925c07100b26120c",
+        "69404f59e179b631837f8721",
+        "69404f59e179b631837f8722"
+      ],
+      "allowedCategories": [
+        "690e13005463e222d54b57c8",
+        "690e145b5463e222d54b57cb",
+        "690e15a75463e222d54b57da",
+        "690e14d45463e222d54b57ce",
+        "690e17315463e222d54b57dd",
+        "690e18335463e222d54b57e0",
+        "690e19e65463e222d54b57e3",
+        "690e1a205463e222d54b57e6",
+        "690e1a645463e222d54b57e9",
+        "690e1a935463e222d54b57ec",
+        "690e226f5463e222d54b57ef",
+        "690e23085463e222d54b57f2"
+      ],
+      "categoryDistances": [],
+      "code": "TRF-CUP-2025",
+      "competitionType": "single_day",
+      "defaultDistance": 1000,
+      "discipline": "classic",
+      "names": {
+        "en": "Tunisia Classic Rowing Cup 2025",
+        "fr": "Coupe de Tunisie d'Aviron Classique 2025",
+        "ar": "كأس تونس للتجديف الكلاسيكي 2025"
+      },
+      "registrationStatus": "open",
+      "registrationWindow": {
+        "openAt": "2025-11-13T00:00:00.000Z",
+        "closeAt": "2025-11-29T00:00:00.000Z"
+      },
+      "resultsStatus": "pending",
+      "season": 2025,
+      "stages": [],
+      "updatedBy": "68e8ee7829e67c3f4566b915",
+      "venue": {
+        "name": "Tunis Lake"
+      },
+      "publishedAt": "2025-11-13T14:09:01.694Z"
+    },
+    {
+      "_id": "697786244ceace30562413db",
+      "code": "TRF-ROWING-INDOOR-2025",
+      "names": {
+        "en": "Tunisia Rowing Indoor 2025",
+        "fr": "Championnat de Tunisie d'Aviron en Salle 2025",
+        "ar": "بطولة تونس للتجديف داخل القاعة 2025"
+      },
+      "discipline": "indoor",
+      "competitionType": "single_day",
+      "season": 2025,
+      "startDate": "2025-02-02T00:00:00.000Z",
+      "endDate": "2025-02-02T00:00:00.000Z",
+      "venue": {
+        "name": "Salle Hammadi Ben Ammar",
+        "city": "La Goulette",
+        "country": "Tunisia"
+      },
+      "status": "published",
+      "registrationStatus": "not_open",
+      "resultsStatus": "pending",
+      "registrationWindow": {
+        "openAt": "2025-01-25T00:00:00.000Z",
+        "closeAt": "2025-01-31T00:00:00.000Z"
+      },
+      "allowUpCategory": true,
+      "allowedCategories": [
+        "690e13005463e222d54b57c8",
+        "690e145b5463e222d54b57cb",
+        "690e15a75463e222d54b57da",
+        "690e14d45463e222d54b57ce",
+        "690e17315463e222d54b57dd",
+        "690e18335463e222d54b57e0",
+        "690e19e65463e222d54b57e3",
+        "690e1a205463e222d54b57e6",
+        "690e1a645463e222d54b57e9",
+        "690e1a935463e222d54b57ec",
+        "690e226f5463e222d54b57ef",
+        "690e23085463e222d54b57f2",
+        "69735ebc290514a4cb54fe90",
+        "69735f1e290514a4cb54fe96",
+        "690e256c5463e222d54b57f9",
+        "690e25cc5463e222d54b57fc",
+        "6973a6215f2c76975cf2fa8b",
+        "6973a6935f2c76975cf2fa8e",
+        "6973a7d35f2c76975cf2fa91",
+        "6973a82e5f2c76975cf2fa94",
+        "6973a88d5f2c76975cf2fa97",
+        "6973a9945f2c76975cf2faa1",
+        "6973aaa65f2c76975cf2faaa",
+        "6973acaa5f2c76975cf2fab7",
+        "6973aecf5f2c76975cf2faba",
+        "6973af4d5f2c76975cf2fabd",
+        "6973b0115f2c76975cf2fac3",
+        "6973afa45f2c76975cf2fac0",
+        "697b68f78e51ca155bd546c6",
+        "697b69468e51ca155bd546c9",
+        "697b6e1f8e51ca155bd546cc",
+        "697b6e8b8e51ca155bd546cf"
+      ],
+      "allowedBoatClasses": [
+        "6973869c5ec5027cea7eaf5e",
+        "6973837e9b663c8204702e5e"
+      ],
+      "defaultDistance": 2000,
+      "createdBy": "68e8ee7829e67c3f4566b915",
+      "updatedBy": "68e8ee7829e67c3f4566b915",
+      "categoryDistances": [],
+      "stages": [],
+      "createdAt": "2026-01-26T15:20:04.565Z",
+      "updatedAt": "2026-01-30T15:26:46.689Z",
+      "__v": 1,
+      "publishedAt": "2026-01-26T16:01:57.872Z"
+    }
+  ],
+  "categories": [
+    {
+      "_id": "690e13005463e222d54b57c8",
+      "type": "national",
+      "abbreviation": "PM",
+      "gender": "men",
+      "minAge": 7,
+      "maxAge": 10,
+      "titles": {
+        "ar": "براعم ذكور",
+        "fr": "Poussin",
+        "en": "Under 11 Men"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T15:40:48.310Z",
+      "updatedAt": "2025-11-07T15:49:37.553Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e145b5463e222d54b57cb",
+      "type": "national",
+      "abbreviation": "PW",
+      "gender": "women",
+      "minAge": 7,
+      "maxAge": 10,
+      "titles": {
+        "ar": "براعم إناث",
+        "fr": "Poussine",
+        "en": "Under 11 Women"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T15:46:35.722Z",
+      "updatedAt": "2025-11-07T15:49:57.432Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e14d45463e222d54b57ce",
+      "type": "national",
+      "abbreviation": "bW",
+      "gender": "women",
+      "minAge": 11,
+      "maxAge": 12,
+      "titles": {
+        "ar": "صغار الدنيوات",
+        "fr": "Benjamine",
+        "en": "Under 13 Women"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T15:48:36.943Z",
+      "updatedAt": "2025-12-15T15:46:23.044Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e15a75463e222d54b57da",
+      "type": "national",
+      "abbreviation": "bM",
+      "gender": "men",
+      "minAge": 11,
+      "maxAge": 12,
+      "titles": {
+        "ar": "صغار الأداني",
+        "fr": "Benjamin",
+        "en": "Under 13 Men"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T15:52:07.512Z",
+      "updatedAt": "2025-12-15T15:45:56.702Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e17315463e222d54b57dd",
+      "type": "national",
+      "abbreviation": "MM",
+      "gender": "men",
+      "minAge": 13,
+      "maxAge": 14,
+      "titles": {
+        "ar": "الأداني",
+        "fr": "Minimes Hommes",
+        "en": "Under 15 Men"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T15:58:41.805Z",
+      "updatedAt": "2025-11-07T15:58:41.805Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e18335463e222d54b57e0",
+      "type": "national",
+      "abbreviation": "MW",
+      "gender": "women",
+      "minAge": 13,
+      "maxAge": 14,
+      "titles": {
+        "ar": "الدنيوات",
+        "fr": "Minime Dame",
+        "en": "Under 15 Women"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:02:59.662Z",
+      "updatedAt": "2025-11-07T16:02:59.662Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e19e65463e222d54b57e3",
+      "type": "national",
+      "abbreviation": "CM",
+      "gender": "men",
+      "minAge": 15,
+      "maxAge": 16,
+      "titles": {
+        "ar": "الأصاغر",
+        "fr": "Cadet",
+        "en": "Under 17 Men"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:10:14.225Z",
+      "updatedAt": "2025-11-07T16:10:14.225Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e1a205463e222d54b57e6",
+      "type": "national",
+      "abbreviation": "CW",
+      "gender": "women",
+      "minAge": 15,
+      "maxAge": 16,
+      "titles": {
+        "ar": "الصغريات",
+        "fr": "Cadette",
+        "en": "Under 17 Women"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:11:12.413Z",
+      "updatedAt": "2025-11-07T16:11:12.413Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e1a645463e222d54b57e9",
+      "type": "national",
+      "abbreviation": "JM",
+      "gender": "men",
+      "minAge": 17,
+      "maxAge": 18,
+      "titles": {
+        "ar": "الأواسط",
+        "fr": "Junior Homme",
+        "en": "Under 19 Men"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:12:20.301Z",
+      "updatedAt": "2025-11-07T16:12:20.301Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e1a935463e222d54b57ec",
+      "type": "national",
+      "abbreviation": "JW",
+      "gender": "women",
+      "minAge": 17,
+      "maxAge": 18,
+      "titles": {
+        "ar": "الوسطيات",
+        "fr": "Junior Femme",
+        "en": "Under 19 Women"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:13:07.142Z",
+      "updatedAt": "2025-11-07T16:49:43.686Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e226f5463e222d54b57ef",
+      "type": "national",
+      "abbreviation": "M",
+      "gender": "men",
+      "minAge": 19,
+      "titles": {
+        "ar": "الأكابر",
+        "fr": "Senior Homme",
+        "en": "Senior Men"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:46:39.267Z",
+      "updatedAt": "2025-11-28T15:54:46.946Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e23085463e222d54b57f2",
+      "type": "national",
+      "abbreviation": "W",
+      "gender": "women",
+      "minAge": 19,
+      "titles": {
+        "ar": "الكبريات",
+        "fr": "Senior Femme",
+        "en": "Senior Women"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:49:12.453Z",
+      "updatedAt": "2025-11-28T15:54:53.808Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e256c5463e222d54b57f9",
+      "type": "national",
+      "abbreviation": "M27-35",
+      "gender": "men",
+      "minAge": 27,
+      "maxAge": 35,
+      "titles": {
+        "ar": "ماستر رجال 27-35",
+        "fr": "Master Homme 27-35",
+        "en": "Master Men 27-35"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:59:24.693Z",
+      "updatedAt": "2025-11-07T16:59:24.693Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e25cc5463e222d54b57fc",
+      "type": "national",
+      "abbreviation": "W27-35",
+      "gender": "women",
+      "minAge": 27,
+      "maxAge": 35,
+      "titles": {
+        "ar": "ماستر سيدات 27-35",
+        "fr": "Master Femme 27-35",
+        "en": "Master Women 27-35"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T17:01:00.372Z",
+      "updatedAt": "2025-11-07T17:01:00.372Z",
+      "__v": 0
+    },
+    {
+      "_id": "6932e550888315c293a64be9",
+      "type": "national",
+      "abbreviation": "SMix",
+      "gender": "mixed",
+      "minAge": 19,
+      "titles": {
+        "ar": "أكابر مختلط",
+        "fr": "Senior Mixte",
+        "en": "Senior Mixed"
+      },
+      "isActive": true,
+      "createdAt": "2025-12-05T13:59:44.984Z",
+      "updatedAt": "2025-12-15T15:50:58.405Z",
+      "__v": 0
+    },
+    {
+      "_id": "6932f2b9b207b7c5edd385f8",
+      "type": "national",
+      "abbreviation": "JMix",
+      "gender": "mixed",
+      "minAge": 17,
+      "maxAge": 18,
+      "titles": {
+        "ar": "الأواسط مختلط",
+        "fr": "Junior Mixte",
+        "en": "U19 Mixed"
+      },
+      "isActive": true,
+      "createdAt": "2025-12-05T14:56:57.853Z",
+      "updatedAt": "2025-12-15T15:50:07.100Z",
+      "__v": 0
+    },
+    {
+      "_id": "6932f320b207b7c5edd385fb",
+      "type": "national",
+      "abbreviation": "U17Mix",
+      "gender": "mixed",
+      "minAge": 15,
+      "maxAge": 16,
+      "titles": {
+        "ar": "الأصاغر مختلط",
+        "fr": "Cadet Mixte",
+        "en": "U17"
+      },
+      "isActive": true,
+      "createdAt": "2025-12-05T14:58:40.685Z",
+      "updatedAt": "2025-12-15T15:50:16.184Z",
+      "__v": 0
+    },
+    {
+      "_id": "69735ebc290514a4cb54fe90",
+      "type": "national",
+      "abbreviation": "BM",
+      "gender": "men",
+      "minAge": 19,
+      "maxAge": 22,
+      "titles": {
+        "ar": "دون 23 سنة",
+        "fr": "Moins 23 ans",
+        "en": "Under 23"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T11:42:52.175Z",
+      "updatedAt": "2026-01-23T11:43:24.959Z",
+      "__v": 0
+    },
+    {
+      "_id": "69735f1e290514a4cb54fe96",
+      "type": "national",
+      "abbreviation": "BW",
+      "gender": "women",
+      "minAge": 19,
+      "maxAge": 22,
+      "titles": {
+        "ar": "دون 23 سنة",
+        "fr": "Moins 23 ans",
+        "en": "Under 23"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T11:44:30.810Z",
+      "updatedAt": "2026-01-23T11:44:30.810Z",
+      "__v": 0
+    },
+    {
+      "_id": "697361c1290514a4cb54fe99",
+      "type": "national",
+      "abbreviation": "BMix",
+      "gender": "mixed",
+      "minAge": 19,
+      "maxAge": 22,
+      "titles": {
+        "ar": "دون 23 سنة مختلط",
+        "fr": "Moins 23 ans Mixte",
+        "en": "Under 23 Mixed"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T11:55:45.701Z",
+      "updatedAt": "2026-01-23T11:57:13.922Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973a6215f2c76975cf2fa8b",
+      "type": "national",
+      "abbreviation": "M36-43",
+      "gender": "men",
+      "minAge": 36,
+      "maxAge": 43,
+      "titles": {
+        "ar": "ماستر رجال 36-43",
+        "fr": "Master Homme 36-43",
+        "en": "Master Men 36-43"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T16:47:29.530Z",
+      "updatedAt": "2026-01-23T17:03:30.551Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973a6935f2c76975cf2fa8e",
+      "type": "national",
+      "abbreviation": "W36-43",
+      "gender": "women",
+      "minAge": 36,
+      "maxAge": 43,
+      "titles": {
+        "ar": "ماستر سيدات 36-43",
+        "fr": "Master Femme 36-43",
+        "en": "Master Women 36-43"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T16:49:23.491Z",
+      "updatedAt": "2026-01-23T16:49:23.491Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973a7d35f2c76975cf2fa91",
+      "type": "national",
+      "abbreviation": "M44-49",
+      "gender": "men",
+      "minAge": 44,
+      "maxAge": 49,
+      "titles": {
+        "ar": "ماستر رجال 44-49",
+        "fr": "Master Homme 44-49",
+        "en": "Master Men 44-49"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T16:54:43.191Z",
+      "updatedAt": "2026-01-23T17:03:39.414Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973a82e5f2c76975cf2fa94",
+      "type": "national",
+      "abbreviation": "W44-49",
+      "gender": "women",
+      "minAge": 44,
+      "maxAge": 49,
+      "titles": {
+        "ar": "ماستر سيدات 44-49",
+        "fr": "Master Femme 44-49",
+        "en": "Master Women 44-49"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T16:56:14.272Z",
+      "updatedAt": "2026-01-23T16:56:14.272Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973a88d5f2c76975cf2fa97",
+      "type": "national",
+      "abbreviation": "M50-59",
+      "gender": "men",
+      "minAge": 50,
+      "maxAge": 59,
+      "titles": {
+        "ar": "ماستر رجال 50-59",
+        "fr": "Master Homme 50-59",
+        "en": "Master Men 50-59"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T16:57:49.571Z",
+      "updatedAt": "2026-01-23T16:58:40.685Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973a9945f2c76975cf2faa1",
+      "type": "national",
+      "abbreviation": "W50-59",
+      "gender": "women",
+      "minAge": 50,
+      "maxAge": 59,
+      "titles": {
+        "ar": "ماستر سيدات 50-59",
+        "fr": "Master Femme 50-59",
+        "en": "Master Women 50-59"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T17:02:12.544Z",
+      "updatedAt": "2026-01-23T17:02:12.544Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973aaa65f2c76975cf2faaa",
+      "type": "national",
+      "abbreviation": "M60-69",
+      "gender": "men",
+      "minAge": 60,
+      "maxAge": 69,
+      "titles": {
+        "ar": "ماستر رجال 60-69",
+        "fr": "Master Homme 60-69",
+        "en": "Master Men 60-69"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T17:06:46.949Z",
+      "updatedAt": "2026-01-23T17:13:32.485Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973acaa5f2c76975cf2fab7",
+      "type": "national",
+      "abbreviation": "W60-69",
+      "gender": "women",
+      "minAge": 60,
+      "maxAge": 69,
+      "titles": {
+        "ar": "ماستر سيدات 60-69",
+        "fr": "Master Femme 60-69",
+        "en": "Master Women 60-69"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T17:15:22.735Z",
+      "updatedAt": "2026-01-23T17:15:22.735Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973aecf5f2c76975cf2faba",
+      "type": "national",
+      "abbreviation": "M70-79",
+      "gender": "men",
+      "minAge": 70,
+      "maxAge": 79,
+      "titles": {
+        "ar": "ماستر رجال 70-79",
+        "fr": "Master Homme 70-79",
+        "en": "Master Men 70-79"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T17:24:31.402Z",
+      "updatedAt": "2026-01-23T17:24:31.402Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973af4d5f2c76975cf2fabd",
+      "type": "national",
+      "abbreviation": "W70-79",
+      "gender": "women",
+      "minAge": 70,
+      "maxAge": 79,
+      "titles": {
+        "ar": "ماستر سيدات 70-79",
+        "fr": "Master Femme 70-79",
+        "en": "Master Women 70-79"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T17:26:37.969Z",
+      "updatedAt": "2026-01-23T17:26:37.969Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973afa45f2c76975cf2fac0",
+      "type": "national",
+      "abbreviation": "W80-89",
+      "gender": "women",
+      "minAge": 80,
+      "maxAge": 89,
+      "titles": {
+        "ar": "ماستر سيدات 80-89",
+        "fr": "Master Femme 80-89",
+        "en": "Master Women 80-89"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T17:28:04.838Z",
+      "updatedAt": "2026-01-23T17:28:04.838Z",
+      "__v": 0
+    },
+    {
+      "_id": "6973b0115f2c76975cf2fac3",
+      "type": "national",
+      "abbreviation": "M80-89",
+      "gender": "men",
+      "minAge": 80,
+      "maxAge": 89,
+      "titles": {
+        "ar": "ماستر رجال 80-89",
+        "fr": "Master Homme 80-89",
+        "en": "Master Men 80-89"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-23T17:29:53.195Z",
+      "updatedAt": "2026-01-23T17:29:53.195Z",
+      "__v": 0
+    },
+    {
+      "_id": "697b68f78e51ca155bd546c6",
+      "type": "national",
+      "abbreviation": "PR1M",
+      "gender": "men",
+      "minAge": 19,
+      "maxAge": 50,
+      "titles": {
+        "ar": "تجديف للمعوقين بذراع وكتف رجال",
+        "fr": "PR1 Homme",
+        "en": "PR1 Men's"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-29T14:04:39.090Z",
+      "updatedAt": "2026-01-31T20:49:59.261Z",
+      "__v": 0,
+      "isPara": true
+    },
+    {
+      "_id": "697b69468e51ca155bd546c9",
+      "type": "national",
+      "abbreviation": "PR1W",
+      "gender": "women",
+      "minAge": 19,
+      "maxAge": 50,
+      "titles": {
+        "ar": "تجديف للمعوقين بذراع وكتف سيدات",
+        "fr": "PR1 Dames",
+        "en": "PR1 Women's"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-29T14:05:58.050Z",
+      "updatedAt": "2026-01-31T20:50:05.200Z",
+      "__v": 0,
+      "isPara": true
+    },
+    {
+      "_id": "697b6e1f8e51ca155bd546cc",
+      "type": "national",
+      "abbreviation": "PR3M",
+      "gender": "men",
+      "minAge": 19,
+      "maxAge": 50,
+      "titles": {
+        "ar": "تجديف للمعوقين بأرجل ويدين وظهر رجال",
+        "fr": "PR3 Hommes",
+        "en": "PR3 Men's"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-29T14:26:39.605Z",
+      "updatedAt": "2026-01-31T20:50:09.599Z",
+      "__v": 0,
+      "isPara": true
+    },
+    {
+      "_id": "697b6e8b8e51ca155bd546cf",
+      "type": "national",
+      "abbreviation": "PR3W",
+      "gender": "women",
+      "minAge": 19,
+      "maxAge": 50,
+      "titles": {
+        "ar": "تجديف للمعوقين بأرجل ويدين وظهر سيدات",
+        "fr": "PR3 Dames",
+        "en": "PR3 Women's"
+      },
+      "isActive": true,
+      "createdAt": "2026-01-29T14:28:27.437Z",
+      "updatedAt": "2026-01-31T20:50:19.028Z",
+      "__v": 0,
+      "isPara": true
+    }
+  ]
+}

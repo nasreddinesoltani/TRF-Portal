@@ -615,8 +615,7 @@ export const getClubSummary = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(5)
     .select(
-      "firstName lastName firstNameAr lastNameAr licenseNumber status isPara memberships createdAt cin passportNumber"
-
+      "firstName lastName firstNameAr lastNameAr licenseNumber status isPara memberships createdAt cin passportNumber categoryAssignments"
     )
     .lean();
 
@@ -630,6 +629,11 @@ export const getClubSummary = asyncHandler(async (req, res) => {
     const firstName = athlete.firstName || athlete.firstNameAr || "";
     const lastName = athlete.lastName || athlete.lastNameAr || "";
 
+    const assignments = Array.isArray(athlete.categoryAssignments) ? athlete.categoryAssignments : [];
+    const nationalCategory = assignments.find(
+      (a) => a.type === "national" && a.season === currentSeason
+    );
+
     return {
       id: athlete._id,
       firstName,
@@ -641,6 +645,7 @@ export const getClubSummary = asyncHandler(async (req, res) => {
       isPara: athlete.isPara,
       status: athlete.status,
       membershipStatus: membership?.status,
+      nationalCategory,
       createdAt: athlete.createdAt,
     };
   });

@@ -70,6 +70,7 @@ const serializeCategory = (category) => {
     gender: category.gender || null,
     minAge: category.minAge ?? null,
     maxAge: category.maxAge ?? null,
+    isPara: category.isPara || false,
   };
 };
 
@@ -81,7 +82,8 @@ const serializeBoatClass = (boatClass) => {
     id: boatClass._id?.toString?.() || boatClass.id || null,
     code: boatClass.code || null,
     names: boatClass.names || {},
-    type: boatClass.type || null,
+    discipline: boatClass.discipline || null,
+    weightClass: boatClass.weightClass || "open",
     seats: boatClass.crewSize ?? boatClass.seats ?? null,
   };
 };
@@ -327,11 +329,11 @@ const populateEntryDoc = async (entryDoc) =>
     },
     {
       path: "category",
-      select: "abbreviation titles gender minAge maxAge",
+      select: "abbreviation titles gender minAge maxAge isPara",
     },
     {
       path: "boatClass",
-      select: "code names type seats",
+      select: "code names discipline crewSize weightClass",
     },
     {
       path: "submittedBy",
@@ -399,11 +401,11 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
       },
       {
         path: "category",
-        select: "abbreviation titles gender minAge maxAge",
+        select: "abbreviation titles gender minAge maxAge isPara",
       },
       {
         path: "boatClass",
-        select: "code names type seats",
+        select: "code names discipline crewSize weightClass",
       },
       {
         path: "submittedBy",

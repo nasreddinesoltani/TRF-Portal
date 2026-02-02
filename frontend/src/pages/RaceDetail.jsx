@@ -31,6 +31,7 @@ import {
   ChevronRight,
   FlaskConical,
 } from "lucide-react";
+import { generateRaceCode, formatCategoryAbbreviation } from "../lib/rowing";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -197,58 +198,7 @@ const autoFormatTime = (input) => {
   return trimmed;
 };
 
-const generateRaceCode = (category, boatClass) => {
-  let boatCode = boatClass?.code || "1X";
-  const catAbbr = category?.abbreviation || "";
-  const catGender = category?.gender || "mixed";
-  const weightClass = boatClass?.weightClass || "open";
-
-  // Check if boat code starts with L (legacy lightweight code like LW1x, LM1x)
-  const hasLegacyLightweightPrefix =
-    boatCode.match(/^L[MW]?\d/i) || boatCode.match(/^LW?\d/i);
-  if (hasLegacyLightweightPrefix) {
-    boatCode = boatCode.replace(/^L[MW]?/i, "");
-  }
-
-  const isLightweight =
-    weightClass === "lightweight" || hasLegacyLightweightPrefix;
-  const isCoastalBoat = boatCode.startsWith("C") || boatCode.startsWith("c");
-  const isSeniorCategory =
-    catAbbr.toUpperCase() === "SM" ||
-    catAbbr.toUpperCase() === "SW" ||
-    catAbbr.toUpperCase() === "S" ||
-    (category?.titles?.en || "").toLowerCase().includes("senior");
-
-  const genderPrefix =
-    catGender === "women" ? "W" : catGender === "mixed" ? "Mix" : "M";
-
-  if (isSeniorCategory) {
-    if (isCoastalBoat) {
-      return isLightweight ? `L${boatCode}` : boatCode;
-    }
-    return isLightweight
-      ? `L${genderPrefix}${boatCode}`
-      : `${genderPrefix}${boatCode}`;
-  }
-
-  if (isCoastalBoat) {
-    return isLightweight ? `${catAbbr}L${boatCode}` : `${catAbbr}${boatCode}`;
-  }
-
-  const catHasGender =
-    catAbbr.endsWith("M") || catAbbr.endsWith("W") || catAbbr.endsWith("Mix");
-  if (catHasGender && isLightweight) {
-    const catBase = catAbbr.slice(0, -1);
-    const catGenderSuffix = catAbbr.slice(-1);
-    return `${catBase}L${catGenderSuffix}${boatCode}`;
-  }
-  if (catHasGender) {
-    return `${catAbbr}${boatCode}`;
-  }
-  return isLightweight
-    ? `${catAbbr}L${genderPrefix}${boatCode}`
-    : `${catAbbr}${genderPrefix}${boatCode}`;
-};
+// generateRaceCode replaced by shared utility from ../lib/rowing.js
 
 const DEFAULT_POINT_TABLE = {
   1: 20,

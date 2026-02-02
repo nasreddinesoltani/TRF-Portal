@@ -1,0 +1,225 @@
+{
+  "allAbbreviations": [
+    "PM",
+    "PW",
+    "bW",
+    "bM",
+    "MM",
+    "MW",
+    "CM",
+    "CW",
+    "JM",
+    "JW",
+    "M",
+    "W",
+    "M27-35",
+    "W27-35",
+    "SMix",
+    "JMix",
+    "U17Mix",
+    "BM",
+    "BW",
+    "BMix",
+    "M36-43",
+    "W36-43",
+    "M44-49",
+    "W44-49",
+    "M50-59",
+    "W50-59",
+    "M60-69",
+    "W60-69",
+    "M70-79",
+    "W70-79",
+    "W80-89",
+    "M80-89",
+    "PR1M",
+    "PR1W",
+    "PR3M",
+    "PR3W"
+  ],
+  "specificDocs": [
+    {
+      "_id": "690e1a645463e222d54b57e9",
+      "type": "national",
+      "abbreviation": "JM",
+      "gender": "men",
+      "minAge": 17,
+      "maxAge": 18,
+      "titles": {
+        "ar": "الأواسط",
+        "fr": "Junior Homme",
+        "en": "Under 19 Men"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:12:20.301Z",
+      "updatedAt": "2025-11-07T16:12:20.301Z",
+      "__v": 0
+    },
+    {
+      "_id": "6932f2b9b207b7c5edd385f8",
+      "type": "national",
+      "abbreviation": "JMix",
+      "gender": "mixed",
+      "minAge": 17,
+      "maxAge": 18,
+      "titles": {
+        "ar": "الأواسط مختلط",
+        "fr": "Junior Mixte",
+        "en": "U19 Mixed"
+      },
+      "isActive": true,
+      "createdAt": "2025-12-05T14:56:57.853Z",
+      "updatedAt": "2025-12-15T15:50:07.100Z",
+      "__v": 0
+    },
+    {
+      "_id": "690e1a935463e222d54b57ec",
+      "type": "national",
+      "abbreviation": "JW",
+      "gender": "women",
+      "minAge": 17,
+      "maxAge": 18,
+      "titles": {
+        "ar": "الوسطيات",
+        "fr": "Junior Femme",
+        "en": "Under 19 Women"
+      },
+      "isActive": true,
+      "createdAt": "2025-11-07T16:13:07.142Z",
+      "updatedAt": "2025-11-07T16:49:43.686Z",
+      "__v": 0
+    }
+  ],
+  "meriem": {
+    "_id": "6903a8c0334e4db91a44093f",
+    "licenseYear": 21,
+    "licenseSequence": 5047,
+    "licenseNumber": "5047-21",
+    "birthDate": "2008-07-23T00:00:00.000Z",
+    "gender": "female",
+    "firstNameAr": "مريم",
+    "memberships": [
+      {
+        "club": "6908bf438a6a82fefc52c4fb",
+        "season": 2025,
+        "status": "transferred",
+        "startDate": "2025-11-04T10:02:36.639Z",
+        "endDate": "2025-11-21T11:42:11.668Z"
+      },
+      {
+        "club": "6908bc0b8a6a82fefc52c4c3",
+        "season": 2025,
+        "status": "active",
+        "startDate": "2025-11-21T11:42:11.668Z"
+      },
+      {
+        "club": "6908bc0b8a6a82fefc52c4c3",
+        "season": 2026,
+        "status": "active",
+        "membershipType": "primary",
+        "startDate": "2026-01-23T09:19:31.811Z"
+      }
+    ],
+    "updatedAt": "2026-02-02T16:22:15.887Z",
+    "categoryAssignments": [
+      {
+        "season": 2025,
+        "type": "national",
+        "category": "690e1a935463e222d54b57ec",
+        "abbreviation": "JW",
+        "gender": "women",
+        "titles": {
+          "ar": "الوسطيات",
+          "fr": "Junior Femme",
+          "en": "Under 19 Women"
+        },
+        "ageOnCutoff": 17
+      },
+      {
+        "season": 2026,
+        "type": "national",
+        "category": "690e1a935463e222d54b57ec",
+        "abbreviation": "JW",
+        "gender": "women",
+        "titles": {
+          "ar": "الوسطيات",
+          "fr": "Junior Femme",
+          "en": "Under 19 Women"
+        },
+        "ageOnCutoff": 18
+      }
+    ],
+    "documentsStatus": "active",
+    "licenseStatus": "active",
+    "status": "active",
+    "__v": 3,
+    "documentsEvaluatedAt": "2026-01-23T17:35:56.079Z",
+    "documentsIssues": [],
+    "firstName": "Meriem",
+    "lastName": "Bouchoucha",
+    "lastNameAr": "بوشوشة",
+    "nationality": "",
+    "documents": {
+      "photo": {
+        "fileName": "5047-21.jpg",
+        "storagePath": "uploads/photos_organized/ASL/5047-21.jpg",
+        "url": "/uploads/photos_organized/ASL/5047-21.jpg",
+        "status": "approved",
+        "verifiedAt": "2026-01-07T15:25:12.914Z",
+        "note": "Bulk imported from legacy photos"
+      },
+      "medicalCertificate": {
+        "fileName": "medicalcertificate-1769184456296-183826874.jpg",
+        "fileSize": 597450,
+        "mimeType": "image/jpeg",
+        "storagePath": "athletes/6903a8c0334e4db91a44093f/medicalcertificate/medicalcertificate-1769184456296-183826874.jpg",
+        "url": null,
+        "uploadedAt": "2026-01-23T16:07:36.330Z",
+        "uploadedBy": "6908bc0b8a6a82fefc52c4c5",
+        "status": "approved",
+        "metadata": {
+          "originalName": "Meriem Bouchoucha_ CM.jpg",
+          "storedName": "medicalcertificate-1769184456296-183826874.jpg",
+          "fieldName": "file"
+        },
+        "expiresAt": "2027-01-15T00:00:00.000Z",
+        "verifiedAt": "2026-01-23T17:35:44.550Z",
+        "verifiedBy": "68e8ee7829e67c3f4566b915"
+      },
+      "parentalAuthorization": {
+        "fileName": "parentalauthorization-1769184487030-84831387.jpg",
+        "fileSize": 322182,
+        "mimeType": "image/jpeg",
+        "storagePath": "athletes/6903a8c0334e4db91a44093f/parentalauthorization/parentalauthorization-1769184487030-84831387.jpg",
+        "url": null,
+        "uploadedAt": "2026-01-23T16:08:07.101Z",
+        "uploadedBy": "6908bc0b8a6a82fefc52c4c5",
+        "status": "approved",
+        "metadata": {
+          "originalName": "Meriem Bouchoucha_ AP.jpg",
+          "storedName": "parentalauthorization-1769184487030-84831387.jpg",
+          "fieldName": "file"
+        },
+        "verifiedAt": "2026-01-23T17:35:56.078Z",
+        "verifiedBy": "68e8ee7829e67c3f4566b915"
+      },
+      "birthCertificate": {
+        "fileName": "birthcertificate-1769184938925-725276453.jpg",
+        "fileSize": 580868,
+        "mimeType": "image/jpeg",
+        "storagePath": "athletes/6903a8c0334e4db91a44093f/birthcertificate/birthcertificate-1769184938925-725276453.jpg",
+        "url": null,
+        "uploadedAt": "2026-01-23T16:15:38.968Z",
+        "uploadedBy": "6908bc0b8a6a82fefc52c4c5",
+        "status": "approved",
+        "metadata": {
+          "originalName": "Meriem Bouchoucha_ E.jpg",
+          "storedName": "birthcertificate-1769184938925-725276453.jpg",
+          "fieldName": "file"
+        },
+        "verifiedAt": "2026-01-23T17:34:40.688Z",
+        "verifiedBy": "68e8ee7829e67c3f4566b915"
+      }
+    }
+  }
+}
