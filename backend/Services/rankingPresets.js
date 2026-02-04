@@ -189,6 +189,41 @@ export const RANKING_PRESETS = {
     isActive: true,
     sortOrder: 5,
   },
+
+  /**
+   * Global Club Ranking
+   * - All categories and genders combined
+   * - Clubs collect all points from all categories
+   */
+  GLOBAL_CUP: {
+    code: "GLOBAL_CUP",
+    names: {
+      en: "Global Club Ranking",
+      fr: "Classement Global des Clubs",
+      ar: "الترتيب العام للأندية",
+    },
+    description:
+      "All categories and genders combined. Clubs collect points from all their athletes across the entire competition.",
+    groupBy: "global",
+    entityType: "club",
+    boatClassFilter: "all",
+    includeMastersDefault: true,
+    discipline: null,
+    journeyMode: "all",
+    maxScoringPosition: 8,
+    dnfGetsPointsIfFewFinishers: true,
+    tieBreakers: [
+      { priority: 1, method: "more_first_places" },
+      { priority: 2, method: "more_second_places" },
+      { priority: 3, method: "total_time" },
+      { priority: 4, method: "alphabetical" },
+    ],
+    showTimeDeltas: false,
+    showTotalTime: false,
+    isPreset: true,
+    isActive: true,
+    sortOrder: 6,
+  },
 };
 
 /**

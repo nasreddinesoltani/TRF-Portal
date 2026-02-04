@@ -15,6 +15,7 @@ export const GROUP_BY_OPTIONS = [
   "gender", // Men's Cup, Women's Cup (combines all age categories per gender)
   "category", // Each age category ranked separately (e.g., Senior, Junior, Cadet)
   "category_gender", // Each category + gender combination (e.g., Senior Men, Senior Women)
+  "global", // All categories and genders combined (Global Club Cup)
 ];
 
 // Which journeys to count

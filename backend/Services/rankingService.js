@@ -73,10 +73,14 @@ export function calculateLanePoints(
       break;
 
     case "dnf":
-      // DNF special rule: gets points if fewer than maxScoring crews finished
-      if (dnfGetsPoints && raceContext.totalOkFinishers < maxScoring) {
-        // DNF gets position after last finisher
-        result.effectivePosition = raceContext.lastFinisherPosition + 1;
+      // DNF gets points for the position AFTER the last "ok" finisher
+      // Rule: DNF rank = lastFinisherPosition + 1
+      // Note: If no one finished (lastFinisherPosition is 0), DNF gets rank 1
+      // but user usually wants points only if someone finished. 
+      // However, the requested rule is simply "position after last completed".
+      
+      if (dnfGetsPoints) {
+        result.effectivePosition = (raceContext.lastFinisherPosition || 0) + 1;
         result.points = getPointsForPosition(
           result.effectivePosition,
           rankingSystem
@@ -266,9 +270,24 @@ export async function buildCompetitionRanking(
   // Filter out masters categories if not included
   if (!includeMasters) {
     filteredRaces = filteredRaces.filter((r) => {
-      const catAbbr = r.category?.abbreviation?.toUpperCase() || "";
-      // Masters categories typically have "MAS" or "VET" in abbreviation
-      return !catAbbr.includes("MAS") && !catAbbr.includes("VET");
+      const abbreviation = r.category?.abbreviation?.toUpperCase() || "";
+      const enTitle = r.category?.titles?.en?.toUpperCase() || "";
+      const frTitle = r.category?.titles?.fr?.toUpperCase() || "";
+
+      // Check for common patterns:
+      // 1. MinAge >= 27 (Standard Masters age)
+      // 2. "MAS" or "VET" in abbreviation
+      // 3. "MASTER" or "VETERAN" in titles
+      const isMaster =
+        (r.category?.minAge >= 27) ||
+        abbreviation.includes("MAS") ||
+        abbreviation.includes("VET") ||
+        enTitle.includes("MASTER") ||
+        frTitle.includes("MASTER") ||
+        enTitle.includes("VETERAN") ||
+        frTitle.includes("VETERAN");
+
+      return !isMaster;
     });
   }
 
@@ -342,6 +361,11 @@ function groupRaces(races, groupBy) {
           race.category?.abbreviation ||
           race.category?._id?.toString() ||
           "unknown";
+        break;
+      
+      case "global":
+        // All categories and genders combined
+        groupKey = "all";
         break;
 
       case "category_gender":

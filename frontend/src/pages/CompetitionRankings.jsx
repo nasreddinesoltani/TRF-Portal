@@ -83,6 +83,14 @@ const buildGroupTitle = (groupKey, groupBy, metadata, language = "en") => {
     return GROUP_LABELS[groupKey]?.[language] || groupKey;
   }
 
+  if (groupBy === "global") {
+    return language === "ar"
+      ? "الترتيب العام"
+      : language === "fr"
+      ? "Classement Global"
+      : "Global Ranking";
+  }
+
   // Get full category name from metadata
   const categoryName =
     metadata?.categoryNames?.[language] ||
@@ -815,26 +823,42 @@ export default function CompetitionRankings() {
 
       let y = headerHeight;
 
-      // Competition info line
-      const dateStr = new Date().toLocaleDateString("en-GB", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
+      // Competition info section
+      const eventDateStr = competition?.startDate
+        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : new Date().toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          });
+
+      doc.setFontSize(14);
+      doc.setFont(fontName, "bold");
+      const compTitle =
+        competition?.names?.en ||
+        competition?.name ||
+        competition?.code ||
+        "Competition";
+      doc.text(compTitle, center, y, { align: "center" });
 
       doc.setFontSize(8);
       doc.setFont(fontName, "normal");
-      const compLocation = competition?.venue?.name || "Tunisia";
+      const compLocation =
+        competition?.location?.name ||
+        competition?.venue?.name ||
+        competition?.venue ||
+        "Location";
       doc.text(compLocation, leftMargin, y);
-
-      const compTitle =
-        competition?.names?.en || competition?.code || "Competition";
-      doc.text(compTitle, center, y, { align: "center" });
-      doc.text(dateStr, rightMargin, y, { align: "right" });
+      doc.text(eventDateStr, rightMargin, y, { align: "right" });
 
       y += 2;
-      doc.setLineWidth(0.3);
+      doc.setLineWidth(0.5);
       doc.line(leftMargin, y, rightMargin, y);
 
       // Only show title on first page
@@ -880,15 +904,82 @@ export default function CompetitionRankings() {
       return y;
     };
 
-    // Function to add footer to a page
-    const addFooter = () => {
+    // Function to add footer and legend to a page
+    const addFooter = (isLastPage = false) => {
       if (footerData) {
         const imgProps = doc.getImageProperties(footerData);
         const ratio = imgProps.width / imgProps.height;
         const w = pageWidth;
         const h = w / ratio;
-        // Position footer with proper margin
         doc.addImage(footerData, "PNG", 0, pageHeight - h, w, h);
+      }
+
+      // Add club legend on the last page
+      if (isLastPage) {
+        // Collect all unique clubs from all rankings
+        const clubsMap = new Map();
+        Object.values(rankingData.rankings || {}).forEach((entries) => {
+          entries.forEach((entry) => {
+            if (entry.entityType === "club" && entry.entity?._id) {
+              const id = entry.entity._id.toString();
+              if (!clubsMap.has(id)) {
+                clubsMap.set(id, entry.entity);
+              }
+            } else if (entry.entityType === "athlete" && entry.club?._id) {
+              const id = entry.club._id.toString();
+              if (!clubsMap.has(id)) {
+                clubsMap.set(id, entry.club);
+              }
+            }
+          });
+        });
+
+        const uniqueClubs = Array.from(clubsMap.values()).sort((a, b) =>
+          (a.code || "").localeCompare(b.code || "")
+        );
+
+        if (uniqueClubs.length > 0) {
+          const lineHeight = 4;
+          const boxHeight = uniqueClubs.length * lineHeight + 7;
+          const legendY = pageHeight - 38 - boxHeight;
+
+          doc.setDrawColor(0);
+          doc.setLineWidth(0.3);
+          doc.rect(leftMargin, legendY, 190, boxHeight);
+
+          doc.setFontSize(9);
+          doc.setFont(fontName, "bold");
+          doc.text("Legend:", leftMargin + 2, legendY + 5);
+
+          doc.setFontSize(8);
+          let clubY = legendY + 9;
+
+          for (const club of uniqueClubs) {
+            const code = club.code || "---";
+            const frenchName =
+              club.name || club.names?.fr || club.names?.en || "";
+            const arabicName = club.nameAr || club.names?.ar || "";
+
+            doc.setFont(fontName, "bold");
+            doc.text(code + ": ", leftMargin + 4, clubY);
+
+            const codeWidth = doc.getTextWidth(code + ": ");
+            doc.setFont(fontName, "normal");
+            doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+
+            if (arabicName && arabicFontName) {
+              const frenchWidth = doc.getTextWidth(frenchName);
+              doc.setFont(arabicFontName, "normal");
+              doc.text(
+                " : " + arabicName,
+                leftMargin + 4 + codeWidth + frenchWidth,
+                clubY
+              );
+              doc.setFont(fontName, "normal");
+            }
+            clubY += lineHeight;
+          }
+        }
       }
     };
 
@@ -908,7 +999,6 @@ export default function CompetitionRankings() {
 
     // Start rendering
     let yPos = addHeader(true);
-    addFooter();
 
     // Calculate usable page area (between header and footer)
     const contentBottom = pageHeight - footerHeight - 5;
@@ -1076,12 +1166,19 @@ export default function CompetitionRankings() {
           // Add header and footer to new pages created by autoTable
           if (data.pageNumber > 1) {
             addHeader(false);
-            addFooter();
           }
+          // Note: Footer is added at the very end of the main loop or on page additions
         },
       });
 
       yPos = doc.lastAutoTable.finalY + 10;
+    }
+
+    // Add footer to all pages
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      addFooter(i === pageCount);
     }
 
     // Save

@@ -364,6 +364,15 @@ const RaceDetail = () => {
     validEntries.forEach((entry, index) => {
       positions[entry.lane] = index + 1;
     });
+
+    // DNF gets position after last finisher
+    const lastPos = validEntries.length;
+    Object.entries(resultsForm).forEach(([laneNum, data]) => {
+      if (data.status === "dnf") {
+        positions[laneNum] = lastPos + 1;
+      }
+    });
+
     return positions;
   }, [resultsForm]);
 
@@ -587,6 +596,15 @@ const RaceDetail = () => {
     // For results, sort by position. For start list, ALWAYS sort by lane.
     const exportLanes = [...(race?.lanes || [])].sort((a, b) => {
       if (isResults) {
+        const statusA = a.result?.status || "ok";
+        const statusB = b.result?.status || "ok";
+
+        const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+        const pA = priority[statusA] ?? 10;
+        const pB = priority[statusB] ?? 10;
+
+        if (pA !== pB) return pA - pB;
+
         const posA = a.result?.finishPosition || 999;
         const posB = b.result?.finishPosition || 999;
         if (posA !== posB) return posA - posB;
@@ -613,14 +631,12 @@ const RaceDetail = () => {
             ? status.toUpperCase()
             : formatElapsedTime(lane.result?.elapsedMs);
         if (
-          status === "ok" &&
-          pos > 1 &&
-          winningTime &&
-          lane.result?.elapsedMs
+          (status === "ok" || status === "dnf") &&
+          pos > 0 &&
+          pos <= 8
         ) {
-          timeStr += `\n${formatDeltaSeconds(lane.result.elapsedMs - winningTime)}`;
+          points = calculatePoints(pos, activeRankingSystem);
         }
-        points = calculatePoints(pos, activeRankingSystem);
       }
 
       // Helper to format name with uppercase last name
@@ -852,9 +868,18 @@ const RaceDetail = () => {
   const raceCode = generateRaceCode(category, boatClass);
   const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
     if (race?.status === "completed") {
+      const statusA = a.result?.status || "ok";
+      const statusB = b.result?.status || "ok";
+
+      const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+      const pA = priority[statusA] ?? 10;
+      const pB = priority[statusB] ?? 10;
+
+      if (pA !== pB) return pA - pB;
+
       const posA = a.result?.finishPosition || 999;
       const posB = b.result?.finishPosition || 999;
-      return posA - posB;
+      if (posA !== posB) return posA - posB;
     }
     return a.lane - b.lane;
   });
@@ -1187,8 +1212,22 @@ const RaceDetail = () => {
                   {sortedLanes.map((lane, index) => {
                     const status = lane.result?.status || "ok";
                     const isWinner = lane.result?.finishPosition === 1;
+                    
+                    // Fallback position for DNF if not explicitly stored
+                    let effectivePos = lane.result?.finishPosition;
+                    if (
+                      !effectivePos &&
+                      status === "dnf" &&
+                      activeRankingSystem?.dnfGetsPointsIfFewFinishers !== false
+                    ) {
+                      const lastFinisher = Math.max(0, ...race.lanes
+                        .filter(l => l.result?.status === "ok" && l.result?.finishPosition)
+                        .map(l => l.result.finishPosition));
+                      effectivePos = lastFinisher + 1;
+                    }
+
                     const points = calculatePoints(
-                      lane.result?.finishPosition,
+                      effectivePos,
                       activeRankingSystem,
                     );
 
@@ -1244,9 +1283,10 @@ const RaceDetail = () => {
                                   : "-"}
                             </p>
                           </div>
-                          {race.status === "completed" && status === "ok" && (
+                          {race.status === "completed" && (status === "ok" || status === "dnf") && (
                             <div className="flex items-center gap-2">
-                              {lane.result?.finishPosition > 1 &&
+                              {status === "ok" &&
+                                lane.result?.finishPosition > 1 &&
                                 winningTime &&
                                 lane.result?.elapsedMs && (
                                   <span className="text-xs font-medium text-rose-500">

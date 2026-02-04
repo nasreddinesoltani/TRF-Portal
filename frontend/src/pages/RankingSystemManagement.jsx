@@ -16,6 +16,10 @@ const GROUP_BY_OPTIONS = [
     value: "category_gender",
     label: "Category + Gender (Senior Men, Senior Women, etc.)",
   },
+  {
+    value: "global",
+    label: "Global (All categories & genders combined)",
+  },
 ];
 
 const JOURNEY_MODE_OPTIONS = [
