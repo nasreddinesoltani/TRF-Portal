@@ -383,8 +383,8 @@ const AthleteCard = ({
   const issues = Array.isArray(athlete.documentsIssues)
     ? athlete.documentsIssues
     : Array.isArray(athlete.documentEvaluation?.issues)
-    ? athlete.documentEvaluation.issues
-    : [];
+      ? athlete.documentEvaluation.issues
+      : [];
 
   const hasTransferTargets = clubs.length > 1;
 
@@ -490,7 +490,7 @@ const AthleteCard = ({
                 if (isMissing) {
                   labelText = `Missing: ${labelText.replace(
                     / Required| Missing/g,
-                    ""
+                    "",
                   )}`;
                   statusGroup = "critical";
                 } else if (isExpired) {
@@ -499,7 +499,7 @@ const AthleteCard = ({
                 } else if (isPending) {
                   labelText = `Pending: ${labelText.replace(
                     / Not Approved| Pending/g,
-                    ""
+                    "",
                   )}`;
                   statusGroup = "warning";
                 }
@@ -807,7 +807,7 @@ const ClubDetail = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
 
       if (!response.ok) {
@@ -825,12 +825,12 @@ const ClubDetail = () => {
       setCounts({ ...EMPTY_COUNTS, ...(payload.counts ?? {}) });
       setPermissions(buildPermissions(payload.permissions));
       setPendingTransfers(
-        Array.isArray(payload.pendingTransfers) ? payload.pendingTransfers : []
+        Array.isArray(payload.pendingTransfers) ? payload.pendingTransfers : [],
       );
       setPendingDeletionRequests(
         Array.isArray(payload.pendingDeletionRequests)
           ? payload.pendingDeletionRequests
-          : []
+          : [],
       );
       setAssociatedCentre(payload.associatedCentre ?? null);
     } catch (error) {
@@ -894,7 +894,7 @@ const ClubDetail = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
 
       if (!response.ok) {
@@ -904,7 +904,7 @@ const ClubDetail = () => {
 
       const payload = await response.json();
       setCentreAthletes(
-        Array.isArray(payload.athletes) ? payload.athletes : []
+        Array.isArray(payload.athletes) ? payload.athletes : [],
       );
     } catch (error) {
       console.error("Failed to load centre athletes", error);
@@ -940,13 +940,13 @@ const ClubDetail = () => {
               athleteId,
               clubId: club._id,
             }),
-          }
+          },
         );
 
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(
-            payload.message || "Failed to add secondary membership"
+            payload.message || "Failed to add secondary membership",
           );
         }
 
@@ -964,7 +964,7 @@ const ClubDetail = () => {
         setDualMembershipDialog((prev) => ({ ...prev, submitting: false }));
       }
     },
-    [club?._id, loadClubDetails, loadCentreAthletes, token]
+    [club?._id, loadClubDetails, loadCentreAthletes, token],
   );
 
   // Remove secondary membership
@@ -987,13 +987,13 @@ const ClubDetail = () => {
               athleteId,
               clubId: club._id,
             }),
-          }
+          },
         );
 
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(
-            payload.message || "Failed to remove secondary membership"
+            payload.message || "Failed to remove secondary membership",
           );
         }
 
@@ -1005,7 +1005,7 @@ const ClubDetail = () => {
         toast.error(error.message);
       }
     },
-    [club?._id, loadClubDetails, loadCentreAthletes, token]
+    [club?._id, loadClubDetails, loadCentreAthletes, token],
   );
 
   const filteredBuckets = useMemo(() => {
@@ -1036,7 +1036,7 @@ const ClubDetail = () => {
       ].map((v) => (v ? v.toString().toLowerCase() : ""));
 
       return needles.every((needle) =>
-        fields.some((field) => field.includes(needle))
+        fields.some((field) => field.includes(needle)),
       );
     };
 
@@ -1172,7 +1172,7 @@ const ClubDetail = () => {
         key: "membership",
         label: `Membership: ${resolveLabel(
           MEMBERSHIP_FILTER_OPTIONS,
-          membershipFilter
+          membershipFilter,
         )}`,
       });
     }
@@ -1219,25 +1219,18 @@ const ClubDetail = () => {
   const handleExportExcel = useCallback(
     (bucketKey, bucketLabel) => {
       const grid = gridRefs.current[bucketKey];
-      if (grid) {
-        // filter out columns that shouldn't be exported
-        const exportColumns = grid.columns.filter(
-          (col) => col.allowExcelExport !== false
-        );
-
+      if (grid && grid.excelExport) {
         grid.excelExport({
           fileName: `${club?.name || "club"}_${bucketLabel.replace(
             /\s+/g,
-            "_"
+            "_",
           )}.xlsx`,
-          includeHiddenColumn: true,
-          columns: exportColumns,
         });
       } else {
-        toast.error("Export service not ready");
+        toast.error("Export service not ready. Please refresh and try again.");
       }
     },
-    [club?.name]
+    [club?.name],
   );
 
   const allAthletes = useMemo(() => {
@@ -1253,7 +1246,7 @@ const ClubDetail = () => {
   // Only count active membership athletes for document tracking
   const activeAthletes = useMemo(
     () => (Array.isArray(athleteBuckets.active) ? athleteBuckets.active : []),
-    [athleteBuckets]
+    [athleteBuckets],
   );
 
   const licenseStatusSummary = useMemo(() => {
@@ -1280,17 +1273,17 @@ const ClubDetail = () => {
 
   const totalTrackedAthletes = useMemo(
     () => activeAthletes.length,
-    [activeAthletes]
+    [activeAthletes],
   );
 
   const firstAttentionAthlete = useMemo(
     () =>
       activeAthletes.find((athlete) =>
         LICENSE_ATTENTION_STATUSES.includes(
-          (athlete.status || "pending_documents").toString().toLowerCase()
-        )
+          (athlete.status || "pending_documents").toString().toLowerCase(),
+        ),
       ) || null,
-    [activeAthletes]
+    [activeAthletes],
   );
 
   const nextDocumentTarget = useMemo(() => {
@@ -1335,7 +1328,7 @@ const ClubDetail = () => {
         isPara: athlete.isPara || false,
       });
     },
-    [effectiveClubId]
+    [effectiveClubId],
   );
 
   const closeEditDialog = useCallback(() => {
@@ -1397,7 +1390,7 @@ const ClubDetail = () => {
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify(payload),
-          }
+          },
         );
 
         const result = await response.json().catch(() => ({}));
@@ -1423,7 +1416,7 @@ const ClubDetail = () => {
       isAdmin,
       loadClubDetails,
       token,
-    ]
+    ],
   );
 
   const handleStatusChange = useCallback(
@@ -1445,7 +1438,7 @@ const ClubDetail = () => {
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ status: nextStatus }),
-          }
+          },
         );
 
         const result = await response.json().catch(() => ({}));
@@ -1462,7 +1455,7 @@ const ClubDetail = () => {
         setStatusUpdating(false);
       }
     },
-    [club?._id, loadClubDetails, token]
+    [club?._id, loadClubDetails, token],
   );
 
   const handleLicenseStatusChange = useCallback(
@@ -1488,7 +1481,7 @@ const ClubDetail = () => {
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ licenseStatus: nextStatus }),
-          }
+          },
         );
 
         const result = await response.json().catch(() => ({}));
@@ -1505,7 +1498,7 @@ const ClubDetail = () => {
         setLicenseStatusUpdating(false);
       }
     },
-    [isAdmin, loadClubDetails, token]
+    [isAdmin, loadClubDetails, token],
   );
 
   const openTransferDialog = useCallback((athlete) => {
@@ -1550,7 +1543,7 @@ const ClubDetail = () => {
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(
-            result.message || "Failed to submit transfer request"
+            result.message || "Failed to submit transfer request",
           );
         }
 
@@ -1569,13 +1562,13 @@ const ClubDetail = () => {
         setTransferDialog((previous) => ({ ...previous, submitting: false }));
       }
     },
-    [loadClubDetails, token, transferDialog]
+    [loadClubDetails, token, transferDialog],
   );
 
   const decideTransferRequest = useCallback(
     async (requestId, action) => {
       const confirmed = window.confirm(
-        `Are you sure you want to ${action} this transfer request?`
+        `Are you sure you want to ${action} this transfer request?`,
       );
       if (!confirmed) {
         return;
@@ -1591,7 +1584,7 @@ const ClubDetail = () => {
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ action }),
-          }
+          },
         );
 
         const result = await response.json().catch(() => ({}));
@@ -1600,7 +1593,7 @@ const ClubDetail = () => {
         }
 
         toast.success(
-          action === "approve" ? "Transfer approved" : "Transfer rejected"
+          action === "approve" ? "Transfer approved" : "Transfer rejected",
         );
         await loadClubDetails();
       } catch (error) {
@@ -1608,7 +1601,7 @@ const ClubDetail = () => {
         toast.error(error.message);
       }
     },
-    [loadClubDetails, token]
+    [loadClubDetails, token],
   );
 
   const openDeleteDialog = useCallback((athlete) => {
@@ -1663,7 +1656,7 @@ const ClubDetail = () => {
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(
-            result.message || "Failed to submit deletion request"
+            result.message || "Failed to submit deletion request",
           );
         }
 
@@ -1681,13 +1674,13 @@ const ClubDetail = () => {
         setDeleteDialog((previous) => ({ ...previous, submitting: false }));
       }
     },
-    [deleteDialog, loadClubDetails, token]
+    [deleteDialog, loadClubDetails, token],
   );
 
   const handleAdminDelete = useCallback(
     async (athlete) => {
       const confirmed = window.confirm(
-        `Delete ${resolvePersonName(athlete)}? This cannot be undone.`
+        `Delete ${resolvePersonName(athlete)}? This cannot be undone.`,
       );
       if (!confirmed) {
         return;
@@ -1701,7 +1694,7 @@ const ClubDetail = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
 
         const result = await response.json().catch(() => ({}));
@@ -1716,13 +1709,13 @@ const ClubDetail = () => {
         toast.error(error.message);
       }
     },
-    [loadClubDetails, token]
+    [loadClubDetails, token],
   );
 
   const decideDeletionRequest = useCallback(
     async (requestId, action) => {
       const confirmed = window.confirm(
-        `Are you sure you want to ${action} this deletion request?`
+        `Are you sure you want to ${action} this deletion request?`,
       );
       if (!confirmed) {
         return;
@@ -1738,7 +1731,7 @@ const ClubDetail = () => {
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ action }),
-          }
+          },
         );
 
         const result = await response.json().catch(() => ({}));
@@ -1749,7 +1742,7 @@ const ClubDetail = () => {
         toast.success(
           action === "approve"
             ? "Deletion approved"
-            : "Deletion request rejected"
+            : "Deletion request rejected",
         );
         await loadClubDetails();
       } catch (error) {
@@ -1757,7 +1750,7 @@ const ClubDetail = () => {
         toast.error(error.message);
       }
     },
-    [loadClubDetails, token]
+    [loadClubDetails, token],
   );
 
   const renderAthleteSummary = useCallback((athlete) => {
@@ -1891,8 +1884,8 @@ const ClubDetail = () => {
     const issues = Array.isArray(athlete.documentsIssues)
       ? athlete.documentsIssues
       : Array.isArray(athlete.documentEvaluation?.issues)
-      ? athlete.documentEvaluation.issues
-      : [];
+        ? athlete.documentEvaluation.issues
+        : [];
 
     return (
       <div className="flex flex-col gap-1.5 py-1">
@@ -1943,7 +1936,7 @@ const ClubDetail = () => {
         </Select>
       );
     },
-    [handleStatusChange, permissions.canManageAthletes, statusUpdating]
+    [handleStatusChange, permissions.canManageAthletes, statusUpdating],
   );
 
   const renderLicenseStatusManager = useCallback(
@@ -1973,7 +1966,7 @@ const ClubDetail = () => {
         </Select>
       );
     },
-    [handleLicenseStatusChange, isAdmin, licenseStatusUpdating]
+    [handleLicenseStatusChange, isAdmin, licenseStatusUpdating],
   );
 
   const renderActionButtons = useCallback(
@@ -1993,7 +1986,7 @@ const ClubDetail = () => {
             onClick={() => openDocumentsDialog(athlete)}
           >
             Docs
-          </Button>
+          </Button>,
         );
       }
 
@@ -2007,7 +2000,7 @@ const ClubDetail = () => {
             onClick={() => openEditDialog(athlete)}
           >
             Edit
-          </Button>
+          </Button>,
         );
       }
 
@@ -2021,7 +2014,7 @@ const ClubDetail = () => {
             onClick={() => openTransferDialog(athlete)}
           >
             Transfer
-          </Button>
+          </Button>,
         );
       }
 
@@ -2035,7 +2028,7 @@ const ClubDetail = () => {
             onClick={() => handleAdminDelete(athlete)}
           >
             Del
-          </Button>
+          </Button>,
         );
       }
 
@@ -2059,7 +2052,7 @@ const ClubDetail = () => {
       openEditDialog,
       openTransferDialog,
       permissions,
-    ]
+    ],
   );
 
   const athleteColumns = useMemo(
@@ -2155,7 +2148,61 @@ const ClubDetail = () => {
       renderLicenseStatus,
       renderStatusManager,
       isAdmin,
-    ]
+    ],
+  );
+
+  // Export-only columns (no templates, no actions - just data)
+  const exportColumns = useMemo(
+    () => [
+      {
+        headerText: "Full Name",
+        field: "fullName",
+        width: 150,
+      },
+      {
+        headerText: "Name (AR)",
+        field: "fullNameAr",
+        width: 150,
+      },
+      {
+        headerText: "License Number",
+        field: "licenseNumber",
+        width: 120,
+      },
+      {
+        headerText: "Gender",
+        field: "gender",
+        width: 80,
+      },
+      {
+        headerText: "Birth Date",
+        field: "birthDate",
+        width: 100,
+        type: "date",
+        format: "dd/MM/yyyy",
+      },
+      {
+        headerText: "Status",
+        field: "status",
+        width: 100,
+      },
+      {
+        headerText: "Membership Status",
+        field: "membershipStatus",
+        width: 120,
+      },
+      {
+        headerText: "License Status",
+        field: "licenseStatus",
+        width: 100,
+      },
+      {
+        headerText: "Document Issues",
+        field: "documentIssuesText",
+        width: 150,
+      },
+    ],
+    [],
   );
 
   const availableTransferClubs = useMemo(() => {
@@ -2363,7 +2410,7 @@ const ClubDetail = () => {
                 <span className="text-xs text-slate-500">
                   {LICENSE_STATUS_LABELS[
                     String(
-                      nextDocumentTarget.status || "pending_documents"
+                      nextDocumentTarget.status || "pending_documents",
                     ).toLowerCase()
                   ] || "Pending Documents"}
                 </span>
@@ -2649,10 +2696,10 @@ const ClubDetail = () => {
                         section.key === "eligible"
                           ? eligibleSearchTerm
                           : section.key === "inactive"
-                          ? inactiveSearchTerm
-                          : section.key === "transferred"
-                          ? transferredSearchTerm
-                          : ""
+                            ? inactiveSearchTerm
+                            : section.key === "transferred"
+                              ? transferredSearchTerm
+                              : ""
                       }
                       onChange={(e) => {
                         const val = e.target.value;
@@ -2707,30 +2754,48 @@ const ClubDetail = () => {
                     loading={loading}
                     emptyMessage={ATHLETE_EMPTY_MESSAGES[section.key]}
                   />
-                  {/* Hidden grid for export purposes */}
+                  {/* Hidden grid for export purposes - use visibility:hidden to allow proper initialization */}
                   <div
-                    className="hidden"
+                    className="absolute -left-[9999px] h-0 overflow-hidden"
                     aria-hidden="true"
-                    style={{ display: "none" }}
                   >
                     <DataGrid
                       ref={setGridRef(section.key)}
                       data={bucket}
-                      columns={athleteColumns}
+                      columns={exportColumns}
                       gridId={`export-grid-${section.key}`}
+                      showSearch={false}
+                      showExport={false}
+                      showColumnChooser={false}
                     />
                   </div>
                 </>
               ) : (
-                <DataGrid
-                  ref={setGridRef(section.key)}
-                  data={bucket}
-                  columns={athleteColumns}
-                  emptyMessage={ATHLETE_EMPTY_MESSAGES[section.key]}
-                  loading={loading}
-                  gridId={`club-athletes-${section.key}`}
-                  showSearch={false}
-                />
+                <>
+                  <DataGrid
+                    data={bucket}
+                    columns={athleteColumns}
+                    emptyMessage={ATHLETE_EMPTY_MESSAGES[section.key]}
+                    loading={loading}
+                    gridId={`club-athletes-${section.key}`}
+                    showSearch={false}
+                  />
+                  {/* Hidden grid for export purposes */}
+                  <div
+                    className="absolute -left-[9999px] h-0 overflow-hidden"
+                    aria-hidden="true"
+                  >
+                    <DataGrid
+                      ref={setGridRef(section.key)}
+                      data={bucket}
+                      columns={exportColumns}
+                      gridId={`export-grid-${section.key}`}
+                      showSearch={false}
+                      showExport={false}
+                      showColumnChooser={false}
+                    />
+                  </div>
+                </>
               )}
             </section>
           );
@@ -2803,7 +2868,7 @@ const ClubDetail = () => {
               const totalPages = Math.ceil(filtered.length / CENTRE_PAGE_SIZE);
               const paginated = filtered.slice(
                 (centrePage - 1) * CENTRE_PAGE_SIZE,
-                centrePage * CENTRE_PAGE_SIZE
+                centrePage * CENTRE_PAGE_SIZE,
               );
 
               if (filtered.length === 0) {
@@ -2839,7 +2904,7 @@ const ClubDetail = () => {
                               (m.club === club?._id ||
                                 m.club?._id === club?._id ||
                                 (typeof m.club === "object" &&
-                                  m.club?._id?.toString() === club?._id))
+                                  m.club?._id?.toString() === club?._id)),
                           );
 
                           return (
@@ -2929,7 +2994,7 @@ const ClubDetail = () => {
                         Showing {(centrePage - 1) * CENTRE_PAGE_SIZE + 1} to{" "}
                         {Math.min(
                           centrePage * CENTRE_PAGE_SIZE,
-                          filtered.length
+                          filtered.length,
                         )}{" "}
                         of {filtered.length} athletes
                       </p>

@@ -469,10 +469,10 @@ const RaceDetail = () => {
     const rightMargin = 196;
     const center = 105;
 
-    let headerHeight = 35;
+    let headerHeight = 32;
     if (headerData) {
       const imgProps = doc.getImageProperties(headerData);
-      headerHeight = pageWidth / (imgProps.width / imgProps.height) + 5 + 8; // 5mm top margin + 8mm after line
+      headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8; // 3mm top margin + 8mm gap after line
     }
 
     let yPos = headerHeight;
@@ -589,8 +589,8 @@ const RaceDetail = () => {
     const legendLineHeight = 4;
     const legendBoxHeight =
       uniqueClubs.length > 0 ? uniqueClubs.length * legendLineHeight + 7 : 0;
-    // 38 = footer height + margin, add legend box height
-    const bottomMargin = 38 + legendBoxHeight + 5;
+    // 35 = footer height + margin, 14 = gap + progression box + gap before legend
+    const bottomMargin = 35 + legendBoxHeight + 14;
 
     // --- Table ---
     // For results, sort by position. For start list, ALWAYS sort by lane.
@@ -612,7 +612,15 @@ const RaceDetail = () => {
       return (a.lane || 0) - (b.lane || 0);
     });
 
-    const tableBody = exportLanes.map((lane) => {
+    // Find winning time for delta calculation
+    const winnerElapsed = isResults
+      ? exportLanes.find(
+          (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
+        )?.result?.elapsedMs
+      : null;
+
+    const deltaMap = new Map();
+    const tableBody = exportLanes.map((lane, rowIdx) => {
       const athlete = lane.athlete;
       const clubCode =
         lane.club?.code || lane.club?.name?.slice(0, 3).toUpperCase() || "-";
@@ -630,6 +638,17 @@ const RaceDetail = () => {
           status !== "ok"
             ? status.toUpperCase()
             : formatElapsedTime(lane.result?.elapsedMs);
+        // Store time delta for 2nd place and below (rendered separately)
+        if (
+          status === "ok" &&
+          lane.result?.elapsedMs &&
+          pos > 1 &&
+          winnerElapsed
+        ) {
+          const deltaMs = lane.result.elapsedMs - winnerElapsed;
+          const deltaStr = formatDeltaSeconds(deltaMs);
+          if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
+        }
         if (
           (status === "ok" || status === "dnf") &&
           pos > 0 &&
@@ -701,20 +720,22 @@ const RaceDetail = () => {
         fontStyle: "bold",
         lineWidth: 0.1,
         lineColor: [0, 0, 0],
-        cellPadding: 1.5,
+        cellPadding: 1,
       },
       styles: {
         fontSize: isResults ? 8 : 9,
-        cellPadding: isResults ? 1 : 1.5,
+        cellPadding: isResults ? 0.8 : 1,
+        minCellHeight: isResults ? 6.5 : undefined,
         font: fontName,
       },
       columnStyles: isResults
         ? {
-            0: { cellWidth: 14, halign: "center", fontStyle: "bold" },
-            2: { fontStyle: "bold" },
+            0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
+            1: { cellWidth: 12 },
+            2: { cellWidth: 25, fontStyle: "bold" },
             3: { fontStyle: "bold" },
-            4: { halign: "right" },
-            5: { halign: "center", fontStyle: "bold" },
+            4: { cellWidth: 22, halign: "right", fontStyle: "bold", fontSize: 9 },
+            5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
           }
         : {
             0: { cellWidth: 15, halign: "center" },
@@ -737,20 +758,48 @@ const RaceDetail = () => {
           };
         }
       },
+      didDrawCell: isResults
+        ? (data) => {
+            if (data.section === "body" && data.column.index === 4) {
+              const delta = deltaMap.get(data.row.index);
+              if (delta) {
+                doc.setFontSize(7);
+                doc.setFont(fontName, "normal");
+                doc.setTextColor(80, 80, 80);
+                const pad =
+                  typeof data.cell.styles.cellPadding === "number"
+                    ? data.cell.styles.cellPadding
+                    : data.cell.styles.cellPadding?.right || 0;
+                const x = data.cell.x + data.cell.width - pad;
+                const y = data.cell.y + data.cell.height - 0.3;
+                doc.text(delta, x, y, { align: "right" });
+                doc.setFontSize(8);
+                doc.setFont(fontName, "normal");
+                doc.setTextColor(0, 0, 0);
+              }
+            }
+          }
+        : undefined,
     });
 
-    yPos = doc.lastAutoTable.finalY + 8;
+    yPos = doc.lastAutoTable.finalY + 4;
 
-    // --- Status/Progression Box ---
-    doc.setDrawColor(0);
-    doc.setLineWidth(0.3);
-    doc.rect(leftMargin, yPos, 182, 7);
-    doc.setFontSize(8);
-    doc.setFont(fontName, "normal");
-    const statusText = isResults
-      ? "Official Results - Times are final."
-      : race.notes || "Progression System: Subject to competition rules.";
-    doc.text(statusText, leftMargin + 2, yPos + 5);
+    // --- Status/Progression Box (ensure no overlap with legend) ---
+    const progressionBoxEnd = yPos + 7;
+    const legendTop = uniqueClubs.length > 0
+      ? pageHeight - 30 - (uniqueClubs.length * legendLineHeight + 7)
+      : pageHeight - 30;
+    if (progressionBoxEnd < legendTop) {
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.3);
+      doc.rect(leftMargin, yPos, 182, 7);
+      doc.setFontSize(8);
+      doc.setFont(fontName, "normal");
+      const statusText = isResults
+        ? "Official Results - Times are final."
+        : race.notes || "Progression System: Subject to competition rules.";
+      doc.text(statusText, leftMargin + 2, yPos + 5);
+    }
 
     // --- Footer Logic ---
     const pageCount = doc.internal.getNumberOfPages();
@@ -761,10 +810,10 @@ const RaceDetail = () => {
       if (headerData) {
         const imgProps = doc.getImageProperties(headerData);
         const h = pageWidth / (imgProps.width / imgProps.height);
-        doc.addImage(headerData, "PNG", 0, 5, pageWidth, h);
+        doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
         doc.setDrawColor(128, 0, 0);
         doc.setLineWidth(0.8);
-        doc.line(leftMargin, h + 7, rightMargin, h + 7);
+        doc.line(leftMargin, h + 5, rightMargin, h + 5);
       }
 
       // Legend on last page
@@ -778,7 +827,7 @@ const RaceDetail = () => {
         if (uniqueClubs.length > 0) {
           const lineHeight = 4;
           const boxHeight = uniqueClubs.length * lineHeight + 7;
-          const legendY = pageHeight - 38 - boxHeight;
+          const legendY = pageHeight - 35 - boxHeight;
 
           doc.setDrawColor(0);
           doc.setLineWidth(0.3);
@@ -823,21 +872,21 @@ const RaceDetail = () => {
       if (footerData) {
         const imgProps = doc.getImageProperties(footerData);
         const h = pageWidth / (imgProps.width / imgProps.height);
-        doc.addImage(footerData, "PNG", 0, pageHeight - h - 5, pageWidth, h);
+        doc.addImage(footerData, "PNG", 0, pageHeight - h - 3, pageWidth, h);
         doc.setDrawColor(128, 0, 0);
         doc.setLineWidth(0.8);
         doc.line(
           leftMargin,
-          pageHeight - h - 8,
+          pageHeight - h - 5,
           rightMargin,
-          pageHeight - h - 8,
+          pageHeight - h - 5,
         );
         doc.setFontSize(8);
         doc.setTextColor(100);
         doc.text(
           `Page ${i} of ${pageCount}`,
           rightMargin,
-          pageHeight - h - 11,
+          pageHeight - h - 8,
           {
             align: "right",
           },

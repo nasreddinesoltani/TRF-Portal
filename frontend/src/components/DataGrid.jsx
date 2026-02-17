@@ -48,10 +48,24 @@ export const DataGrid = React.forwardRef(
     const resolvedGridId = useMemo(() => gridId || generateGridId(), [gridId]);
 
     // Expose the internal grid instance and export methods
+    // Use a getter-based approach so methods are resolved at call time, not at ref creation time
     React.useImperativeHandle(ref, () => ({
-      ...internalGridRef.current, // Expose all internal grid properties/methods
-      excelExport: (...args) => internalGridRef.current?.excelExport(...args),
-      pdfExport: (...args) => internalGridRef.current?.pdfExport(...args),
+      get columns() {
+        return internalGridRef.current?.columns;
+      },
+      excelExport: (...args) => {
+        if (internalGridRef.current?.excelExport) {
+          return internalGridRef.current.excelExport(...args);
+        }
+        console.warn('Grid excelExport not available');
+      },
+      pdfExport: (...args) => {
+        if (internalGridRef.current?.pdfExport) {
+          return internalGridRef.current.pdfExport(...args);
+        }
+        console.warn('Grid pdfExport not available');
+      },
+      getGridInstance: () => internalGridRef.current,
     }));
 
   const resolvedPageSize = useMemo(() => {

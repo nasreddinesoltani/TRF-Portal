@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+} from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useAuth } from "../contexts/AuthContext";
@@ -15,35 +21,499 @@ const API_BASE_URL = "";
 const ENTRY_SEARCH_LIMIT = 25;
 const DEFAULT_LANES_PER_RACE = 6;
 
+
+
+// ==================== WIZARD STEPS ====================
+const WIZARD_STEPS = [
+  {
+    id: 1,
+    name: "Event",
+    icon: "📋",
+    description: "Select category & boat class",
+  },
+  {
+    id: 2,
+    name: "Settings",
+    icon: "⚙️",
+    description: "Configure race parameters",
+  },
+  { id: 3, name: "Entries", icon: "👥", description: "Manage start list" },
+  { id: 4, name: "Preview", icon: "👁️", description: "Review & generate" },
+];
+
+// ==================== ICONS ====================
+const Icons = {
+  ChevronRight: () => (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 5l7 7-7 7"
+      />
+    </svg>
+  ),
+  ChevronLeft: () => (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M15 19l-7-7 7-7"
+      />
+    </svg>
+  ),
+  Check: () => (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M5 13l4 4L19 7"
+      />
+    </svg>
+  ),
+  Save: () => (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
+      />
+    </svg>
+  ),
+  Upload: () => (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+      />
+    </svg>
+  ),
+  Trash: () => (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+      />
+    </svg>
+  ),
+  GripVertical: () => (
+    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+      <circle cx="9" cy="6" r="1.5" />
+      <circle cx="15" cy="6" r="1.5" />
+      <circle cx="9" cy="12" r="1.5" />
+      <circle cx="15" cy="12" r="1.5" />
+      <circle cx="9" cy="18" r="1.5" />
+      <circle cx="15" cy="18" r="1.5" />
+    </svg>
+  ),
+  Sparkles: () => (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+      />
+    </svg>
+  ),
+  AlertCircle: () => (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  ),
+  Users: () => (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+      />
+    </svg>
+  ),
+  Trophy: () => (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+      />
+    </svg>
+  ),
+  Clock: () => (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  ),
+};
+
+// ==================== PROGRESS INDICATOR ====================
+const GenerationProgress = ({ isGenerating, progress, stage }) => {
+  if (!isGenerating) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4 animate-in fade-in zoom-in duration-300">
+        <div className="text-center space-y-6">
+          <div className="relative">
+            <div className="w-20 h-20 mx-auto">
+              <svg className="w-20 h-20 animate-spin" viewBox="0 0 24 24">
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  fill="none"
+                />
+                <path
+                  className="opacity-75 text-blue-600"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Icons.Sparkles />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">
+              Generating Races
+            </h3>
+            <p className="text-sm text-slate-500 mt-1">
+              {stage || "Processing..."}
+            </p>
+          </div>
+
+          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+
+          <p className="text-xs text-slate-400">
+            Please wait while we create your races...
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==================== PRESET CARD ====================
+const PresetCard = ({ preset, isSelected, onSelect }) => (
+  <button
+    type="button"
+    onClick={onSelect}
+    className={`
+      group relative flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-all duration-200
+      ${
+        isSelected
+          ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200 shadow-md"
+          : "border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50 hover:shadow-sm"
+      }
+    `}
+  >
+    <div className="flex items-center gap-3">
+      <span className="text-2xl">{preset.icon}</span>
+      <span
+        className={`font-semibold ${isSelected ? "text-blue-700" : "text-slate-700"}`}
+      >
+        {preset.name}
+      </span>
+    </div>
+    <p className="text-xs text-slate-500">{preset.description}</p>
+    {isSelected && (
+      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center">
+        <Icons.Check />
+      </div>
+    )}
+  </button>
+);
+
+// ==================== WIZARD STEP INDICATOR ====================
+const WizardStepIndicator = ({
+  steps,
+  currentStep,
+  onStepClick,
+  completedSteps,
+}) => (
+  <div className="flex items-center justify-center gap-2 mb-6">
+    {steps.map((step, index) => {
+      const isCompleted = completedSteps.includes(step.id);
+      const isCurrent = currentStep === step.id;
+      const isPast = step.id < currentStep;
+
+      return (
+        <React.Fragment key={step.id}>
+          {index > 0 && (
+            <div
+              className={`h-0.5 w-8 transition-colors duration-300 ${
+                isPast || isCompleted ? "bg-blue-500" : "bg-slate-200"
+              }`}
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => onStepClick(step.id)}
+            className={`
+              flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200
+              ${
+                isCurrent
+                  ? "bg-blue-100 text-blue-700 ring-2 ring-blue-300 shadow-sm"
+                  : isPast || isCompleted
+                    ? "bg-green-50 text-green-700 hover:bg-green-100"
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }
+            `}
+          >
+            <span
+              className={`
+              w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+              ${
+                isCurrent
+                  ? "bg-blue-500 text-white"
+                  : isPast || isCompleted
+                    ? "bg-green-500 text-white"
+                    : "bg-slate-300 text-slate-600"
+              }
+            `}
+            >
+              {isPast || isCompleted ? <Icons.Check /> : step.id}
+            </span>
+            <span className="hidden sm:block text-sm font-medium">
+              {step.name}
+            </span>
+          </button>
+        </React.Fragment>
+      );
+    })}
+  </div>
+);
+
+// ==================== HEAT DISTRIBUTION PREVIEW ====================
+const HeatDistributionPreview = ({ entries, lanesPerRace, strategy }) => {
+  const heats = useMemo(() => {
+    if (!entries.length || !lanesPerRace) return [];
+    const lanes = parseInt(lanesPerRace) || 6;
+    const sortedEntries =
+      strategy === "seeded"
+        ? [...entries].sort(
+            (a, b) => (Number(a.seed) || 999) - (Number(b.seed) || 999),
+          )
+        : entries;
+
+    const result = [];
+    for (let i = 0; i < sortedEntries.length; i += lanes) {
+      result.push(sortedEntries.slice(i, i + lanes));
+    }
+    return result;
+  }, [entries, lanesPerRace, strategy]);
+
+  if (!entries.length) {
+    return (
+      <div className="text-center py-8 text-slate-400">
+        <Icons.Users />
+        <p className="mt-2 text-sm">Add entries to see heat distribution</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h4 className="font-semibold text-slate-700 flex items-center gap-2">
+          <span className="text-lg">🏁</span>
+          Heat Distribution Preview
+        </h4>
+        <span className="text-sm text-slate-500">
+          {heats.length} heat{heats.length !== 1 ? "s" : ""} • {entries.length}{" "}
+          entries
+        </span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {heats.map((heat, heatIndex) => (
+          <div
+            key={heatIndex}
+            className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-3 shadow-sm"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Heat {heatIndex + 1}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                {heat.length} lane{heat.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {heat.map((entry, laneIndex) => (
+                <div
+                  key={entry.uid || entry.id || laneIndex}
+                  className="flex items-center gap-2 rounded-md bg-white px-2 py-1 text-xs border border-slate-100"
+                >
+                  <span className="w-5 h-5 rounded bg-slate-100 flex items-center justify-center font-bold text-slate-500">
+                    {laneIndex + 1}
+                  </span>
+                  <span className="truncate flex-1 font-medium text-slate-700">
+                    {entry.athlete?.fullName ||
+                      entry.athlete?.name ||
+                      `Entry ${entry.seed}`}
+                  </span>
+                  {entry.clubCode && (
+                    <span className="text-slate-400">{entry.clubCode}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ==================== VALIDATION FEEDBACK ====================
+const ValidationFeedback = ({ errors, warnings }) => {
+  if (!errors?.length && !warnings?.length) return null;
+
+  return (
+    <div className="space-y-2 animate-in slide-in-from-top duration-300">
+      {errors?.map((error, i) => (
+        <div
+          key={`err-${i}`}
+          className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700"
+        >
+          <Icons.AlertCircle />
+          {error}
+        </div>
+      ))}
+      {warnings?.map((warning, i) => (
+        <div
+          key={`warn-${i}`}
+          className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-700"
+        >
+          <Icons.AlertCircle />
+          {warning}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// TemplateManager removed
+
 // Helper to load image as base64
 const loadImage = (url) => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "Anonymous";
-    img.src = url;
     img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL("image/png"));
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (err) {
+        console.warn("loadImage canvas error:", err);
+        resolve(null);
+      }
     };
-    img.onerror = () => resolve(null); // Resolve null on error to keep going
+    img.onerror = () => resolve(null);
+    img.src = url; // Set src AFTER handlers to avoid missing cached-image events
   });
 };
 
 const loadFont = async (url) => {
   try {
     const response = await fetch(url);
-    const buffer = await response.arrayBuffer();
-    let binary = "";
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result.split(",")[1]);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
   } catch (error) {
     console.error("Failed to load font", error);
     return null;
@@ -215,8 +685,15 @@ const formatElapsedTime = (ms) => {
 // Format delta time in seconds only (World Rowing style: "6.21", "14.72")
 const formatDeltaSeconds = (ms) => {
   if (ms === undefined || ms === null || ms <= 0) return "";
-  const totalSeconds = ms / 1000;
-  return totalSeconds.toFixed(2);
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const centis = Math.floor((ms % 1000) / 10);
+
+  if (minutes > 0) {
+    return `${minutes}:${seconds.toString().padStart(2, "0")}.${centis.toString().padStart(2, "0")}`;
+  }
+  return `${seconds}.${centis.toString().padStart(2, "0")}`;
 };
 
 // Parse time string to milliseconds (supports MM:SS.cc or SS.cc - centiseconds)
@@ -468,149 +945,161 @@ const EntriesTable = ({
   onWithdraw,
   onDelete,
   isAdmin,
+
 }) => {
+  const sortedEntries = useMemo(
+    () =>
+      entries
+        .slice()
+        .sort((a, b) => (Number(a.seed) || 0) - (Number(b.seed) || 0)),
+    [entries],
+  );
+
   if (!entries.length) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-        Start list empty. Use the search box to add competitors.
+      <div className="rounded-xl border-2 border-dashed border-slate-200 bg-gradient-to-br from-slate-50 to-white px-6 py-12 text-center">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
+          <Icons.Users />
+        </div>
+        <p className="text-slate-600 font-medium">Start list is empty</p>
+        <p className="text-sm text-slate-400 mt-1">
+          Use the search box above to add competitors
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200">
+    <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
       <table className="min-w-full text-left text-sm">
-        <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+        <thead className="bg-gradient-to-r from-slate-50 to-slate-100 text-xs uppercase text-slate-500">
           <tr>
-            <th className="px-4 py-2 w-24">Seed</th>
-            <th className="px-3 py-2 w-36">Crew #</th>
-            <th className="px-3 py-2">Athlete</th>
-            <th className="px-3 py-2 w-24">Status</th>
-            <th className="px-3 py-2 w-28">Notes</th>
-            <th className="px-3 py-2 text-right">Actions</th>
+
+            <th className="px-3 py-3 w-20">Seed</th>
+            <th className="px-3 py-3 w-40">Crew #</th>
+            <th className="px-3 py-3">Athlete</th>
+            <th className="px-3 py-3 w-24">Status</th>
+            <th className="px-3 py-3 text-right">Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-200 bg-white">
-          {entries
-            .slice()
-            .sort((a, b) => (Number(a.seed) || 0) - (Number(b.seed) || 0))
-            .map((entry, index) => {
-              const isDbEntry = entry.id && !entry.uid?.startsWith("manual-");
-              const isWithdrawn = entry.status === "withdrawn";
-
-              return (
-                <tr
-                  key={entry.uid || entry.id || `entry-${index}`}
-                  className={isWithdrawn ? "bg-rose-50 opacity-60" : ""}
-                >
-                  <td className="px-4 py-2 w-24">
+        <tbody className="divide-y divide-slate-100 bg-white">
+          {sortedEntries.map((entry, index) => {
+            const isDbEntry = entry.id && !entry.uid?.startsWith("manual-");
+            const isWithdrawn = entry.status === "withdrawn";
+            return (
+              <tr
+                key={entry.uid || entry.id || `entry-${index}`}
+                className={`
+                    transition-all duration-200 group
+                    ${isWithdrawn ? "bg-rose-50/50 opacity-60" : "hover:bg-blue-50/50"}
+                  `}
+              >
+                <td className="px-3 py-2 w-20">
+                  <Input
+                    type="number"
+                    min="1"
+                    value={entry.seed || ""}
+                    placeholder="-"
+                    onChange={(event) =>
+                      onEntryChange(
+                        entry.uid || entry.id,
+                        "seed",
+                        event.target.value ? parseInt(event.target.value, 10) : undefined
+                      )
+                    }
+                    className="h-7 w-12 text-center text-xs"
+                    disabled={isWithdrawn}
+                  />
+                </td>
+                <td className="px-3 py-2 w-40 text-slate-600 whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    {entry.clubCode ? (
+                      <span className="flex-shrink-0 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 border border-slate-200 min-w-[3.5rem] justify-center">
+                        {entry.clubCode}
+                      </span>
+                    ) : null}
                     <Input
                       type="number"
                       min="1"
-                      value={entry.seed}
+                      value={entry.crewNumber || ""}
+                      placeholder="-"
                       onChange={(event) =>
                         onEntryChange(
                           entry.uid || entry.id,
-                          "seed",
-                          event.target.value,
+                          "crewNumber",
+                          event.target.value
+                            ? parseInt(event.target.value, 10)
+                            : undefined,
                         )
                       }
-                      className="h-8 w-16 text-center"
+                      className="h-7 !w-14 text-center text-xs flex-none"
                       disabled={isWithdrawn}
                     />
-                  </td>
-                  <td className="px-3 py-2 w-36 text-slate-600 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      {entry.clubCode ? (
-                        <span className="font-semibold text-slate-700 text-sm">
-                          {entry.clubCode}
-                        </span>
-                      ) : null}
-                      <Input
-                        type="number"
-                        min="1"
-                        value={entry.crewNumber || ""}
-                        placeholder="-"
-                        onChange={(event) =>
-                          onEntryChange(
-                            entry.uid || entry.id,
-                            "crewNumber",
-                            event.target.value
-                              ? parseInt(event.target.value, 10)
-                              : undefined,
-                          )
-                        }
-                        className="h-8 w-14 text-center"
-                        disabled={isWithdrawn}
-                      />
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-col">
-                      <span
-                        className={`font-medium ${isWithdrawn ? "text-slate-500 line-through" : "text-slate-800"}`}
-                      >
-                        {entry.crew && entry.crew.length > 0
-                          ? formatCrewName(entry.crew)
-                          : formatAthleteName(entry.athlete)}
-                      </span>
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-col">
+                    <span
+                      className={`font-semibold ${isWithdrawn ? "text-slate-400 line-through" : "text-slate-800"}`}
+                    >
+                      {entry.crew && entry.crew.length > 0
+                        ? formatCrewName(entry.crew)
+                        : formatAthleteName(entry.athlete)}
+                    </span>
+                    <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-xs text-slate-500">
                         {entry.crew && entry.crew.length > 0
                           ? `${entry.crew.length} athletes`
-                          : `License ${entry.athlete?.licenseNumber || "-"}`}
+                          : `#${entry.athlete?.licenseNumber || "-"}`}
                       </span>
-                      {entry.clubName ? (
+                      {entry.clubName && (
                         <span className="text-xs text-slate-400">
-                          {entry.clubName}
+                          • {entry.clubName}
                         </span>
-                      ) : null}
+                      )}
                     </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    {isWithdrawn ? (
-                      <span className="inline-flex items-center rounded-md bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700">
-                        Withdrawn
-                      </span>
-                    ) : entry.status === "pending" ? (
-                      <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
-                        Pending
-                      </span>
-                    ) : entry.status === "approved" ? (
-                      <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
-                        Approved
-                      </span>
-                    ) : isDbEntry ? (
-                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                        {entry.status || "Registered"}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-400">Manual</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      value={entry.notes || ""}
-                      onChange={(event) =>
-                        onEntryChange(
-                          entry.uid || entry.id,
-                          "notes",
-                          event.target.value,
-                        )
-                      }
-                      className="h-8 w-24"
-                      placeholder="-"
-                      disabled={isWithdrawn}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right space-x-1">
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  {isWithdrawn ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-medium text-rose-700">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                      Withdrawn
+                    </span>
+                  ) : entry.status === "pending" ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                      Pending
+                    </span>
+                  ) : entry.status === "approved" ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Approved
+                    </span>
+                  ) : isDbEntry ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                      {entry.status || "Registered"}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                      Manual
+                    </span>
+                  )}
+                </td>
+
+                <td className="px-3 py-2 text-right">
+                  <div className="flex items-center justify-end gap-1">
                     {isDbEntry ? (
                       <>
                         {!isWithdrawn && onWithdraw && (
                           <Button
                             type="button"
                             variant="ghost"
+                            size="sm"
                             onClick={() => onWithdraw(entry.id)}
-                            className="text-amber-600 hover:text-amber-700"
+                            className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-7 px-2 text-xs"
                           >
                             Withdraw
                           </Button>
@@ -619,18 +1108,12 @@ const EntriesTable = ({
                           <Button
                             type="button"
                             variant="ghost"
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  `Permanently delete this entry for ${formatAthleteName(entry.athlete)}? This cannot be undone.`,
-                                )
-                              ) {
-                                onDelete(entry.id);
-                              }
-                            }}
-                            className="text-rose-600 hover:text-rose-700"
+                            size="sm"
+                            onClick={() => onDelete(entry.id)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 w-7 p-0 rounded-full"
+                            title="Delete entry"
                           >
-                            Delete
+                            ✕
                           </Button>
                         )}
                       </>
@@ -638,15 +1121,19 @@ const EntriesTable = ({
                       <Button
                         type="button"
                         variant="ghost"
+                        size="sm"
                         onClick={() => onRemove(entry.uid)}
+                        className="text-slate-400 hover:text-red-600 hover:bg-red-50 h-7 w-7 p-0 rounded-full"
+                        title="Remove manual entry"
                       >
-                        Remove
+                         ✕
                       </Button>
                     )}
-                  </td>
-                </tr>
-              );
-            })}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -1360,6 +1847,21 @@ const CompetitionRaces = () => {
   const [entries, setEntries] = useState([]);
   const [dbEntryOverrides, setDbEntryOverrides] = useState({}); // Stores local edits for DB entries (keyed by entry ID)
 
+  // ==================== WIZARD & UI STATE ====================
+  const [wizardStep, setWizardStep] = useState(1);
+  const [completedSteps, setCompletedSteps] = useState([]);
+  const [selectedPreset, setSelectedPreset] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [generationStage, setGenerationStage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [validationErrors, setValidationErrors] = useState([]);
+  const [validationWarnings, setValidationWarnings] = useState([]);
+  const [expandedSections, setExpandedSections] = useState({
+    settings: true,
+    advanced: false,
+  });
+
   const [autoGenState, setAutoGenState] = useState({
     category: "",
     boatClass: "",
@@ -1374,7 +1876,82 @@ const CompetitionRaces = () => {
     intervalMinutes: "10",
     distance: "",
     allowMultipleEntries: false,
+    allowJuniorsInSenior: false,
+    allowMastersInSenior: false,
+    bypassAgeVerification: false,
   });
+
+  // Auto-fill configuration when category changes
+  useEffect(() => {
+    if (!autoGenState.category) return;
+    
+    // Find relevant races for this category
+    const categoryId = autoGenState.category;
+    let relevantRaces = races.filter(r => 
+      (typeof r.category === 'string' ? r.category === categoryId : r.category?._id === categoryId)
+    );
+    
+    // If a boat class is selected, filter further by that boat class
+    if (autoGenState.boatClass) {
+      const bcFilter = relevantRaces.filter(r =>
+        (typeof r.boatClass === 'string' ? r.boatClass === autoGenState.boatClass : r.boatClass?._id === autoGenState.boatClass)
+      );
+      // Only apply boat class filter if races exist for it
+      if (bcFilter.length > 0) {
+        relevantRaces = bcFilter;
+      }
+    }
+    
+    if (relevantRaces.length > 0) {
+      // Sort by order to get correct sequence
+      const sortedRaces = [...relevantRaces].sort((a, b) => (a.order || 0) - (b.order || 0));
+      
+      const firstRace = sortedRaces[0];
+      const lastRace = sortedRaces[sortedRaces.length - 1];
+
+      // Calculate max lanes (in case they differ)
+      const maxLanes = Math.max(...sortedRaces.map(r => parseInt(r.lanesPerRace || 0) || (r.lanes || []).length));
+      
+      // Calculate interval
+      let intervalMinutes = 10;
+      if (sortedRaces.length > 1 && sortedRaces[0].startTime && sortedRaces[1].startTime) {
+        const first = new Date(sortedRaces[0].startTime).getTime();
+        const second = new Date(sortedRaces[1].startTime).getTime();
+        if (!isNaN(first) && !isNaN(second)) {
+          intervalMinutes = Math.round((second - first) / 60000);
+        }
+      }
+
+      // Format start time
+      let startTimeStr = "";
+      if (firstRace.startTime) {
+        const d = new Date(firstRace.startTime);
+        if (!isNaN(d.getTime())) {
+          const pad = (n) => n.toString().padStart(2, "0");
+          startTimeStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+      }
+
+      // Resolve distance
+      const dist = lastRace.distanceOverride || lastRace.distance;
+
+      // Use the starting race number from the existing block for recall/overwrite
+      const startRaceNum = firstRace.order || 1;
+
+      setAutoGenState(prev => ({
+        ...prev,
+        // Use existing boatClass selection if present, otherwise infer from last race
+        boatClass: prev.boatClass || lastRace.boatClass?._id || lastRace.boatClass,
+        lanesPerRace: maxLanes > 0 ? maxLanes.toString() : prev.lanesPerRace,
+        distance: dist ? dist.toString() : prev.distance,
+        intervalMinutes: intervalMinutes > 0 ? intervalMinutes.toString() : prev.intervalMinutes,
+        startTime: startTimeStr || prev.startTime,
+        startRaceNumber: startRaceNum.toString(),
+        sessionLabel: firstRace.sessionLabel || prev.sessionLabel,
+        racePrefix: firstRace.name?.replace(/\s*\d+$/, "").trim() || prev.racePrefix,
+      }));
+    }
+  }, [autoGenState.category, autoGenState.boatClass, races]);
 
   const [submittingAutoGen, setSubmittingAutoGen] = useState(false);
 
@@ -1945,6 +2522,16 @@ const CompetitionRaces = () => {
 
   const handleAutoGenFieldChange = useCallback((event) => {
     const { name, value, type, checked } = event.target;
+    
+    // Special handling for category change to trigger entry loading
+    if (name === "category") {
+      handleCategorySelect(value);
+      setPendingManualCrew([]);
+      setValidationErrors([]);
+      setValidationWarnings([]);
+      return;
+    }
+
     setAutoGenState((previous) => ({
       ...previous,
       [name]: type === "checkbox" ? checked : value,
@@ -1953,7 +2540,80 @@ const CompetitionRaces = () => {
     if (name === "category" || name === "boatClass") {
       setPendingManualCrew([]);
     }
+    // Clear validation on change
+    setValidationErrors([]);
+    setValidationWarnings([]);
   }, []);
+
+  // Apply preset configuration
+
+
+  // Toggle section expansion
+  const toggleSection = useCallback((section) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  }, []);
+
+  // Validate configuration before generation
+  const validateConfig = useCallback(() => {
+    const errors = [];
+    const warnings = [];
+
+    if (!autoGenState.category) {
+      errors.push("Please select a category");
+    }
+
+    const lanesPerRace = Number(autoGenState.lanesPerRace);
+    if (!lanesPerRace || lanesPerRace < 1) {
+      errors.push("Lanes per race must be at least 1");
+    }
+
+    const journeyIndex = Number(autoGenState.journeyIndex);
+    if (!journeyIndex || journeyIndex < 1) {
+      errors.push("Journey index must be at least 1");
+    }
+
+    // Warnings
+    if (autoGenState.overwriteExisting) {
+      warnings.push("Existing races will be overwritten");
+    }
+
+    if (autoGenState.allowMultipleEntries) {
+      warnings.push("Multiple entries per athlete is enabled");
+    }
+
+    setValidationErrors(errors);
+    setValidationWarnings(warnings);
+
+    return errors.length === 0;
+  }, [autoGenState]);
+
+  // Navigate wizard steps
+  const goToStep = useCallback(
+    (step) => {
+      // Validate before moving forward
+      if (step > wizardStep) {
+        if (wizardStep === 1 && !autoGenState.category) {
+          toast.error("Please select a category first");
+          return;
+        }
+        if (wizardStep === 3 && step === 4) {
+          if (!validateConfig()) {
+            toast.error("Please fix validation errors");
+            return;
+          }
+        }
+        // Mark current step as completed
+        setCompletedSteps((prev) =>
+          prev.includes(wizardStep) ? prev : [...prev, wizardStep],
+        );
+      }
+      setWizardStep(step);
+    },
+    [wizardStep, autoGenState.category, validateConfig],
+  );
 
   const handleSwapFieldChange = useCallback((event) => {
     const { name, value } = event.target;
@@ -2737,10 +3397,11 @@ const CompetitionRaces = () => {
   }, []);
 
   const relevantEntries = useMemo(() => {
-    // Start with manual entries
+    // Start with entries populated by handleCategorySelect (manual + race-sourced)
     let result = [...entries];
 
-    // Add database entries from registrationStats for the selected category
+    // Also merge database registration entries for the selected category
+    // (handles cases where entries exist in registrations but not in existing races)
     if (
       registrationStats &&
       Array.isArray(registrationStats.byCategory) &&
@@ -2748,10 +3409,9 @@ const CompetitionRaces = () => {
     ) {
       const catId = autoGenState.category;
       const catData = registrationStats.byCategory.find(
-        (c) => toDocumentId(c.id) === catId,
+        (c) => c.id === catId,
       );
       if (catData && Array.isArray(catData.entries)) {
-        // Map database entries to the same format as manual entries
         const dbEntries = catData.entries.map((e, idx) => {
           const athleteId = toDocumentId(e.athlete);
           const clubObj = e.club || null;
@@ -2774,7 +3434,7 @@ const CompetitionRaces = () => {
             activeMembership?.club || e.athlete?.club || clubObj || null;
 
           return {
-            id: entryId, // Database entry ID for withdraw/delete
+            id: entryId,
             uid: `db-${entryId || idx}`,
             athleteId,
             athlete: e.athlete,
@@ -2793,22 +3453,30 @@ const CompetitionRaces = () => {
           };
         });
 
-        // Filter out any database entries that are already in manual entries (by athleteId)
-        const manualAthleteIds = new Set(
+        // Only add DB entries that aren't already present (by athleteId)
+        const existingAthleteIds = new Set(
           result.map((e) => e.athleteId).filter(Boolean),
         );
         const uniqueDbEntries = dbEntries.filter(
-          (e) => !manualAthleteIds.has(e.athleteId),
+          (e) => !existingAthleteIds.has(e.athleteId),
         );
 
         result = [...result, ...uniqueDbEntries];
       }
     }
 
+    // Apply local overrides to any entries already in result
+    result = result.map((entry) => {
+      const overrides = dbEntryOverrides[entry.id] || {};
+      if (Object.keys(overrides).length > 0) {
+        return { ...entry, ...overrides };
+      }
+      return entry;
+    });
+
     // Filter by boat class if selected
     if (autoGenState.boatClass) {
       result = result.filter((entry) => {
-        // Keep entries without boatClass or matching boatClass
         return (
           !entry.boatClass ||
           entry.boatClass.id === autoGenState.boatClass ||
@@ -3083,7 +3751,19 @@ const CompetitionRaces = () => {
     };
 
     setSubmittingAutoGen(true);
+    setIsGenerating(true);
+    setGenerationProgress(0);
+    setGenerationStage("Validating entries...");
+
     try {
+      // Simulate progress stages
+      setGenerationProgress(20);
+      setGenerationStage("Preparing race configuration...");
+      await new Promise((r) => setTimeout(r, 300));
+
+      setGenerationProgress(40);
+      setGenerationStage("Calculating lane assignments...");
+
       const response = await fetch(
         `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/auto-generate`,
         {
@@ -3095,11 +3775,25 @@ const CompetitionRaces = () => {
           body: JSON.stringify(payload),
         },
       );
+
+      setGenerationProgress(70);
+      setGenerationStage("Processing response...");
+
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.message || "Failed to auto-generate races");
       }
-      toast.success("Races generated successfully");
+
+      setGenerationProgress(90);
+      setGenerationStage("Finalizing races...");
+      await new Promise((r) => setTimeout(r, 200));
+
+      setGenerationProgress(100);
+      setGenerationStage("Complete!");
+
+      toast.success(
+        `🎉 ${Array.isArray(data) ? data.length : 0} race(s) generated successfully!`,
+      );
 
       // Update auto-gen state for the next batch (increment time and race number)
       if (Array.isArray(data) && data.length > 0) {
@@ -3131,6 +3825,10 @@ const CompetitionRaces = () => {
 
       // setEntries([]); // Keep entries to allow generating other boat classes
       setEntrySearchTerm("");
+      // Reset wizard to step 1 after successful generation
+      setWizardStep(1);
+      setCompletedSteps([]);
+      setSelectedPreset(null);
       await loadRaces();
       await loadRegistrationSummary(); // Refresh categories overview
     } catch (error) {
@@ -3138,6 +3836,9 @@ const CompetitionRaces = () => {
       toast.error(error.message);
     } finally {
       setSubmittingAutoGen(false);
+      setIsGenerating(false);
+      setGenerationProgress(0);
+      setGenerationStage("");
     }
   }, [
     autoGenState,
@@ -3475,6 +4176,14 @@ const CompetitionRaces = () => {
         ? racesToExport
         : sortedRaces;
 
+      if (!targetRaces.length) {
+        toast.info("No races to export");
+        return;
+      }
+
+      toast.info("Generating Start List PDF...");
+
+      try {
       const dateStr = new Date().toLocaleDateString("en-GB", {
         weekday: "short",
         day: "numeric",
@@ -3482,510 +4191,15 @@ const CompetitionRaces = () => {
         year: "numeric",
       });
 
-      // Load images for header/footer
-      const headerData = await loadImage("/header.png");
-      const footerData = await loadImage("/footer.png");
-      const logoData = await loadImage("/logo.png");
-      const sponsorData = await loadImage("/sponsors.png");
-
-      // Load Arabic font
-      const arabicFontBase64 = await loadFont("/fonts/Amiri-Regular.ttf");
-
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      // Register Arabic font if loaded successfully
-      let arabicFontName = null;
-      if (arabicFontBase64) {
-        try {
-          doc.addFileToVFS("Amiri-Regular.ttf", arabicFontBase64);
-          doc.addFont("Amiri-Regular.ttf", "Amiri", "normal");
-          arabicFontName = "Amiri";
-        } catch (err) {
-          console.warn("Could not register Arabic font:", err);
-        }
-      }
-
-      // Use helvetica as the default font (supports basic Latin characters)
-      const fontName = "helvetica";
-
-      const title = competition?.names?.en || competition?.code || "Start List";
-
-      // Calculate header height
-      let headerHeight = 30;
-      if (headerData) {
-        const imgProps = doc.getImageProperties(headerData);
-        const ratio = imgProps.width / imgProps.height;
-        const w = 210;
-        const h = w / ratio;
-        // Space for header image + separation line + margin
-        headerHeight = h + 8;
-      }
-
-      let yPos = headerHeight;
-
-      // Map to store clubs per page for legend
-      const pageClubsMap = new Map();
-
-      for (let raceIndex = 0; raceIndex < targetRaces.length; raceIndex++) {
-        const race = targetRaces[raceIndex];
-        if (raceIndex > 0) {
-          doc.addPage();
-          yPos = headerHeight;
-        }
-
-        // Race Header Block
-        const categoryId = toDocumentId(race.category);
-        const category = categoryId
-          ? categories.find((item) => toDocumentId(item) === categoryId)
-          : null;
-
-        const boatClassId = toDocumentId(race.boatClass);
-        const boatClass = boatClassId
-          ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
-          : null;
-
-        // --- Race Header (World Rowing Style) ---
-        const leftMargin = 14;
-        const rightMargin = 196;
-        const center = 105;
-
-        // 1. Competition Info (Location | Date)
-        doc.setFontSize(10);
-        doc.setFont(fontName, "normal");
-        doc.setTextColor(0, 0, 0);
-
-        let compLocation = "Location";
-        if (competition?.location) {
-          if (typeof competition.location === "string") {
-            compLocation = competition.location;
-          } else if (typeof competition.location === "object") {
-            compLocation =
-              competition.location.name ||
-              competition.location.city ||
-              competition.venue ||
-              "Location";
-          }
-        } else if (competition?.venue) {
-          compLocation = String(competition.venue);
-        }
-
-        doc.text(String(compLocation), leftMargin, yPos);
-        // Competition title centered
-        const compTitle = competition?.names?.en || competition?.code || "";
-        doc.text(String(compTitle), center, yPos, { align: "center" });
-        doc.text(String(dateStr), rightMargin, yPos, { align: "right" });
-
-        yPos += 3;
-        doc.setLineWidth(0.5);
-        doc.setDrawColor(0);
-        doc.line(leftMargin, yPos, rightMargin, yPos);
-        yPos += 8;
-
-        // 2. Event Header Row: Event Num | Start List | Event Code
-        const eventKey = `${categoryId}_${boatClassId || "null"}`;
-        const eventNum =
-          eventNumberMap.get(eventKey) ||
-          category?.order ||
-          category?.number ||
-          "1";
-
-        doc.setFontSize(16);
-        doc.setFont(fontName, "bold");
-        doc.text(String(eventNum), leftMargin, yPos);
-
-        doc.setFontSize(18);
-        doc.text("Start List", center, yPos, { align: "center" });
-
-        const eventCode = generateRaceCode(category, boatClass);
-        doc.setFontSize(16);
-        doc.text(String(eventCode), rightMargin, yPos, { align: "right" });
-
-        // 3. Second Row: (Event) | Category Name | Phase
-        yPos += 6;
-        doc.setFontSize(8);
-        doc.setFont(fontName, "normal");
-        doc.text("(Event)", leftMargin, yPos);
-
-        const catTitle = category?.titles?.en || "Category";
-        const boatTitle = boatClass?.names?.en || "";
-        const fullEventName = `${catTitle} ${boatTitle}`.trim();
-
-        doc.setFontSize(12);
-        doc.setFont(fontName, "bold");
-        doc.text(fullEventName, center, yPos, { align: "center" });
-
-        const phaseName = race.phase || "BM 1";
-        doc.text(String(phaseName), rightMargin, yPos, { align: "right" });
-
-        // Arabic subtitle using Arabic font
-        const catTitleAr = category?.titles?.ar || "";
-        const boatTitleAr = boatClass?.names?.ar || "";
-        const fullEventNameAr = `${catTitleAr} ${boatTitleAr}`.trim();
-
-        if (fullEventNameAr && arabicFontName) {
-          yPos += 5;
-          doc.setFontSize(11);
-          doc.setFont(arabicFontName, "normal");
-          doc.text(fullEventNameAr, center, yPos, { align: "center" });
-          doc.setFont(fontName, "normal"); // Reset to default font
-          yPos += 3; // Extra space after Arabic
-        }
-
-        // 4. Third Row: Start Time | As of Date | Race X
-        yPos += 5;
-        doc.setFontSize(10);
-        doc.setFont(fontName, "normal");
-
-        let startTimeStr = "09:00";
-        if (race.startTime) {
-          const d = new Date(race.startTime);
-          const hours = d.getHours().toString().padStart(2, "0");
-          const minutes = d.getMinutes().toString().padStart(2, "0");
-          startTimeStr = `${hours}:${minutes}`;
-        }
-
-        doc.text(`Start Time: ${startTimeStr}`, leftMargin, yPos);
-        doc.text(`As of ${dateStr}`, center, yPos, { align: "center" });
-
-        const raceNum = race.order || race.number || "1";
-        doc.setFont(fontName, "bold");
-        doc.text(`Race ${raceNum}`, rightMargin, yPos, { align: "right" });
-
-        yPos += 8;
-
-        // 5. Table
-        const tableBody = (race.lanes || [])
-          .sort((a, b) => a.lane - b.lane)
-          .map((lane) => {
-            let athleteName = "Unassigned";
-            const athleteId = toDocumentId(lane?.athlete);
-            const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
-
-            if (athlete) {
-              athleteName = formatAthleteName(athlete);
-            } else if (Array.isArray(lane?.crew) && lane.crew.length > 0) {
-              athleteName = lane.crew
-                .map((member, index, arr) => {
-                  const mId = toDocumentId(member);
-                  const m = mId
-                    ? raceAthleteLookup.get(mId)
-                    : typeof member === "object"
-                      ? member
-                      : null;
-                  const name = m ? formatAthleteName(m) : "Unknown";
-                  let pos = "";
-                  if (arr.length > 1) {
-                    if (index === 0) pos = "(b) ";
-                    else if (index === arr.length - 1) pos = "(s) ";
-                    else pos = `(${index + 1}) `;
-                  }
-                  return `${pos}${name}`;
-                })
-                .join("\n");
-            }
-
-            const clubId = toDocumentId(lane?.club);
-            const clubName = clubId
-              ? raceClubLookup.get(clubId)
-              : lane?.club?.code || "";
-            let clubCode =
-              lane?.club?.code || clubName.slice(0, 3).toUpperCase();
-            if (lane.crewNumber) {
-              clubCode += ` (${lane.crewNumber})`;
-            }
-
-            let license = "";
-            let dob = "";
-
-            if (athlete) {
-              license = athlete.licenseNumber || "";
-              dob = athlete.birthDate
-                ? new Date(athlete.birthDate).toLocaleDateString("en-GB")
-                : "";
-            } else if (Array.isArray(lane?.crew) && lane.crew.length > 0) {
-              const members = lane.crew
-                .map((m) => {
-                  const mId = toDocumentId(m);
-                  return mId
-                    ? raceAthleteLookup.get(mId)
-                    : typeof m === "object"
-                      ? m
-                      : null;
-                })
-                .filter(Boolean);
-              license = members.map((m) => m.licenseNumber || "-").join("\n");
-              dob = members
-                .map((m) =>
-                  m.birthDate
-                    ? new Date(m.birthDate).toLocaleDateString("en-GB")
-                    : "-",
-                )
-                .join("\n");
-            }
-
-            return [lane.lane, clubCode, athleteName, license, dob];
-          });
-
-        autoTable(doc, {
-          startY: yPos,
-          head: [["Lane", "Club", "Name", "License", "DOB"]],
-          body: tableBody,
-          theme: "plain",
-          headStyles: {
-            fillColor: [255, 255, 255],
-            textColor: [0, 0, 0],
-            fontStyle: "bold",
-            lineWidth: 0.1,
-            lineColor: [0, 0, 0],
-          },
-          bodyStyles: {
-            textColor: [0, 0, 0],
-            lineWidth: 0,
-          },
-          columnStyles: {
-            0: { cellWidth: 15, halign: "center" },
-            1: { cellWidth: 30, fontStyle: "bold" },
-            2: { cellWidth: "auto" },
-            3: { cellWidth: 25, halign: "center" },
-            4: { cellWidth: 25, halign: "center" },
-          },
-          styles: {
-            fontSize: 10,
-            cellPadding: 3,
-            font: fontName,
-          },
-          margin: {
-            left: leftMargin,
-            right: 14,
-            bottom: 30,
-            top: headerHeight,
-          },
-          didDrawPage: (data) => {
-            yPos = data.cursor.y;
-          },
-          didParseCell: (data) => {
-            if (data.section === "head") {
-              data.cell.styles.lineWidth = {
-                top: 0.1,
-                bottom: 0.1,
-                left: 0.1,
-                right: 0.1,
-              };
-            }
-          },
-        });
-
-        yPos = doc.lastAutoTable.finalY + 8;
-
-        // Progression Rule Box
-        doc.setDrawColor(0);
-        doc.setLineWidth(0.3);
-        doc.rect(leftMargin, yPos, 182, 7);
-        doc.setFontSize(8);
-        doc.setFont(fontName, "normal");
-        doc.text(
-          "Progression System: 1-2 to Final A, 3-4 to Final B, others eliminated.",
-          leftMargin + 2,
-          yPos + 5,
-        );
-
-        // Collect clubs for this race (will be drawn in footer)
-        const raceClubs = [];
-        (race.lanes || []).forEach((lane) => {
-          if (lane?.club && typeof lane.club === "object") {
-            const clubId = toDocumentId(lane.club);
-            if (clubId && !raceClubs.find((c) => toDocumentId(c) === clubId)) {
-              raceClubs.push(lane.club);
-            }
-          }
-        });
-        // Store clubs for this page (page index = raceIndex + 1)
-        pageClubsMap.set(raceIndex + 1, raceClubs);
-      }
-
-      // --- Post-Processing: Add Header & Footer to ALL Pages ---
-      const pageCount = doc.internal.getNumberOfPages();
-      const pageHeight = doc.internal.pageSize.height;
-
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-
-        // --- Header ---
-        if (headerData) {
-          const imgProps = doc.getImageProperties(headerData);
-          const ratio = imgProps.width / imgProps.height;
-          const w = 210;
-          const h = w / ratio;
-          doc.addImage(headerData, "PNG", 0, 0, w, h);
-          // Draw separation line below header (dark red/maroon like original)
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(14, h + 2, 196, h + 2);
-        } else if (logoData) {
-          doc.setFillColor(255, 255, 255);
-          doc.rect(0, 0, 210, 25, "F");
-          const imgProps = doc.getImageProperties(logoData);
-          const ratio = imgProps.width / imgProps.height;
-          let w = 20;
-          let h = 20;
-          if (ratio > 1) h = w / ratio;
-          else w = h * ratio;
-          doc.addImage(logoData, "PNG", 14, 2.5, w, h);
-          doc.setFontSize(14);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(0, 0, 0);
-          doc.text(title, 40, 15);
-          // Draw separation line
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(14, 24, 196, 24);
-        }
-
-        // --- Club Legend Box (above footer) ---
-        const pageClubs = pageClubsMap.get(i) || [];
-        if (pageClubs.length > 0 && i === pageCount) {
-          const clubs = [...pageClubs].sort((a, b) => {
-            const codeA = a.code || "";
-            const codeB = b.code || "";
-            return codeA.localeCompare(codeB);
-          });
-
-          const lineHeight = 5;
-          const boxHeight = clubs.length * lineHeight + 10;
-          const legendY = pageHeight - 38 - boxHeight;
-
-          doc.setDrawColor(0);
-          doc.setLineWidth(0.3);
-          doc.rect(14, legendY, 182, boxHeight);
-
-          // Legend title
-          doc.setFontSize(9);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(0, 0, 0);
-          doc.text("Legend:", 16, legendY + 5);
-
-          // Club entries
-          doc.setFontSize(8);
-          let clubY = legendY + 10;
-
-          for (const club of clubs) {
-            const code = club.code || "---";
-            const frenchName =
-              club.name || club.names?.fr || club.names?.en || "";
-            const arabicName = club.nameAr || club.names?.ar || "";
-
-            // CODE: French Name : Arabic Name
-            doc.setFont("helvetica", "bold");
-            doc.text(code + ": ", 18, clubY);
-
-            const codeWidth = doc.getTextWidth(code + ": ");
-            doc.setFont("helvetica", "normal");
-            doc.text(frenchName, 18 + codeWidth, clubY);
-
-            // Arabic name
-            if (arabicName && arabicFontName) {
-              const frenchWidth = doc.getTextWidth(frenchName);
-              doc.setFont(arabicFontName, "normal");
-              doc.text(" : " + arabicName, 18 + codeWidth + frenchWidth, clubY);
-              doc.setFont("helvetica", "normal");
-            }
-
-            clubY += lineHeight;
-          }
-        }
-
-        // --- Footer ---
-        if (footerData) {
-          const imgProps = doc.getImageProperties(footerData);
-          const ratio = imgProps.width / imgProps.height;
-          const w = 210;
-          const h = w / ratio;
-          // Draw separation line above footer
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(14, pageHeight - h - 3, 196, pageHeight - h - 3);
-          // Footer image
-          doc.addImage(footerData, "PNG", 0, pageHeight - h, w, h);
-          // Small page number below the line, above the footer image
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(`Page ${i} of ${pageCount}`, 196, pageHeight - h - 6, {
-            align: "right",
-          });
-        } else if (sponsorData) {
-          const imgProps = doc.getImageProperties(sponsorData);
-          const ratio = imgProps.width / imgProps.height;
-          let w = 180;
-          let h = w / ratio;
-          if (h > 20) {
-            h = 20;
-            w = h * ratio;
-          }
-          const x = 14 + (180 - w) / 2;
-          // Draw separation line above sponsors
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(14, pageHeight - h - 8, 196, pageHeight - h - 8);
-          // Sponsors image
-          doc.addImage(sponsorData, "PNG", x, pageHeight - h - 3, w, h);
-          // Small page number
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(`Page ${i} of ${pageCount}`, 196, pageHeight - h - 11, {
-            align: "right",
-          });
-        } else {
-          // No footer images - draw simple footer line and page number
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(14, pageHeight - 15, 196, pageHeight - 15);
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(`Page ${i} of ${pageCount}`, 196, pageHeight - 8, {
-            align: "right",
-          });
-        }
-      }
-
-      doc.save(`StartList_${competition?.code || "Competition"}.pdf`);
-    },
-    [
-      sortedRaces,
-      competition,
-      categories,
-      boatClasses,
-      raceAthleteLookup,
-      raceClubLookup,
-      eventNumberMap,
-    ],
-  );
-
-  const exportResultsPDF = useCallback(
-    async (race) => {
-      if (!race) return;
-
-      const dateStr = new Date().toLocaleDateString("en-GB", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
-
-      // Load images for header/footer
-      const headerData = await loadImage("/header.png");
-      const footerData = await loadImage("/footer.png");
-      const logoData = await loadImage("/logo.png");
-      const sponsorData = await loadImage("/sponsors.png");
-
-      // Load Arabic font
-      const arabicFontBase64 = await loadFont("/fonts/Amiri-Regular.ttf");
+      // Load images for header/footer (parallel)
+      const [headerData, footerData, logoData, sponsorData, arabicFontBase64] =
+        await Promise.all([
+          loadImage("/header.png"),
+          loadImage("/footer.png"),
+          loadImage("/logo.png"),
+          loadImage("/sponsors.png"),
+          loadFont("/fonts/Amiri-Regular.ttf"),
+        ]);
 
       const doc = new jsPDF({
         orientation: "portrait",
@@ -4012,19 +4226,495 @@ const CompetitionRaces = () => {
       const rightMargin = 196;
       const center = 105;
 
-      // Calculate header height
-      let headerHeight = 30;
+      // Calculate header height (3mm top margin + 8mm gap after line)
+      let headerHeight = 32;
       if (headerData) {
         const imgProps = doc.getImageProperties(headerData);
-        const ratio = imgProps.width / imgProps.height;
-        const w = pageWidth;
-        const h = w / ratio;
-        headerHeight = h + 8;
+        headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
+      }
+
+      // Use event date instead of generation date
+      const eventDateStr = competition?.startDate
+        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : dateStr;
+
+      // Location (safe string extraction)
+      const compLocation = String(
+        competition?.location?.name ||
+        competition?.venue?.name ||
+        (typeof competition?.venue === "string" ? competition.venue : null) ||
+        (typeof competition?.location === "string" ? competition.location : null) ||
+        "Location"
+      );
+
+      const competitionTitle =
+        competition?.names?.en ||
+        competition?.name ||
+        competition?.code ||
+        "Competition";
+
+      // Map to store clubs per page for legend
+      const pageClubsMap = new Map();
+
+      for (let raceIndex = 0; raceIndex < targetRaces.length; raceIndex++) {
+        const race = targetRaces[raceIndex];
+        if (raceIndex > 0) {
+          doc.addPage();
+        }
+
+        let yPos = headerHeight;
+
+        // Race Header Block
+        const categoryId = toDocumentId(race.category);
+        const category = categoryId
+          ? categories.find((item) => toDocumentId(item) === categoryId)
+          : null;
+        const boatClassId = toDocumentId(race.boatClass);
+        const boatClass = boatClassId
+          ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
+          : null;
+
+        // --- Header Section (matches RaceDetail) ---
+        // Competition title centered (14pt bold)
+        doc.setFontSize(14);
+        doc.setFont(fontName, "bold");
+        doc.setTextColor(0, 0, 0);
+        doc.text(competitionTitle, center, yPos, { align: "center" });
+
+        // Location left, date right (9pt normal) on same line
+        doc.setFontSize(9);
+        doc.setFont(fontName, "normal");
+        doc.text(compLocation, leftMargin, yPos);
+        doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
+
+        yPos += 2;
+        doc.setLineWidth(0.5);
+        doc.setDrawColor(0);
+        doc.line(leftMargin, yPos, rightMargin, yPos);
+        yPos += 5;
+
+        // --- Line 1: Race order | Start List | Race code (14pt bold) ---
+        doc.setFontSize(14);
+        doc.setFont(fontName, "bold");
+        doc.text(String(race.order || "1"), leftMargin, yPos);
+        doc.text("Start List", center, yPos, { align: "center" });
+        doc.text(generateRaceCode(category, boatClass), rightMargin, yPos, {
+          align: "right",
+        });
+
+        // --- Line 2: (Event) | Category + Boat Class | Phase ---
+        yPos += 5;
+        doc.setFontSize(9);
+        doc.setFont(fontName, "normal");
+        doc.text("(Event)", leftMargin, yPos);
+        doc.setFontSize(12);
+        doc.setFont(fontName, "bold");
+        const fullEventName =
+          `${category?.titles?.en || ""} ${boatClass?.names?.en || ""}`.trim();
+        doc.text(fullEventName, center, yPos, { align: "center" });
+        doc.setFontSize(9);
+        doc.setFont(fontName, "normal");
+        doc.text(race.phase || "Final", rightMargin, yPos, { align: "right" });
+
+        // --- Line 3: Arabic text (center) | Distance (right) ---
+        const raceDistance = race.distanceOverride || competition?.defaultDistance;
+        const catTitleAr = category?.titles?.ar || "";
+        const boatTitleAr = boatClass?.names?.ar || "";
+        const fullEventNameAr = `${catTitleAr} ${boatTitleAr}`.trim();
+
+        if (fullEventNameAr && arabicFontName) {
+          yPos += 6;
+          doc.setFontSize(14);
+          doc.setFont(arabicFontName, "normal");
+          doc.text(fullEventNameAr, center, yPos, { align: "center" });
+          doc.setFont(fontName, "normal");
+          doc.setFontSize(9);
+          if (raceDistance) {
+            doc.text(`Distance: ${raceDistance}m`, rightMargin, yPos, {
+              align: "right",
+            });
+          }
+        } else if (raceDistance) {
+          yPos += 4;
+          doc.setFontSize(9);
+          doc.text(`Distance: ${raceDistance}m`, center, yPos, {
+            align: "center",
+          });
+        }
+
+        // --- Line 4: Start Time | Race # ---
+        yPos += 4;
+        doc.setFontSize(9);
+        doc.setFont(fontName, "normal");
+        const startTime = race.startTime
+          ? new Date(race.startTime).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "00:00";
+        doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
+        doc.setFont(fontName, "bold");
+        doc.text(`Race ${race.order || "1"}`, rightMargin, yPos, {
+          align: "right",
+        });
+        yPos += 4;
+
+        // --- Calculate legend for bottom margin ---
+        const uniqueClubs = Array.from(
+          new Set(
+            (race.lanes || [])
+              .map((l) => toDocumentId(l.club))
+              .filter(Boolean),
+          ),
+        )
+          .map((id) =>
+            (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
+          )
+          .filter(Boolean)
+          .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+
+        const legendLineHeight = 4;
+        const legendBoxHeight =
+          uniqueClubs.length > 0
+            ? uniqueClubs.length * legendLineHeight + 7
+            : 0;
+        const bottomMargin = 35 + legendBoxHeight + 14;
+
+        // Store clubs for this page
+        pageClubsMap.set(raceIndex + 1, uniqueClubs);
+
+        // --- Helper: format name with uppercase last name ---
+        const formatNameForPdf = (a) => {
+          if (!a) return "Unknown";
+          const first = a.firstName || "";
+          const last = (a.lastName || "").toUpperCase();
+          return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
+        };
+
+        // --- Table ---
+        const exportLanes = [...(race.lanes || [])].sort(
+          (a, b) => (a.lane || 0) - (b.lane || 0),
+        );
+
+        const tableBody = exportLanes.map((lane) => {
+          const athleteId = toDocumentId(lane?.athlete);
+          const athlete = athleteId
+            ? raceAthleteLookup.get(athleteId) ||
+              (typeof lane.athlete === "object" ? lane.athlete : null)
+            : typeof lane.athlete === "object"
+              ? lane.athlete
+              : null;
+
+          const clubCode =
+            lane.club?.code ||
+            lane.club?.name?.slice(0, 3).toUpperCase() ||
+            "-";
+
+          let athleteName = "Unassigned";
+          let license = "";
+          let dob = "";
+
+          if (athlete) {
+            athleteName = formatNameForPdf(athlete);
+            license = athlete.licenseNumber || "";
+            dob = athlete.birthDate
+              ? new Date(athlete.birthDate).toLocaleDateString("en-GB")
+              : "";
+          } else if (Array.isArray(lane?.crew) && lane.crew.length > 0) {
+            athleteName = lane.crew
+              .map((member, idx, arr) => {
+                const mId = toDocumentId(member);
+                const m = mId
+                  ? raceAthleteLookup.get(mId) ||
+                    (typeof member === "object" ? member : null)
+                  : typeof member === "object"
+                    ? member
+                    : null;
+                const name = formatNameForPdf(m);
+                let pos = "";
+                if (arr.length > 1) {
+                  if (idx === 0) pos = "(b) ";
+                  else if (idx === arr.length - 1) pos = "(s) ";
+                  else pos = `(${idx + 1}) `;
+                }
+                return `${pos}${name}`;
+              })
+              .join("\n");
+            license = lane.crew
+              .map((m) => {
+                const mId = toDocumentId(m);
+                const member = mId
+                  ? raceAthleteLookup.get(mId) || m
+                  : m;
+                return (typeof member === "object" ? member?.licenseNumber : null) || "-";
+              })
+              .join("\n");
+            dob = lane.crew
+              .map((m) => {
+                const mId = toDocumentId(m);
+                const member = mId
+                  ? raceAthleteLookup.get(mId) || m
+                  : m;
+                return typeof member === "object" && member?.birthDate
+                  ? new Date(member.birthDate).toLocaleDateString("en-GB")
+                  : "-";
+              })
+              .join("\n");
+          }
+
+          return [lane.lane, clubCode, athleteName, license, dob];
+        });
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [["Lane", "Club", "Name", "License", "DOB"]],
+          body: tableBody,
+          theme: "plain",
+          headStyles: {
+            fillColor: [255, 255, 255],
+            textColor: [0, 0, 0],
+            fontStyle: "bold",
+            lineWidth: 0.1,
+            lineColor: [0, 0, 0],
+            cellPadding: 1,
+          },
+          styles: {
+            fontSize: 9,
+            cellPadding: 1,
+            font: fontName,
+          },
+          columnStyles: {
+            0: { cellWidth: 15, halign: "center" },
+            1: { fontStyle: "bold" },
+            2: { fontStyle: "bold" },
+          },
+          margin: {
+            left: leftMargin,
+            right: 14,
+            bottom: bottomMargin,
+            top: headerHeight,
+          },
+          didParseCell: (data) => {
+            if (data.section === "head") {
+              data.cell.styles.lineWidth = {
+                top: 0.1,
+                bottom: 0.1,
+                left: 0.1,
+                right: 0.1,
+              };
+            }
+          },
+        });
+
+        yPos = doc.lastAutoTable.finalY + 4;
+
+        // Progression Rule Box (ensure no overlap with legend)
+        const progressionEnd = yPos + 7;
+        const legendTop = uniqueClubs.length > 0
+          ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
+          : pageHeight - 35;
+        if (progressionEnd < legendTop) {
+          doc.setDrawColor(0);
+          doc.setLineWidth(0.3);
+          doc.rect(leftMargin, yPos, 182, 7);
+          doc.setFontSize(8);
+          doc.setFont(fontName, "normal");
+          const statusText =
+            race.notes || "Progression System: Subject to competition rules.";
+          doc.text(statusText, leftMargin + 2, yPos + 5);
+        }
+      }
+
+      // --- Post-Processing: Add Header, Legend & Footer to ALL Pages ---
+      const pageCount = doc.internal.getNumberOfPages();
+
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+
+        // --- Header Image ---
+        if (headerData) {
+          const imgProps = doc.getImageProperties(headerData);
+          const h = pageWidth / (imgProps.width / imgProps.height);
+          doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
+          doc.setDrawColor(128, 0, 0);
+          doc.setLineWidth(0.8);
+          doc.line(leftMargin, h + 5, rightMargin, h + 5);
+        }
+
+        // --- Legend on each page ---
+        const pageClubs = pageClubsMap.get(i) || [];
+        if (pageClubs.length > 0) {
+          const clubs = [...pageClubs].sort((a, b) =>
+            (a.code || "").localeCompare(b.code || ""),
+          );
+
+          const lineHeight = 4;
+          const boxHeight = clubs.length * lineHeight + 7;
+          const legendY = pageHeight - 35 - boxHeight;
+
+          doc.setDrawColor(0);
+          doc.setLineWidth(0.3);
+          doc.rect(leftMargin, legendY, 182, boxHeight);
+
+          doc.setFontSize(9);
+          doc.setFont(fontName, "bold");
+          doc.setTextColor(0, 0, 0);
+          doc.text("Legend:", leftMargin + 2, legendY + 5);
+
+          doc.setFontSize(8);
+          let clubY = legendY + 9;
+
+          for (const club of clubs) {
+            const code = club.code || "---";
+            const frenchName =
+              club.name || club.names?.fr || club.names?.en || "";
+            const arabicName = club.nameAr || club.names?.ar || "";
+
+            doc.setFont(fontName, "bold");
+            doc.text(code + ": ", leftMargin + 4, clubY);
+
+            const codeWidth = doc.getTextWidth(code + ": ");
+            doc.setFont(fontName, "normal");
+            doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+
+            if (arabicName && arabicFontName) {
+              const frenchWidth = doc.getTextWidth(frenchName);
+              doc.setFont(arabicFontName, "normal");
+              doc.text(
+                " : " + arabicName,
+                leftMargin + 4 + codeWidth + frenchWidth,
+                clubY,
+              );
+              doc.setFont(fontName, "normal");
+            }
+            clubY += lineHeight;
+          }
+        }
+
+        // --- Footer Image ---
+        if (footerData) {
+          const imgProps = doc.getImageProperties(footerData);
+          const h = pageWidth / (imgProps.width / imgProps.height);
+          doc.addImage(footerData, "PNG", 0, pageHeight - h - 3, pageWidth, h);
+          doc.setDrawColor(128, 0, 0);
+          doc.setLineWidth(0.8);
+          doc.line(leftMargin, pageHeight - h - 5, rightMargin, pageHeight - h - 5);
+          doc.setFontSize(8);
+          doc.setTextColor(100);
+          doc.text(
+            `Page ${i} of ${pageCount}`,
+            rightMargin,
+            pageHeight - h - 8,
+            { align: "right" },
+          );
+        } else if (sponsorData) {
+          const imgProps = doc.getImageProperties(sponsorData);
+          const ratio = imgProps.width / imgProps.height;
+          let w = 180;
+          let h = w / ratio;
+          if (h > 20) { h = 20; w = h * ratio; }
+          const x = leftMargin + (180 - w) / 2;
+          doc.setDrawColor(128, 0, 0);
+          doc.setLineWidth(0.8);
+          doc.line(leftMargin, pageHeight - h - 5, rightMargin, pageHeight - h - 5);
+          doc.addImage(sponsorData, "PNG", x, pageHeight - h - 3, w, h);
+          doc.setFontSize(8);
+          doc.setFont(fontName, "normal");
+          doc.setTextColor(100, 100, 100);
+          doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - h - 8, {
+            align: "right",
+          });
+        } else {
+          doc.setDrawColor(128, 0, 0);
+          doc.setLineWidth(0.8);
+          doc.line(leftMargin, pageHeight - 15, rightMargin, pageHeight - 15);
+          doc.setFontSize(8);
+          doc.setFont(fontName, "normal");
+          doc.setTextColor(100, 100, 100);
+          doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - 8, {
+            align: "right",
+          });
+        }
+      }
+
+      doc.save(`StartList_${competition?.code || "Competition"}.pdf`);
+      toast.success("Start List PDF exported successfully");
+      } catch (err) {
+        console.error("exportStartListPDF error:", err);
+        toast.error("Failed to export Start List PDF: " + (err.message || "Unknown error"));
+      }
+    },
+    [
+      sortedRaces,
+      competition,
+      categories,
+      boatClasses,
+      raceAthleteLookup,
+      raceClubLookup,
+      eventNumberMap,
+    ],
+  );
+
+  const exportResultsPDF = useCallback(
+    async (race) => {
+      if (!race) return;
+
+      toast.info("Generating Results PDF...");
+
+      try {
+      const dateStr = new Date().toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+
+      const [headerData, footerData, logoData, sponsorData, arabicFontBase64] =
+        await Promise.all([
+          loadImage("/header.png"),
+          loadImage("/footer.png"),
+          loadImage("/logo.png"),
+          loadImage("/sponsors.png"),
+          loadFont("/fonts/Amiri-Regular.ttf"),
+        ]);
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      let arabicFontName = null;
+      if (arabicFontBase64) {
+        try {
+          doc.addFileToVFS("Amiri-Regular.ttf", arabicFontBase64);
+          doc.addFont("Amiri-Regular.ttf", "Amiri", "normal");
+          arabicFontName = "Amiri";
+        } catch (err) {
+          console.warn("Could not register Arabic font:", err);
+        }
+      }
+
+      const fontName = "helvetica";
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const leftMargin = 14;
+      const rightMargin = 196;
+      const center = 105;
+
+      let headerHeight = 32;
+      if (headerData) {
+        const imgProps = doc.getImageProperties(headerData);
+        headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
       }
 
       let yPos = headerHeight;
 
-      // Race info
       const categoryId = toDocumentId(race.category);
       const category = categoryId
         ? categories.find((item) => toDocumentId(item) === categoryId)
@@ -4034,185 +4724,209 @@ const CompetitionRaces = () => {
         ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
         : null;
 
-      // --- Race Header (World Rowing Style) ---
-      // 1. Competition Info (Location | Date)
+      // Use event date instead of generation date
+      const eventDateStr = competition?.startDate
+        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : dateStr;
+
+      // Location (safe string extraction)
+      const compLocation = String(
+        competition?.location?.name ||
+        competition?.venue?.name ||
+        (typeof competition?.venue === "string" ? competition.venue : null) ||
+        (typeof competition?.location === "string" ? competition.location : null) ||
+        "Location"
+      );
+
+      // --- Header Section (matches RaceDetail) ---
+      doc.setFontSize(14);
+      doc.setFont(fontName, "bold");
+      doc.setTextColor(0, 0, 0);
+      const competitionTitle =
+        competition?.names?.en ||
+        competition?.name ||
+        competition?.code ||
+        "Competition";
+      doc.text(competitionTitle, center, yPos, { align: "center" });
+
       doc.setFontSize(9);
       doc.setFont(fontName, "normal");
-      doc.setTextColor(0, 0, 0);
-
-      let compLocation = "Location";
-      if (competition?.location) {
-        if (typeof competition.location === "string") {
-          compLocation = competition.location;
-        } else if (typeof competition.location === "object") {
-          compLocation =
-            competition.location.name ||
-            competition.location.city ||
-            competition.venue ||
-            "Location";
-        }
-      } else if (competition?.venue) {
-        compLocation = String(competition.venue);
-      }
-
-      doc.text(String(compLocation), leftMargin, yPos);
-      const compTitle = competition?.names?.en || competition?.code || "";
-      doc.text(String(compTitle), center, yPos, { align: "center" });
-      doc.text(String(dateStr), rightMargin, yPos, { align: "right" });
+      doc.text(compLocation, leftMargin, yPos);
+      doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
 
       yPos += 2;
       doc.setLineWidth(0.5);
-      doc.setDrawColor(0);
       doc.line(leftMargin, yPos, rightMargin, yPos);
       yPos += 5;
 
-      // 2. Event Header Row: Event Num | Results | Event Code
-      const eventKey = `${categoryId}_${boatClassId || "null"}`;
-      const eventNum =
-        eventNumberMap.get(eventKey) ||
-        category?.order ||
-        category?.number ||
-        "1";
-
+      // --- Line 1: Race order | Results | Race code ---
       doc.setFontSize(14);
       doc.setFont(fontName, "bold");
-      doc.text(String(eventNum), leftMargin, yPos);
-
-      doc.setFontSize(16);
+      doc.text(String(race.order || "1"), leftMargin, yPos);
       doc.text("Results", center, yPos, { align: "center" });
+      doc.text(generateRaceCode(category, boatClass), rightMargin, yPos, {
+        align: "right",
+      });
 
-      const eventCode = generateRaceCode(category, boatClass);
-      doc.setFontSize(14);
-      doc.text(String(eventCode), rightMargin, yPos, { align: "right" });
-
-      // 3. Second Row: (Event) | Category Name | Phase
-      yPos += 4;
-      doc.setFontSize(8);
+      // --- Line 2: (Event) | Category + Boat Class | Phase ---
+      yPos += 5;
+      doc.setFontSize(9);
       doc.setFont(fontName, "normal");
       doc.text("(Event)", leftMargin, yPos);
-
-      const catTitle = category?.titles?.en || "Category";
-      const boatTitle = boatClass?.names?.en || "";
-      const fullEventName = `${catTitle} ${boatTitle}`.trim();
-
-      doc.setFontSize(11);
+      doc.setFontSize(12);
       doc.setFont(fontName, "bold");
+      const fullEventName =
+        `${category?.titles?.en || ""} ${boatClass?.names?.en || ""}`.trim();
       doc.text(fullEventName, center, yPos, { align: "center" });
+      doc.setFontSize(9);
+      doc.setFont(fontName, "normal");
+      doc.text(race.phase || "Final", rightMargin, yPos, { align: "right" });
 
-      const phaseName = race.phase || "BM 1";
-      doc.text(String(phaseName), rightMargin, yPos, { align: "right" });
-
-      // Arabic subtitle using Arabic font
+      // --- Line 3: Arabic text (center) | Distance (right) ---
+      const raceDistance = race.distanceOverride || competition?.defaultDistance;
       const catTitleAr = category?.titles?.ar || "";
       const boatTitleAr = boatClass?.names?.ar || "";
       const fullEventNameAr = `${catTitleAr} ${boatTitleAr}`.trim();
 
       if (fullEventNameAr && arabicFontName) {
-        yPos += 5;
-        doc.setFontSize(11);
+        yPos += 6;
+        doc.setFontSize(14);
         doc.setFont(arabicFontName, "normal");
         doc.text(fullEventNameAr, center, yPos, { align: "center" });
         doc.setFont(fontName, "normal");
-        yPos += 2;
+        doc.setFontSize(9);
+        if (raceDistance) {
+          doc.text(`Distance: ${raceDistance}m`, rightMargin, yPos, {
+            align: "right",
+          });
+        }
+      } else if (raceDistance) {
+        yPos += 4;
+        doc.setFontSize(9);
+        doc.text(`Distance: ${raceDistance}m`, center, yPos, { align: "center" });
       }
 
-      // 4. Third Row: Start Time | As of Date | Race X
-      yPos += 3;
+      // --- Line 4: Start Time | Race # ---
+      yPos += 4;
       doc.setFontSize(9);
       doc.setFont(fontName, "normal");
-
-      let startTimeStr = "09:00";
-      if (race.startTime) {
-        const d = new Date(race.startTime);
-        const hours = d.getHours().toString().padStart(2, "0");
-        const minutes = d.getMinutes().toString().padStart(2, "0");
-        startTimeStr = `${hours}:${minutes}`;
-      }
-
-      doc.text(`Start Time: ${startTimeStr}`, leftMargin, yPos);
-      doc.text(`As of ${dateStr}`, center, yPos, { align: "center" });
-
-      const raceNum = race.order || race.number || "1";
+      const startTime = race.startTime
+        ? new Date(race.startTime).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "00:00";
+      doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
       doc.setFont(fontName, "bold");
-      doc.text(`Race ${raceNum}`, rightMargin, yPos, { align: "right" });
+      doc.text(`Race ${race.order || "1"}`, rightMargin, yPos, { align: "right" });
+      yPos += 4;
 
-      yPos += 5;
+      // --- Calculate legend for bottom margin ---
+      const uniqueClubs = Array.from(
+        new Set(
+          (race.lanes || []).map((l) => toDocumentId(l.club)).filter(Boolean),
+        ),
+      )
+        .map((id) =>
+          (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
+        )
+        .filter(Boolean)
+        .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
 
-      // Sort lanes by finish position (results)
-      const sortedLanes = [...(race.lanes || [])].sort((a, b) => {
-        const aPos = a.result?.finishPosition ?? 999;
-        const bPos = b.result?.finishPosition ?? 999;
-        if (aPos !== bPos) return aPos - bPos;
-        const aTime = a.result?.elapsedMs ?? Infinity;
-        const bTime = b.result?.elapsedMs ?? Infinity;
-        return aTime - bTime;
+      const legendLineHeight = 4;
+      const legendBoxHeight =
+        uniqueClubs.length > 0 ? uniqueClubs.length * legendLineHeight + 7 : 0;
+      const bottomMargin = 35 + legendBoxHeight + 14;
+
+      // --- Helper: format name with uppercase last name ---
+      const formatNameForPdf = (a) => {
+        if (!a) return "Unknown";
+        const first = a.firstName || "";
+        const last = (a.lastName || "").toUpperCase();
+        return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
+      };
+
+      // Sort lanes by result (matching RaceDetail)
+      const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
+        const statusA = a.result?.status || "ok";
+        const statusB = b.result?.status || "ok";
+        const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+        const pA = priority[statusA] ?? 10;
+        const pB = priority[statusB] ?? 10;
+        if (pA !== pB) return pA - pB;
+        const posA = a.result?.finishPosition || 999;
+        const posB = b.result?.finishPosition || 999;
+        if (posA !== posB) return posA - posB;
+        return (a.lane || 0) - (b.lane || 0);
       });
 
-      // Find the winning time (first place)
       const winningTime = sortedLanes.find(
         (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
       )?.result?.elapsedMs;
 
-      // Build table data (World Rowing style)
-      const tableBody = sortedLanes.map((lane) => {
-        const clubId = toDocumentId(lane.club);
+      // Build table data (matching RaceDetail)
+      const deltaMap = new Map();
+      const tableBody = sortedLanes.map((lane, rowIdx) => {
         const clubCode =
           lane.club?.code ||
-          (clubId ? raceClubLookup.get(clubId)?.slice(0, 3).toUpperCase() : "");
+          lane.club?.name?.slice(0, 3).toUpperCase() ||
+          "-";
 
         let athleteName = "Unassigned";
         const athleteId = toDocumentId(lane.athlete);
         const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
 
+        const pos = lane.result?.finishPosition || "-";
+        const status = lane.result?.status || "ok";
+        let timeStr =
+          status !== "ok"
+            ? status.toUpperCase()
+            : formatElapsedTime(lane.result?.elapsedMs);
+        // Store time delta for 2nd place and below (rendered separately)
+        if (
+          status === "ok" &&
+          lane.result?.elapsedMs &&
+          pos > 1 &&
+          winningTime
+        ) {
+          const deltaMs = lane.result.elapsedMs - winningTime;
+          const deltaStr = formatDeltaSeconds(deltaMs);
+          if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
+        }
+        let points = 0;
+        if (
+          (status === "ok" || status === "dnf") &&
+          pos > 0 &&
+          pos <= 8
+        ) {
+          points = calculatePoints(pos, activeRankingSystem);
+        }
+
         if (athlete) {
-          athleteName = formatAthleteName(athlete);
+          athleteName = formatNameForPdf(athlete);
         } else if (Array.isArray(lane.crew) && lane.crew.length > 0) {
           athleteName = lane.crew
-            .map((m, index, arr) => {
+            .map((m, i, arr) => {
               const mId = toDocumentId(m);
               const member = mId ? raceAthleteLookup.get(mId) : null;
-              const name = member ? formatAthleteName(member) : "Unknown";
-              let pos = "";
+              const name = formatNameForPdf(member);
+              let position = "";
               if (arr.length > 1) {
-                if (index === 0) pos = "(b) ";
-                else if (index === arr.length - 1) pos = "(s) ";
-                else pos = `(${index + 1}) `;
+                if (i === 0) position = "(b) ";
+                else if (i === arr.length - 1) position = "(s) ";
+                else position = `(${i + 1}) `;
               }
-              return `${pos}${name}`;
+              return `${position}${name}`;
             })
             .join("\n");
         }
 
-        const position = lane.result?.finishPosition || "-";
-        const elapsedMs = lane.result?.elapsedMs;
-        const status = lane.result?.status || "ok";
-
-        // Time with delta below for 2nd+
-        let timeDisplay = "-";
-        if (status !== "ok") {
-          timeDisplay = status.toUpperCase();
-        } else if (elapsedMs) {
-          timeDisplay = formatElapsedTime(elapsedMs);
-          if (position > 1 && winningTime) {
-            const deltaMs = elapsedMs - winningTime;
-            const deltaStr = formatDeltaSeconds(deltaMs);
-            if (deltaStr) {
-              timeDisplay += `\n${deltaStr}`;
-            }
-          }
-        }
-
-        const points =
-          status === "ok" ? calculatePoints(position, activeRankingSystem) : 0;
-
-        return [
-          position,
-          lane.lane,
-          clubCode,
-          athleteName,
-          timeDisplay,
-          points,
-        ];
+        return [pos, lane.lane, clubCode, athleteName, timeStr, points];
       });
 
       autoTable(doc, {
@@ -4226,27 +4940,27 @@ const CompetitionRaces = () => {
           fontStyle: "bold",
           lineWidth: 0.1,
           lineColor: [0, 0, 0],
-        },
-        bodyStyles: {
-          textColor: [0, 0, 0],
-          lineWidth: 0,
-        },
-        columnStyles: {
-          0: { cellWidth: 14, halign: "center", fontStyle: "bold" },
-          1: { cellWidth: 14, halign: "center" },
-          2: { cellWidth: 25, fontStyle: "bold" },
-          3: { cellWidth: "auto" },
-          4: { cellWidth: 35, halign: "right" },
-          5: { cellWidth: 20, halign: "center" },
+          cellPadding: 1,
         },
         styles: {
           fontSize: 8,
-          cellPadding: 1,
+          cellPadding: 0.8,
+          minCellHeight: 6.5,
           font: fontName,
         },
-        margin: { left: leftMargin, right: 14, bottom: 30, top: headerHeight },
-        didDrawPage: (data) => {
-          yPos = data.cursor.y;
+        columnStyles: {
+          0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
+          1: { cellWidth: 12 },
+          2: { cellWidth: 25, fontStyle: "bold" },
+          3: { fontStyle: "bold" },
+          4: { cellWidth: 22, halign: "right", fontStyle: "bold", fontSize: 9 },
+          5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
+        },
+        margin: {
+          left: leftMargin,
+          right: 14,
+          bottom: bottomMargin,
+          top: headerHeight,
         },
         didParseCell: (data) => {
           if (data.section === "head") {
@@ -4258,105 +4972,89 @@ const CompetitionRaces = () => {
             };
           }
         },
-      });
-
-      yPos = doc.lastAutoTable.finalY + 8;
-
-      // Progression Rule Box (optional for results)
-      doc.setDrawColor(0);
-      doc.setLineWidth(0.3);
-      doc.rect(leftMargin, yPos, 182, 7);
-      doc.setFontSize(8);
-      doc.setFont(fontName, "normal");
-      doc.text("Official Results - Times are final.", leftMargin + 2, yPos + 5);
-
-      // Collect clubs for legend
-      const raceClubs = [];
-      (race.lanes || []).forEach((lane) => {
-        if (lane?.club && typeof lane.club === "object") {
-          const clubId = toDocumentId(lane.club);
-          if (clubId && !raceClubs.find((c) => toDocumentId(c) === clubId)) {
-            raceClubs.push(lane.club);
+        didDrawCell: (data) => {
+          if (data.section === "body" && data.column.index === 4) {
+            const delta = deltaMap.get(data.row.index);
+            if (delta) {
+              doc.setFontSize(7);
+              doc.setFont(fontName, "normal");
+              doc.setTextColor(80, 80, 80);
+              const pad =
+                typeof data.cell.styles.cellPadding === "number"
+                  ? data.cell.styles.cellPadding
+                  : data.cell.styles.cellPadding?.right || 0;
+              const x = data.cell.x + data.cell.width - pad;
+              const y = data.cell.y + data.cell.height - 0.3;
+              doc.text(delta, x, y, { align: "right" });
+              doc.setFontSize(8);
+              doc.setFont(fontName, "normal");
+              doc.setTextColor(0, 0, 0);
+            }
           }
-        }
+        },
       });
 
-      // --- Post-Processing: Add Header & Footer ---
-      const pageCount = doc.internal.getNumberOfPages();
+      yPos = doc.lastAutoTable.finalY + 4;
 
+      // --- Status Box (ensure no overlap with legend) ---
+      const progressionEnd = yPos + 7;
+      const legendTop = uniqueClubs.length > 0
+        ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
+        : pageHeight - 35;
+      if (progressionEnd < legendTop) {
+        doc.setDrawColor(0);
+        doc.setLineWidth(0.3);
+        doc.rect(leftMargin, yPos, 182, 7);
+        doc.setFontSize(8);
+        doc.setFont(fontName, "normal");
+        doc.text("Official Results - Times are final.", leftMargin + 2, yPos + 5);
+      }
+
+      // --- Post-Processing: Add Header, Legend & Footer ---
+      const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
 
-        // --- Header ---
+        // Header Image
         if (headerData) {
           const imgProps = doc.getImageProperties(headerData);
-          const ratio = imgProps.width / imgProps.height;
-          const w = pageWidth;
-          const h = w / ratio;
-          doc.addImage(headerData, "PNG", 0, 0, w, h);
+          const h = pageWidth / (imgProps.width / imgProps.height);
+          doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
           doc.setDrawColor(128, 0, 0);
           doc.setLineWidth(0.8);
-          doc.line(leftMargin, h + 2, rightMargin, h + 2);
-        } else if (logoData) {
-          doc.setFillColor(255, 255, 255);
-          doc.rect(0, 0, pageWidth, 25, "F");
-          const imgProps = doc.getImageProperties(logoData);
-          const ratio = imgProps.width / imgProps.height;
-          let w = 20;
-          let h = 20;
-          if (ratio > 1) h = w / ratio;
-          else w = h * ratio;
-          doc.addImage(logoData, "PNG", leftMargin, 2.5, w, h);
-          doc.setFontSize(14);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(0, 0, 0);
-          doc.text(competition?.names?.en || "Results", 40, 15);
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(leftMargin, 24, rightMargin, 24);
+          doc.line(leftMargin, h + 5, rightMargin, h + 5);
         }
 
-        // --- Club Legend Box (above footer) ---
-        if (raceClubs.length > 0 && i === pageCount) {
-          const clubs = [...raceClubs].sort((a, b) => {
-            const codeA = a.code || "";
-            const codeB = b.code || "";
-            return codeA.localeCompare(codeB);
-          });
-
+        // Legend on last page
+        if (i === pageCount && uniqueClubs.length > 0) {
           const lineHeight = 4;
-          const boxHeight = clubs.length * lineHeight + 7;
-          const legendY = pageHeight - 38 - boxHeight;
+          const boxHeight = uniqueClubs.length * lineHeight + 7;
+          const legendY = pageHeight - 35 - boxHeight;
 
           doc.setDrawColor(0);
           doc.setLineWidth(0.3);
           doc.rect(leftMargin, legendY, 182, boxHeight);
 
-          // Legend title
           doc.setFontSize(9);
-          doc.setFont("helvetica", "bold");
+          doc.setFont(fontName, "bold");
           doc.setTextColor(0, 0, 0);
           doc.text("Legend:", leftMargin + 2, legendY + 5);
 
-          // Club entries
           doc.setFontSize(8);
           let clubY = legendY + 9;
-
-          for (const club of clubs) {
+          for (const club of uniqueClubs) {
             const code = club.code || "---";
             const frenchName =
               club.name || club.names?.fr || club.names?.en || "";
             const arabicName = club.nameAr || club.names?.ar || "";
 
-            // CODE: French Name : Arabic Name
-            doc.setFont("helvetica", "bold");
+            doc.setFont(fontName, "bold");
             doc.text(code + ": ", leftMargin + 4, clubY);
 
             const codeWidth = doc.getTextWidth(code + ": ");
-            doc.setFont("helvetica", "normal");
+            doc.setFont(fontName, "normal");
             doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
 
-            // Arabic name
             if (arabicName && arabicFontName) {
               const frenchWidth = doc.getTextWidth(frenchName);
               doc.setFont(arabicFontName, "normal");
@@ -4365,90 +5063,45 @@ const CompetitionRaces = () => {
                 leftMargin + 4 + codeWidth + frenchWidth,
                 clubY,
               );
-              doc.setFont("helvetica", "normal");
+              doc.setFont(fontName, "normal");
             }
-
             clubY += lineHeight;
           }
         }
 
-        // --- Footer ---
+        // Footer Image
         if (footerData) {
           const imgProps = doc.getImageProperties(footerData);
-          const ratio = imgProps.width / imgProps.height;
-          const w = pageWidth;
-          const h = w / ratio;
+          const h = pageWidth / (imgProps.width / imgProps.height);
+          doc.addImage(footerData, "PNG", 0, pageHeight - h - 3, pageWidth, h);
           doc.setDrawColor(128, 0, 0);
           doc.setLineWidth(0.8);
           doc.line(
             leftMargin,
-            pageHeight - h - 3,
+            pageHeight - h - 5,
             rightMargin,
-            pageHeight - h - 3,
+            pageHeight - h - 5,
           );
-          doc.addImage(footerData, "PNG", 0, pageHeight - h, w, h);
           doc.setFontSize(8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 100, 100);
+          doc.setTextColor(100);
           doc.text(
             `Page ${i} of ${pageCount}`,
             rightMargin,
-            pageHeight - h - 6,
-            {
-              align: "right",
-            },
-          );
-        } else if (sponsorData) {
-          const imgProps = doc.getImageProperties(sponsorData);
-          const ratio = imgProps.width / imgProps.height;
-          let w = 180;
-          let h = w / ratio;
-          if (h > 20) {
-            h = 20;
-            w = h * ratio;
-          }
-          const x = leftMargin + (180 - w) / 2;
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(
-            leftMargin,
             pageHeight - h - 8,
-            rightMargin,
-            pageHeight - h - 8,
+            { align: "right" },
           );
-          doc.addImage(sponsorData, "PNG", x, pageHeight - h - 3, w, h);
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(
-            `Page ${i} of ${pageCount}`,
-            rightMargin,
-            pageHeight - h - 11,
-            {
-              align: "right",
-            },
-          );
-        } else {
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(leftMargin, pageHeight - 15, rightMargin, pageHeight - 15);
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - 8, {
-            align: "right",
-          });
         }
       }
 
       const raceCode = generateRaceCode(category, boatClass);
-      const raceName = race.name || `Race ${race.order}`;
       doc.save(
-        `Results_${competition?.code || "Comp"}_${raceCode}_${raceName.replace(
-          /\s+/g,
-          "_",
-        )}.pdf`,
+        `Results_${competition?.code || "Comp"}_${raceCode}_Race${race.order}.pdf`,
       );
+      toast.success("Results PDF exported successfully");
+      } catch (err) {
+        console.error("exportResultsPDF error:", err);
+        toast.error("Failed to export Results PDF: " + (err.message || "Unknown error"));
+      }
     },
     [
       competition,
@@ -4457,6 +5110,7 @@ const CompetitionRaces = () => {
       raceAthleteLookup,
       raceClubLookup,
       eventNumberMap,
+      activeRankingSystem,
     ],
   );
 
@@ -4478,6 +5132,9 @@ const CompetitionRaces = () => {
       return;
     }
 
+    toast.info(`Generating Results PDF for ${racesWithResults.length} race(s)...`);
+
+    try {
     const dateStr = new Date().toLocaleDateString("en-GB", {
       weekday: "short",
       day: "numeric",
@@ -4485,14 +5142,25 @@ const CompetitionRaces = () => {
       year: "numeric",
     });
 
-    // Load images for header/footer
-    const headerData = await loadImage("/header.png");
-    const footerData = await loadImage("/footer.png");
-    const logoData = await loadImage("/logo.png");
-    const sponsorData = await loadImage("/sponsors.png");
+    // Use event date instead of generation date
+    const eventDateStr = competition?.startDate
+      ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+      : dateStr;
 
-    // Load Arabic font
-    const arabicFontBase64 = await loadFont("/fonts/Amiri-Regular.ttf");
+    // Load assets in parallel
+    const [headerData, footerData, logoData, sponsorData, arabicFontBase64] =
+      await Promise.all([
+        loadImage("/header.png"),
+        loadImage("/footer.png"),
+        loadImage("/logo.png"),
+        loadImage("/sponsors.png"),
+        loadFont("/fonts/Amiri-Regular.ttf"),
+      ]);
 
     const doc = new jsPDF({
       orientation: "portrait",
@@ -4500,7 +5168,6 @@ const CompetitionRaces = () => {
       format: "a4",
     });
 
-    // Register Arabic font if loaded successfully
     let arabicFontName = null;
     if (arabicFontBase64) {
       try {
@@ -4519,17 +5186,42 @@ const CompetitionRaces = () => {
     const rightMargin = 196;
     const center = 105;
 
-    // Calculate header height
-    let headerHeight = 30;
+    // Header height (reduced spacing)
+    let headerHeight = 32;
     if (headerData) {
       const imgProps = doc.getImageProperties(headerData);
-      const ratio = imgProps.width / imgProps.height;
-      const w = pageWidth;
-      const h = w / ratio;
-      headerHeight = h + 8;
+      headerHeight =
+        pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
     }
 
+    // Location (safe string extraction)
+    const compLocation = String(
+      competition?.location?.name ||
+        competition?.venue?.name ||
+        (typeof competition?.venue === "string" ? competition.venue : null) ||
+        (typeof competition?.location === "string"
+          ? competition.location
+          : null) ||
+        "Location",
+    );
+    const competitionTitle =
+      competition?.names?.en ||
+      competition?.name ||
+      competition?.code ||
+      "Competition";
+
+    // Helper: format name with uppercase last name
+    const formatNameForPdf = (a) => {
+      if (!a) return "Unknown";
+      const first = a.firstName || "";
+      const last = (a.lastName || "").toUpperCase();
+      return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
+    };
+
     let isFirstRace = true;
+
+    // Track which pages belong to which race (for per-race legends)
+    const racePageRanges = [];
 
     for (const race of racesWithResults) {
       if (!isFirstRace) {
@@ -4537,9 +5229,10 @@ const CompetitionRaces = () => {
       }
       isFirstRace = false;
 
+      const raceStartPage = doc.internal.getNumberOfPages();
+
       let yPos = headerHeight;
 
-      // Race info
       const categoryId = toDocumentId(race.category);
       const category = categoryId
         ? categories.find((item) => toDocumentId(item) === categoryId)
@@ -4549,284 +5242,370 @@ const CompetitionRaces = () => {
         ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
         : null;
 
-      // --- Race Header ---
-      doc.setFontSize(10);
-      doc.setFont(fontName, "normal");
-      doc.setTextColor(0, 0, 0);
-
-      let compLocation = "Location";
-      if (competition?.location) {
-        if (typeof competition.location === "string") {
-          compLocation = competition.location;
-        } else if (typeof competition.location === "object") {
-          compLocation =
-            competition.location.name ||
-            competition.location.city ||
-            competition.venue ||
-            "Location";
-        }
-      } else if (competition?.venue) {
-        compLocation = String(competition.venue);
-      }
-
-      doc.text(String(compLocation), leftMargin, yPos);
-      const compTitle = competition?.names?.en || competition?.code || "";
-      doc.text(String(compTitle), center, yPos, { align: "center" });
-      doc.text(String(dateStr), rightMargin, yPos, { align: "right" });
-
-      yPos += 3;
-      doc.setLineWidth(0.5);
-      doc.setDrawColor(0);
-      doc.line(leftMargin, yPos, rightMargin, yPos);
-      yPos += 8;
-
-      // Event Header
-      const eventKey = `${categoryId}_${boatClassId || "null"}`;
-      const eventNum =
-        eventNumberMap.get(eventKey) ||
-        category?.order ||
-        category?.number ||
-        "1";
-
-      doc.setFontSize(16);
+      // --- Header Section (matches RaceDetail) ---
+      doc.setFontSize(14);
       doc.setFont(fontName, "bold");
-      doc.text(String(eventNum), leftMargin, yPos);
+      doc.setTextColor(0, 0, 0);
+      doc.text(competitionTitle, center, yPos, { align: "center" });
 
-      doc.setFontSize(18);
+      doc.setFontSize(9);
+      doc.setFont(fontName, "normal");
+      doc.text(compLocation, leftMargin, yPos);
+      doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
+
+      yPos += 2;
+      doc.setLineWidth(0.5);
+      doc.line(leftMargin, yPos, rightMargin, yPos);
+      yPos += 5;
+
+      // --- Line 1: Race order | Results | Race code ---
+      doc.setFontSize(14);
+      doc.setFont(fontName, "bold");
+      doc.text(String(race.order || "1"), leftMargin, yPos);
       doc.text("Results", center, yPos, { align: "center" });
+      doc.text(generateRaceCode(category, boatClass), rightMargin, yPos, {
+        align: "right",
+      });
 
-      const eventCode = generateRaceCode(category, boatClass);
-      doc.setFontSize(16);
-      doc.text(String(eventCode), rightMargin, yPos, { align: "right" });
-
-      yPos += 6;
-      doc.setFontSize(8);
+      // --- Line 2: (Event) | Category + Boat Class | Phase ---
+      yPos += 5;
+      doc.setFontSize(9);
       doc.setFont(fontName, "normal");
       doc.text("(Event)", leftMargin, yPos);
-
-      const catTitle = category?.titles?.en || "Category";
-      const boatTitle = boatClass?.names?.en || "";
-      const fullEventName = `${catTitle} ${boatTitle}`.trim();
-
       doc.setFontSize(12);
       doc.setFont(fontName, "bold");
+      const fullEventName =
+        `${category?.titles?.en || ""} ${boatClass?.names?.en || ""}`.trim();
       doc.text(fullEventName, center, yPos, { align: "center" });
+      doc.setFontSize(9);
+      doc.setFont(fontName, "normal");
+      doc.text(race.phase || "Final", rightMargin, yPos, { align: "right" });
 
-      const phaseName = race.name || "Final";
-      doc.text(String(phaseName), rightMargin, yPos, { align: "right" });
-
-      // Arabic subtitle
+      // --- Line 3: Arabic text (center) | Distance (right) ---
+      const raceDistance = race.distanceOverride || competition?.defaultDistance;
       const catTitleAr = category?.titles?.ar || "";
       const boatTitleAr = boatClass?.names?.ar || "";
       const fullEventNameAr = `${catTitleAr} ${boatTitleAr}`.trim();
 
       if (fullEventNameAr && arabicFontName) {
-        yPos += 5;
-        doc.setFontSize(11);
+        yPos += 6;
+        doc.setFontSize(14);
         doc.setFont(arabicFontName, "normal");
         doc.text(fullEventNameAr, center, yPos, { align: "center" });
         doc.setFont(fontName, "normal");
-        yPos += 3;
+        doc.setFontSize(9);
+        if (raceDistance) {
+          doc.text(`Distance: ${raceDistance}m`, rightMargin, yPos, {
+            align: "right",
+          });
+        }
+      } else if (raceDistance) {
+        yPos += 4;
+        doc.setFontSize(9);
+        doc.text(`Distance: ${raceDistance}m`, center, yPos, {
+          align: "center",
+        });
       }
 
-      yPos += 5;
-      doc.setFontSize(10);
+      // --- Line 4: Start Time | Race # ---
+      yPos += 4;
+      doc.setFontSize(9);
       doc.setFont(fontName, "normal");
-
-      let startTimeStr = "09:00";
-      if (race.startTime) {
-        const d = new Date(race.startTime);
-        const hours = d.getHours().toString().padStart(2, "0");
-        const minutes = d.getMinutes().toString().padStart(2, "0");
-        startTimeStr = `${hours}:${minutes}`;
-      }
-
-      doc.text(`Start Time: ${startTimeStr}`, leftMargin, yPos);
-      doc.text(`Race ${race.order || "-"}`, rightMargin, yPos, {
+      const startTime = race.startTime
+        ? new Date(race.startTime).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "00:00";
+      doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
+      doc.setFont(fontName, "bold");
+      doc.text(`Race ${race.order || "1"}`, rightMargin, yPos, {
         align: "right",
       });
-      yPos += 8;
+      yPos += 4;
 
-      // Results table
-      const sortedLanes = [...(race.lanes || [])].sort((a, b) => {
-        if (a.position && b.position) return a.position - b.position;
-        if (a.position) return -1;
-        if (b.position) return 1;
+      // --- Calculate legend for bottom margin ---
+      const uniqueClubs = Array.from(
+        new Set(
+          (race.lanes || []).map((l) => toDocumentId(l.club)).filter(Boolean),
+        ),
+      )
+        .map((id) =>
+          (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
+        )
+        .filter(Boolean)
+        .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+
+      const legendLineHeight = 4;
+      const legendBoxHeight =
+        uniqueClubs.length > 0
+          ? uniqueClubs.length * legendLineHeight + 7
+          : 0;
+      const bottomMargin = 35 + legendBoxHeight + 14;
+
+      // Sort lanes by result (matching RaceDetail)
+      const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
+        const statusA = a.result?.status || "ok";
+        const statusB = b.result?.status || "ok";
+        const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+        const pA = priority[statusA] ?? 10;
+        const pB = priority[statusB] ?? 10;
+        if (pA !== pB) return pA - pB;
+        const posA = a.result?.finishPosition || 999;
+        const posB = b.result?.finishPosition || 999;
+        if (posA !== posB) return posA - posB;
         return (a.lane || 0) - (b.lane || 0);
       });
 
-      const tableBody = sortedLanes.map((lane) => {
+      // Find winning time for delta calculation
+      const winningTime = sortedLanes.find(
+        (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
+      )?.result?.elapsedMs;
+
+      // Build table data (matching RaceDetail)
+      const deltaMap = new Map();
+      const tableBody = sortedLanes.map((lane, rowIdx) => {
+        const clubCode =
+          lane.club?.code ||
+          lane.club?.name?.slice(0, 3).toUpperCase() ||
+          "-";
+
+        let athleteName = "Unassigned";
         const athleteId = toDocumentId(lane.athlete);
-        const athleteData = athleteId ? raceAthleteLookup.get(athleteId) : null;
-        const clubId = toDocumentId(lane.club);
-        const clubData = clubId ? raceClubLookup.get(clubId) : lane.club;
+        const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
 
-        const athleteName = athleteData
-          ? `${athleteData.firstName || ""} ${
-              athleteData.lastName || ""
-            }`.trim()
-          : lane.athleteName || "-";
-        const clubCode = clubData?.code || clubData?.name || "-";
-
-        const position = lane.result?.finishPosition;
-        const elapsedMs = lane.result?.elapsedMs;
+        const pos = lane.result?.finishPosition || "-";
         const status = lane.result?.status || "ok";
-
-        let timeStr = "-";
-        if (status !== "ok") {
-          timeStr = status.toUpperCase();
-        } else if (elapsedMs) {
-          timeStr = formatElapsedTime(elapsedMs);
+        let timeStr =
+          status !== "ok"
+            ? status.toUpperCase()
+            : formatElapsedTime(lane.result?.elapsedMs);
+        // Store time delta for 2nd place and below (rendered separately)
+        if (
+          status === "ok" &&
+          lane.result?.elapsedMs &&
+          pos > 1 &&
+          winningTime
+        ) {
+          const deltaMs = lane.result.elapsedMs - winningTime;
+          const deltaStr = formatDeltaSeconds(deltaMs);
+          if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
+        }
+        let points = 0;
+        if (
+          (status === "ok" || status === "dnf") &&
+          pos > 0 &&
+          pos <= 8
+        ) {
+          points = calculatePoints(pos, activeRankingSystem);
         }
 
-        const points =
-          position && status === "ok"
-            ? calculatePoints(position, activeRankingSystem)
-            : 0;
+        if (athlete) {
+          athleteName = formatNameForPdf(athlete);
+        } else if (Array.isArray(lane.crew) && lane.crew.length > 0) {
+          athleteName = lane.crew
+            .map((m, i, arr) => {
+              const mId = toDocumentId(m);
+              const member = mId ? raceAthleteLookup.get(mId) : null;
+              const name = formatNameForPdf(member);
+              let position = "";
+              if (arr.length > 1) {
+                if (i === 0) position = "(b) ";
+                else if (i === arr.length - 1) position = "(s) ";
+                else position = `(${i + 1}) `;
+              }
+              return `${position}${name}`;
+            })
+            .join("\n");
+        }
 
-        return [
-          position || "-",
-          lane.lane || "-",
-          clubCode,
-          athleteName,
-          timeStr,
-          points,
-        ];
+        return [pos, lane.lane, clubCode, athleteName, timeStr, points];
       });
 
       autoTable(doc, {
         startY: yPos,
-        head: [["Pos", "Lane", "Club", "Athlete", "Time", "Points"]],
+        head: [["Rank", "Lane", "Club", "Name", "Time", "Points"]],
         body: tableBody,
         theme: "plain",
-        styles: {
-          fontSize: 8,
-          cellPadding: 1,
-          lineColor: [0, 0, 0],
-          lineWidth: 0.1,
-          font: fontName,
-        },
         headStyles: {
-          fillColor: [245, 245, 245],
+          fillColor: [255, 255, 255],
           textColor: [0, 0, 0],
           fontStyle: "bold",
-          halign: "center",
           lineWidth: 0.1,
+          lineColor: [0, 0, 0],
+          cellPadding: 1,
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 0.8,
+          minCellHeight: 6.5,
           font: fontName,
         },
         columnStyles: {
-          0: { halign: "center", cellWidth: 14 },
-          1: { halign: "center", cellWidth: 14 },
-          2: { halign: "center", cellWidth: 20 },
-          3: { halign: "left", cellWidth: "auto" },
-          4: { halign: "center", cellWidth: 30 },
-          5: { halign: "center", cellWidth: 20 },
+          0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
+          1: { cellWidth: 12 },
+          2: { cellWidth: 25, fontStyle: "bold" },
+          3: { fontStyle: "bold" },
+          4: { cellWidth: 22, halign: "right", fontStyle: "bold", fontSize: 9 },
+          5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
         },
-        margin: { left: leftMargin, right: 14, bottom: 30, top: headerHeight },
+        margin: {
+          left: leftMargin,
+          right: 14,
+          bottom: bottomMargin,
+          top: headerHeight,
+        },
+        didParseCell: (data) => {
+          if (data.section === "head") {
+            data.cell.styles.lineWidth = {
+              top: 0.1,
+              bottom: 0.1,
+              left: 0.1,
+              right: 0.1,
+            };
+          }
+        },
+        didDrawCell: (data) => {
+          if (data.section === "body" && data.column.index === 4) {
+            const delta = deltaMap.get(data.row.index);
+            if (delta) {
+              doc.setFontSize(7);
+              doc.setFont(fontName, "normal");
+              doc.setTextColor(80, 80, 80);
+              const pad =
+                typeof data.cell.styles.cellPadding === "number"
+                  ? data.cell.styles.cellPadding
+                  : data.cell.styles.cellPadding?.right || 0;
+              const x = data.cell.x + data.cell.width - pad;
+              const y = data.cell.y + data.cell.height - 0.3;
+              doc.text(delta, x, y, { align: "right" });
+              doc.setFontSize(8);
+              doc.setFont(fontName, "normal");
+              doc.setTextColor(0, 0, 0);
+            }
+          }
+        },
+      });
+
+      yPos = doc.lastAutoTable.finalY + 4;
+
+      // --- Status Box (ensure no overlap with legend) ---
+      const progressionEnd = yPos + 7;
+      const legendTop = uniqueClubs.length > 0
+        ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
+        : pageHeight - 35;
+      if (progressionEnd < legendTop) {
+        doc.setDrawColor(0);
+        doc.setLineWidth(0.3);
+        doc.rect(leftMargin, yPos, 182, 7);
+        doc.setFontSize(8);
+        doc.setFont(fontName, "normal");
+        doc.text(
+          "Official Results - Times are final.",
+          leftMargin + 2,
+          yPos + 5,
+        );
+      }
+
+      const raceEndPage = doc.internal.getNumberOfPages();
+      racePageRanges.push({
+        startPage: raceStartPage,
+        endPage: raceEndPage,
+        clubs: uniqueClubs,
       });
     }
 
-    // Add headers and footers to all pages
+    // --- Post-Processing: Add Header, Legend & Footer to all pages ---
     const pageCount = doc.internal.getNumberOfPages();
-
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
 
-      // Header
+      // Header Image
       if (headerData) {
         const imgProps = doc.getImageProperties(headerData);
-        const ratio = imgProps.width / imgProps.height;
-        const w = pageWidth;
-        const h = w / ratio;
-        doc.addImage(headerData, "PNG", 0, 0, w, h);
+        const h = pageWidth / (imgProps.width / imgProps.height);
+        doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
         doc.setDrawColor(128, 0, 0);
         doc.setLineWidth(0.8);
-        doc.line(leftMargin, h + 2, rightMargin, h + 2);
-      } else if (logoData) {
-        doc.setFillColor(255, 255, 255);
-        doc.rect(0, 0, pageWidth, 25, "F");
-        const imgProps = doc.getImageProperties(logoData);
-        const ratio = imgProps.width / imgProps.height;
-        let w = 20;
-        let h = 20;
-        if (ratio > 1) h = w / ratio;
-        else w = h * ratio;
-        doc.addImage(logoData, "PNG", leftMargin, 2.5, w, h);
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(0, 0, 0);
-        doc.text(competition?.names?.en || "Results", 40, 15);
-        doc.setDrawColor(128, 0, 0);
-        doc.setLineWidth(0.8);
-        doc.line(leftMargin, 24, rightMargin, 24);
+        doc.line(leftMargin, h + 5, rightMargin, h + 5);
       }
 
-      // Footer
+      // Legend on last page of each race
+      const raceRange = racePageRanges.find((r) => r.endPage === i);
+      if (raceRange && raceRange.clubs.length > 0) {
+        const clubs = raceRange.clubs;
+        const lineHeight = 4;
+        const boxHeight = clubs.length * lineHeight + 7;
+        const legendY = pageHeight - 35 - boxHeight;
+
+        doc.setDrawColor(0);
+        doc.setLineWidth(0.3);
+        doc.rect(leftMargin, legendY, 182, boxHeight);
+
+        doc.setFontSize(9);
+        doc.setFont(fontName, "bold");
+        doc.setTextColor(0, 0, 0);
+        doc.text("Legend:", leftMargin + 2, legendY + 5);
+
+        doc.setFontSize(8);
+        let clubY = legendY + 9;
+        for (const club of clubs) {
+          const code = club.code || "---";
+          const frenchName =
+            club.name || club.names?.fr || club.names?.en || "";
+          const arabicName = club.nameAr || club.names?.ar || "";
+
+          doc.setFont(fontName, "bold");
+          doc.text(code + ": ", leftMargin + 4, clubY);
+
+          const codeWidth = doc.getTextWidth(code + ": ");
+          doc.setFont(fontName, "normal");
+          doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+
+          if (arabicName && arabicFontName) {
+            const frenchWidth = doc.getTextWidth(frenchName);
+            doc.setFont(arabicFontName, "normal");
+            doc.text(
+              " : " + arabicName,
+              leftMargin + 4 + codeWidth + frenchWidth,
+              clubY,
+            );
+            doc.setFont(fontName, "normal");
+          }
+          clubY += lineHeight;
+        }
+      }
+
+      // Footer Image
       if (footerData) {
         const imgProps = doc.getImageProperties(footerData);
-        const ratio = imgProps.width / imgProps.height;
-        const w = pageWidth;
-        const h = w / ratio;
+        const h = pageWidth / (imgProps.width / imgProps.height);
+        doc.addImage(footerData, "PNG", 0, pageHeight - h - 3, pageWidth, h);
         doc.setDrawColor(128, 0, 0);
         doc.setLineWidth(0.8);
         doc.line(
           leftMargin,
-          pageHeight - h - 3,
+          pageHeight - h - 5,
           rightMargin,
-          pageHeight - h - 3,
+          pageHeight - h - 5,
         );
-        doc.addImage(footerData, "PNG", 0, pageHeight - h, w, h);
         doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - h - 6, {
-          align: "right",
-        });
-      } else if (sponsorData) {
-        const imgProps = doc.getImageProperties(sponsorData);
-        const ratio = imgProps.width / imgProps.height;
-        let w = 180;
-        let h = w / ratio;
-        if (h > 20) {
-          h = 20;
-          w = h * ratio;
-        }
-        const x = leftMargin + (180 - w) / 2;
-        doc.setDrawColor(128, 0, 0);
-        doc.setLineWidth(0.8);
-        doc.line(
-          leftMargin,
-          pageHeight - h - 8,
-          rightMargin,
-          pageHeight - h - 8,
-        );
-        doc.addImage(sponsorData, "PNG", x, pageHeight - h - 3, w, h);
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100, 100, 100);
+        doc.setTextColor(100);
         doc.text(
           `Page ${i} of ${pageCount}`,
           rightMargin,
-          pageHeight - h - 11,
-          {
-            align: "right",
-          },
+          pageHeight - h - 8,
+          { align: "right" },
         );
-      } else {
-        doc.setDrawColor(128, 0, 0);
-        doc.setLineWidth(0.8);
-        doc.line(leftMargin, pageHeight - 15, rightMargin, pageHeight - 15);
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - 8, {
-          align: "right",
-        });
       }
     }
 
     doc.save(`Results_${competition?.code || "Competition"}_All.pdf`);
     toast.success(`Exported results for ${racesWithResults.length} race(s)`);
+    } catch (err) {
+      console.error("exportAllResultsPDF error:", err);
+      toast.error("Failed to export Results PDF: " + (err.message || "Unknown error"));
+    }
   }, [
     sortedRaces,
     competition,
@@ -4835,10 +5614,15 @@ const CompetitionRaces = () => {
     raceAthleteLookup,
     raceClubLookup,
     eventNumberMap,
+    activeRankingSystem,
   ]);
 
   const handleCategorySelect = (categoryId, statsOverride = null) => {
     setAutoGenState((prev) => ({ ...prev, category: categoryId }));
+
+    // Always clear previous entries when switching categories
+    setEntries([]);
+
     // Find entries for this category and populate the start list
     const sourceStats = statsOverride || registrationStats;
 
@@ -5165,43 +5949,77 @@ const CompetitionRaces = () => {
         </div>
       ) : competition ? (
         <div className="space-y-6">
-          {/* Dashboard Section */}
-          <section className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                Total Athletes
-              </p>
+          {/* Dashboard Section - Enhanced */}
+          <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Total Athletes
+                </p>
+                <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <Icons.Users />
+                </div>
+              </div>
               <p className="mt-2 text-3xl font-bold text-slate-900">
                 {combinedStats?.totalAthletes || 0}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                Registered Clubs
-              </p>
+            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Registered Clubs
+                </p>
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                  <span className="text-indigo-600">🏛️</span>
+                </div>
+              </div>
               <p className="mt-2 text-3xl font-bold text-slate-900">
                 {combinedStats?.totalClubs || 0}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                Total Entries
-              </p>
+            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-purple-50 to-white p-4 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Total Entries
+                </p>
+                <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                  <span className="text-purple-600">📋</span>
+                </div>
+              </div>
               <p className="mt-2 text-3xl font-bold text-slate-900">
                 {combinedStats?.totalEntries || 0}
               </p>
             </div>
+            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Races Generated
+                </p>
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                  <span className="text-emerald-600">🏁</span>
+                </div>
+              </div>
+              <p className="mt-2 text-3xl font-bold text-slate-900">
+                {sortedRaces.length || 0}
+              </p>
+            </div>
           </section>
 
-          {/* Categories Grid - Compact */}
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">
-              Categories Overview
-            </h2>
+          {/* Categories Grid - Enhanced */}
+          <section className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                Categories Overview
+              </h2>
+              <span className="text-xs text-slate-400">
+                Click to load entries
+              </span>
+            </div>
             {loadingRegistration && !races.length ? (
-              <p className="text-sm text-slate-500">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 Loading registration data...
-              </p>
+              </div>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {combinedStats?.byCategory?.map((cat) => (
@@ -5209,10 +6027,26 @@ const CompetitionRaces = () => {
                     key={cat.id}
                     type="button"
                     onClick={() => handleCategorySelect(cat.id)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm font-medium text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                    className={`
+                      inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-200
+                      ${
+                        autoGenState.category === cat.id
+                          ? "border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200 shadow-sm"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 hover:shadow-sm"
+                      }
+                    `}
                   >
                     <span className="font-semibold">{cat.name}</span>
-                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-600">
+                    <span
+                      className={`
+                      rounded-full px-2 py-0.5 text-xs font-bold
+                      ${
+                        autoGenState.category === cat.id
+                          ? "bg-blue-200 text-blue-800"
+                          : "bg-slate-100 text-slate-600"
+                      }
+                    `}
+                    >
                       {cat.count}
                     </span>
                   </button>
@@ -5226,297 +6060,456 @@ const CompetitionRaces = () => {
             )}
           </section>
 
-          <div className="space-y-6">
-            <section className="space-y-6 rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-sm">
-              <div className="space-y-2">
-                <h2 className="text-lg font-semibold text-slate-900">
-                  Auto-generate races
-                </h2>
-                <p className="text-sm text-slate-500">
-                  Choose the category, add eligible athletes, and create races
-                  with automatic lane allocations.
-                </p>
-              </div>
+          <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-4 items-start">
+            {/* LEFT COLUMN: Race Generator + Start List */}
+            <div className="space-y-4">
+            {/* Generation Progress Overlay */}
+            <GenerationProgress
+              isGenerating={isGenerating}
+              progress={generationProgress}
+              stage={generationStage}
+            />
 
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 items-end">
-                <div className="space-y-2">
-                  <Label htmlFor="autoCategory">Category</Label>
-                  <Select
-                    id="autoCategory"
-                    name="category"
-                    value={autoGenState.category}
-                    onChange={handleAutoGenFieldChange}
-                  >
-                    <option value="">Select category</option>
-                    {allowedCategories.map((category) => {
-                      const id = toDocumentId(category);
-                      const abbr = category.abbreviation || category.code || "";
-                      const fullName = category.titles?.en || "";
-                      // Show "Abbr - Full Name" for clarity
-                      const label = fullName
-                        ? `${abbr} - ${fullName}`
-                        : abbr || `Category ${id?.slice(-4)}`;
-                      return (
-                        <option key={id} value={id}>
-                          {label}
-                        </option>
-                      );
-                    })}
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="autoBoatClass">Boat class</Label>
-                  <Select
-                    id="autoBoatClass"
-                    name="boatClass"
-                    value={autoGenState.boatClass}
-                    onChange={handleAutoGenFieldChange}
-                  >
-                    <option value="">All boat classes</option>
-                    {allowedBoatClasses.map((boatClass) => {
-                      const id = toDocumentId(boatClass);
-                      const code = boatClass.code || "";
-                      const fullName = boatClass.names?.en || "";
-                      const weight = boatClass.weightClass;
-                      // Show "Code - Full Name (Weight)" to distinguish open vs lightweight
-                      const weightSuffix =
-                        weight && weight !== "open"
-                          ? ` (${weight.charAt(0).toUpperCase() + weight.slice(1)})`
-                          : "";
-                      const label = fullName
-                        ? `${code} - ${fullName}${weightSuffix}`
-                        : code || `Boat class ${id?.slice(-4)}`;
-                      return (
-                        <option key={id} value={id}>
-                          {label}
-                        </option>
-                      );
-                    })}
-                  </Select>
-                </div>
+            <section className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-lg overflow-hidden relative">
+              {/* Header with gradient accent */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="autoJourney">Journey index</Label>
-                  <Input
-                    id="autoJourney"
-                    name="journeyIndex"
-                    type="number"
-                    min="1"
-                    value={autoGenState.journeyIndex}
-                    onChange={handleAutoGenFieldChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="autoLaneCount">Lanes per race</Label>
-                  <Input
-                    id="autoLaneCount"
-                    name="lanesPerRace"
-                    type="number"
-                    min="1"
-                    max={getMaxLanesForDiscipline(competition?.discipline)}
-                    value={autoGenState.lanesPerRace}
-                    onChange={handleAutoGenFieldChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="autoStrategy">Seeding strategy</Label>
-                  <Select
-                    id="autoStrategy"
-                    name="strategy"
-                    value={autoGenState.strategy}
-                    onChange={handleAutoGenFieldChange}
-                  >
-                    <option value="random">Random lane draw</option>
-                    <option value="seeded">Use provided seeds</option>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="autoSession">Session label</Label>
-                  <Input
-                    id="autoSession"
-                    name="sessionLabel"
-                    value={autoGenState.sessionLabel}
-                    onChange={handleAutoGenFieldChange}
-                    placeholder="Morning programme"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="autoPrefix">Race prefix</Label>
-                  <Input
-                    id="autoPrefix"
-                    name="racePrefix"
-                    value={autoGenState.racePrefix}
-                    onChange={handleAutoGenFieldChange}
-                    placeholder="Heat"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="autoStartNumber">Start Race #</Label>
-                  <Input
-                    id="autoStartNumber"
-                    name="startRaceNumber"
-                    type="number"
-                    min="1"
-                    value={autoGenState.startRaceNumber}
-                    onChange={handleAutoGenFieldChange}
-                    placeholder="Auto"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="autoStartTime">Start Time</Label>
-                  <Input
-                    id="autoStartTime"
-                    name="startTime"
-                    type="datetime-local"
-                    value={autoGenState.startTime}
-                    onChange={handleAutoGenFieldChange}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="autoInterval">Interval (min)</Label>
-                  <Input
-                    id="autoInterval"
-                    name="intervalMinutes"
-                    type="number"
-                    min="0"
-                    value={autoGenState.intervalMinutes}
-                    onChange={handleAutoGenFieldChange}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="autoDistance">Distance (m)</Label>
-                  <Input
-                    id="autoDistance"
-                    name="distance"
-                    type="number"
-                    min="0"
-                    step="100"
-                    value={autoGenState.distance}
-                    onChange={handleAutoGenFieldChange}
-                    placeholder="Default"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 pb-2">
-                  <input
-                    id="autoOverwrite"
-                    name="overwriteExisting"
-                    type="checkbox"
-                    checked={autoGenState.overwriteExisting}
-                    onChange={handleAutoGenFieldChange}
-                    className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
-                  />
-                  <Label htmlFor="autoOverwrite" className="text-sm">
-                    Overwrite existing
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2 pb-2">
-                  <input
-                    id="allowJuniorsInSenior"
-                    name="allowJuniorsInSenior"
-                    type="checkbox"
-                    checked={autoGenState.allowJuniorsInSenior || false}
-                    onChange={handleAutoGenFieldChange}
-                    className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
-                  />
-                  <Label htmlFor="allowJuniorsInSenior" className="text-sm">
-                    Allow juniors in senior category
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2 pb-2">
-                  <input
-                    id="allowMastersInSenior"
-                    name="allowMastersInSenior"
-                    type="checkbox"
-                    checked={autoGenState.allowMastersInSenior || false}
-                    onChange={handleAutoGenFieldChange}
-                    className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
-                  />
-                  <Label htmlFor="allowMastersInSenior" className="text-sm">
-                    Allow masters in senior category
-                  </Label>
-                </div>
-                {(user?.role === "admin" ||
-                  user?.role === "jury_president") && (
-                  <div className="flex items-center gap-2 pb-2 text-blue-600">
-                    <input
-                      id="allowMultipleEntries"
-                      name="allowMultipleEntries"
-                      type="checkbox"
-                      checked={autoGenState.allowMultipleEntries}
-                      onChange={handleAutoGenFieldChange}
-                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <Label
-                      htmlFor="allowMultipleEntries"
-                      className="text-sm font-medium"
-                    >
-                      Allow multiple entries per athlete
-                    </Label>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                    <Icons.Sparkles />
                   </div>
-                )}
-                {(user?.role === "admin" ||
-                  user?.role === "jury_president") && (
-                  <div className="flex items-center gap-2 pb-2 text-amber-600">
-                    <input
-                      id="bypassAgeVerification"
-                      name="bypassAgeVerification"
-                      type="checkbox"
-                      checked={autoGenState.bypassAgeVerification || false}
-                      onChange={handleAutoGenFieldChange}
-                      className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                    />
-                    <Label
-                      htmlFor="bypassAgeVerification"
-                      className="text-sm font-medium"
-                    >
-                      Bypass age verification (for past competitions)
-                    </Label>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      Start list ({relevantEntries.length})
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Add competitors by name or license number, then adjust
-                      seeds before generating.
+                    <h2 className="text-lg font-bold text-slate-900">
+                      Race Generator
+                    </h2>
+                    <p className="text-sm text-slate-500">
+                      Create races with automatic lane allocations
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                </div>
+                {/* Quick Stats */}
+                <div className="hidden md:flex items-center gap-3">
+                  <div className="text-center px-3 py-1 rounded-lg bg-blue-50 border border-blue-100">
+                    <p className="text-xs text-blue-600 font-medium">Entries</p>
+                    <p className="text-lg font-bold text-blue-700">
+                      {relevantEntries.length}
+                    </p>
+                  </div>
+                  <div className="text-center px-3 py-1 rounded-lg bg-indigo-50 border border-indigo-100">
+                    <p className="text-xs text-indigo-600 font-medium">Heats</p>
+                    <p className="text-lg font-bold text-indigo-700">
+                      {Math.ceil(
+                        relevantEntries.length /
+                          (parseInt(autoGenState.lanesPerRace) || 6),
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Validation Feedback */}
+              <ValidationFeedback
+                errors={validationErrors}
+                warnings={validationWarnings}
+              />
+
+
+
+              {/* Main Configuration Grid */}
+              <div className="grid gap-3 lg:grid-cols-3 mb-4">
+                {/* Event Selection Card */}
+                <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
+                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                    <span className="text-base">📋</span> Event
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="autoCategory"
+                        className="text-xs text-slate-500"
+                      >
+                        Category
+                      </Label>
+                      <Select
+                        id="autoCategory"
+                        name="category"
+                        value={autoGenState.category}
+                        onChange={handleAutoGenFieldChange}
+                        className="h-8 text-xs"
+                      >
+                        <option value="">Select category</option>
+                        {allowedCategories.map((category) => {
+                          const id = toDocumentId(category);
+                          const abbr =
+                            category.abbreviation || category.code || "";
+                          const fullName = category.titles?.en || "";
+                          const label = fullName
+                            ? `${abbr} - ${fullName}`
+                            : abbr || `Category ${id?.slice(-4)}`;
+                          return (
+                            <option key={id} value={id}>
+                              {label}
+                            </option>
+                          );
+                        })}
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="autoBoatClass"
+                        className="text-xs text-slate-500"
+                      >
+                        Boat Class
+                      </Label>
+                      <Select
+                        id="autoBoatClass"
+                        name="boatClass"
+                        value={autoGenState.boatClass}
+                        onChange={handleAutoGenFieldChange}
+                        className="h-8 text-xs"
+                      >
+                        <option value="">All boat classes</option>
+                        {allowedBoatClasses.map((boatClass) => {
+                          const id = toDocumentId(boatClass);
+                          const code = boatClass.code || "";
+                          const fullName = boatClass.names?.en || "";
+                          const weight = boatClass.weightClass;
+                          const weightSuffix =
+                            weight && weight !== "open"
+                              ? ` (${weight.charAt(0).toUpperCase() + weight.slice(1)})`
+                              : "";
+                          const label = fullName
+                            ? `${code} - ${fullName}${weightSuffix}`
+                            : code || `Boat class ${id?.slice(-4)}`;
+                          return (
+                            <option key={id} value={id}>
+                              {label}
+                            </option>
+                          );
+                        })}
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="autoJourney"
+                          className="text-xs text-slate-500"
+                        >
+                          Journey
+                        </Label>
+                        <Input
+                          id="autoJourney"
+                          name="journeyIndex"
+                          type="number"
+                          min="1"
+                          value={autoGenState.journeyIndex}
+                          onChange={handleAutoGenFieldChange}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="autoLaneCount"
+                          className="text-xs text-slate-500"
+                        >
+                          Lanes/Race
+                        </Label>
+                        <Input
+                          id="autoLaneCount"
+                          name="lanesPerRace"
+                          type="number"
+                          min="1"
+                          max={getMaxLanesForDiscipline(
+                            competition?.discipline,
+                          )}
+                          value={autoGenState.lanesPerRace}
+                          onChange={handleAutoGenFieldChange}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Race Settings Card */}
+                <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
+                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                    <span className="text-base">⚙️</span> Settings
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="autoStrategy"
+                          className="text-xs text-slate-500"
+                        >
+                          Strategy
+                        </Label>
+                        <Select
+                          id="autoStrategy"
+                          name="strategy"
+                          value={autoGenState.strategy}
+                          onChange={handleAutoGenFieldChange}
+                          className="h-8 text-xs"
+                        >
+                          <option value="random">Random</option>
+                          <option value="seeded">Seeded</option>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="autoPrefix"
+                          className="text-xs text-slate-500"
+                        >
+                          Race Prefix
+                        </Label>
+                        <Input
+                          id="autoPrefix"
+                          name="racePrefix"
+                          value={autoGenState.racePrefix}
+                          onChange={handleAutoGenFieldChange}
+                          placeholder="Heat"
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="autoSession"
+                        className="text-xs text-slate-500"
+                      >
+                        Session Label
+                      </Label>
+                      <Input
+                        id="autoSession"
+                        name="sessionLabel"
+                        value={autoGenState.sessionLabel}
+                        onChange={handleAutoGenFieldChange}
+                        placeholder="Morning programme"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="autoDistance"
+                        className="text-xs text-slate-500"
+                      >
+                        Distance (m)
+                      </Label>
+                      <Input
+                        id="autoDistance"
+                        name="distance"
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={autoGenState.distance}
+                        onChange={handleAutoGenFieldChange}
+                        placeholder="Default"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Timing Card */}
+                <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
+                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                    <Icons.Clock /> Schedule
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="autoStartTime"
+                        className="text-xs text-slate-500"
+                      >
+                        Start Time
+                      </Label>
+                      <Input
+                        id="autoStartTime"
+                        name="startTime"
+                        type="datetime-local"
+                        value={autoGenState.startTime}
+                        onChange={handleAutoGenFieldChange}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="autoInterval"
+                          className="text-xs text-slate-500"
+                        >
+                          Interval (min)
+                        </Label>
+                        <Input
+                          id="autoInterval"
+                          name="intervalMinutes"
+                          type="number"
+                          min="0"
+                          value={autoGenState.intervalMinutes}
+                          onChange={handleAutoGenFieldChange}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="autoStartNumber"
+                          className="text-xs text-slate-500"
+                        >
+                          Start Race #
+                        </Label>
+                        <Input
+                          id="autoStartNumber"
+                          name="startRaceNumber"
+                          type="number"
+                          min="1"
+                          value={autoGenState.startRaceNumber}
+                          onChange={handleAutoGenFieldChange}
+                          placeholder="Auto"
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+                    {/* Overwrite toggle */}
+                    <label className="flex items-center gap-3 p-2 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors">
+                      <input
+                        id="autoOverwrite"
+                        name="overwriteExisting"
+                        type="checkbox"
+                        checked={autoGenState.overwriteExisting}
+                        onChange={handleAutoGenFieldChange}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-slate-700">
+                        Overwrite existing races
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Advanced Options (Collapsible) */}
+              <div className="mb-4">
+                <button
+                  type="button"
+                  onClick={() => toggleSection("advanced")}
+                  className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors mb-3"
+                >
+                  <span
+                    className={`transition-transform duration-200 ${expandedSections.advanced ? "rotate-90" : ""}`}
+                  >
+                    <Icons.ChevronRight />
+                  </span>
+                  Advanced Options
+                </button>
+
+                {expandedSections.advanced && (
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 p-4 rounded-xl bg-slate-50 border border-slate-200 animate-in fade-in duration-200">
+                    <label className="flex items-center gap-3 p-3 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
+                      <input
+                        name="allowJuniorsInSenior"
+                        type="checkbox"
+                        checked={autoGenState.allowJuniorsInSenior || false}
+                        onChange={handleAutoGenFieldChange}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-slate-700">
+                        Allow juniors in senior
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-3 p-3 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
+                      <input
+                        name="allowMastersInSenior"
+                        type="checkbox"
+                        checked={autoGenState.allowMastersInSenior || false}
+                        onChange={handleAutoGenFieldChange}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-slate-700">
+                        Allow masters in senior
+                      </span>
+                    </label>
+                    {(user?.role === "admin" ||
+                      user?.role === "jury_president") && (
+                      <>
+                        <label className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200 cursor-pointer hover:border-blue-400 transition-colors">
+                          <input
+                            name="allowMultipleEntries"
+                            type="checkbox"
+                            checked={autoGenState.allowMultipleEntries}
+                            onChange={handleAutoGenFieldChange}
+                            className="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-blue-700">
+                            Multiple entries/athlete
+                          </span>
+                        </label>
+                        <label className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200 cursor-pointer hover:border-amber-400 transition-colors">
+                          <input
+                            name="bypassAgeVerification"
+                            type="checkbox"
+                            checked={
+                              autoGenState.bypassAgeVerification || false
+                            }
+                            onChange={handleAutoGenFieldChange}
+                            className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span className="text-sm text-amber-700">
+                            Bypass age check
+                          </span>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+
+
+              {/* Start List Section */}
+              <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm mb-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                      <Icons.Users />
+                      Start List
+                      <span className="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">
+                        {relevantEntries.length} entries
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Add competitors by name or license number
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
                     <Input
-                      placeholder="Search athletes..."
+                      placeholder="🔍 Search athletes..."
                       value={entrySearchTerm}
                       onChange={(event) =>
                         setEntrySearchTerm(event.target.value)
                       }
-                      className="w-56"
+                      className="w-56 h-8 text-xs"
                     />
                     <Button
                       type="button"
                       variant="outline"
+                      size="sm"
                       onClick={handleSortBySeed}
                       disabled={entries.length < 2}
                       title="Sort entries by seed number"
                     >
-                      Sort by Seed
+                      📊 Sort
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
+                      size="sm"
                       onClick={handleClearEntries}
                       disabled={!entries.length}
+                      className="text-slate-500 hover:text-rose-600"
                     >
-                      Clear list
+                      Clear
                     </Button>
                   </div>
                 </div>
@@ -5547,7 +6540,36 @@ const CompetitionRaces = () => {
                 />
               </div>
 
-              <div className="flex justify-end gap-2">
+              {/* Heat Distribution Preview (Collapsible) */}
+              {relevantEntries.length > 0 && (
+                <div className="mb-4">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection("preview")}
+                    className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors mb-3"
+                  >
+                    <span
+                      className={`transition-transform duration-200 ${expandedSections.preview ? "rotate-90" : ""}`}
+                    >
+                      <Icons.ChevronRight />
+                    </span>
+                    Heat Distribution Preview
+                  </button>
+
+                  {expandedSections.preview && (
+                    <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm animate-in fade-in duration-200">
+                      <HeatDistributionPreview
+                        entries={relevantEntries}
+                        lanesPerRace={autoGenState.lanesPerRace}
+                        strategy={autoGenState.strategy}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                 <Button
                   type="button"
                   variant="secondary"
@@ -5562,55 +6584,161 @@ const CompetitionRaces = () => {
                 <Button
                   type="button"
                   onClick={submitAutoGeneration}
-                  disabled={submittingAutoGen}
+                  disabled={
+                    submittingAutoGen ||
+                    relevantEntries.length === 0 ||
+                    !autoGenState.category
+                  }
+                  className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg px-6"
                 >
-                  {submittingAutoGen ? "Generating..." : "Generate races"}
+                  <Icons.Sparkles />
+                  {submittingAutoGen ? "Generating..." : "Generate Races"}
                 </Button>
               </div>
             </section>
+            </div>
 
+            {/* RIGHT COLUMN: Existing Races */}
             <section
               id="existing-races-section"
-              className="space-y-6 rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-sm"
+              className="space-y-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm xl:sticky xl:top-4"
             >
+              {/* Header */}
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-slate-900">
-                  Existing races ({sortedRaces.length})
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Icons.Trophy />
+                  Races
+                  <span className="ml-1 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                    {sortedRaces.length}
+                  </span>
                 </h2>
-                <div className="flex gap-2">
+                <div className="flex gap-1">
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
                     onClick={exportStartListPDF}
                     disabled={!sortedRaces.length}
+                    title="Export Start List PDF"
                   >
-                    Export Start List
+                    📄 Start List
                   </Button>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
                     onClick={() => exportAllResultsPDF()}
                     disabled={!sortedRaces.length}
+                    title="Export Results PDF"
                   >
-                    Export Results
+                    📊 Results
                   </Button>
-                  <Button type="button" variant="ghost" onClick={loadRaces}>
-                    Refresh
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={loadRaces}
+                    title="Refresh"
+                  >
+                    🔄
                   </Button>
                 </div>
               </div>
 
-              <DataGrid
-                data={sortedRaces}
-                columns={raceColumns}
-                loading={loadingRaces}
-                emptyMessage="No races scheduled yet"
-                pageSize={8}
-                gridId="competition-races-grid"
-              />
+              {/* Race Cards List */}
+              {loadingRaces ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="ml-2 text-sm text-slate-500">Loading races...</span>
+                </div>
+              ) : sortedRaces.length === 0 ? (
+                <div className="text-center py-8 text-sm text-slate-400">
+                  <span className="text-2xl block mb-2">🏁</span>
+                  No races scheduled yet
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+                  {sortedRaces.map((race) => {
+                    const categoryId = toDocumentId(race.category);
+                    const boatClassId = toDocumentId(race.boatClass);
+                    const category = categoryId
+                      ? categories.find((item) => toDocumentId(item) === categoryId)
+                      : null;
+                    const boatClass = boatClassId
+                      ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
+                      : null;
+                    const eventCode = generateRaceCode(category, boatClass);
+                    const totalBoats = (race.lanes || []).length;
+                    const statusMap = {
+                      completed: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: '✓' },
+                      in_progress: { bg: 'bg-amber-100', text: 'text-amber-700', label: '▶' },
+                      scheduled: { bg: 'bg-slate-100', text: 'text-slate-500', label: '○' },
+                    };
+                    const st = statusMap[race.status] || statusMap.scheduled;
+                    const schedTime = race.startTime
+                      ? new Date(race.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                      : null;
 
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-900">
+                    return (
+                      <div
+                        key={race._id}
+                        className="group flex items-center gap-2 p-2.5 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-blue-50/50 hover:border-blue-200 transition-all duration-150 cursor-pointer"
+                        onClick={() => navigate(`/competitions/${competitionId}/races/${race._id}`)}
+                      >
+                        {/* Race # */}
+                        <div className="flex-shrink-0 w-7 h-7 rounded-md bg-white border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                          {race.order || '-'}
+                        </div>
+
+                        {/* Event Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-slate-800 truncate">{eventCode}</span>
+                            <span className={`flex-shrink-0 w-4 h-4 rounded-full ${st.bg} ${st.text} flex items-center justify-center text-[10px] font-bold`}>
+                              {st.label}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[11px] text-slate-500 truncate">{race.name || '-'}</span>
+                            {schedTime && (
+                              <span className="flex-shrink-0 text-[10px] text-slate-400">⏱ {schedTime}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Category Name (English) - Centered in empty space */}
+                        <div className="hidden sm:block flex-1 text-center px-2">
+                           <span className="text-[11px] font-medium text-slate-500 truncate block">
+                            {category?.titles?.en || category?.name || '-'}
+                           </span>
+                        </div>
+
+                        {/* Boats count */}
+                        <div className="flex-shrink-0 text-center">
+                          <span className="text-xs font-semibold text-slate-600">{totalBoats}</span>
+                          <span className="text-[10px] text-slate-400 block leading-none">boats</span>
+                        </div>
+
+                        {/* Delete button */}
+                        <button
+                          type="button"
+                          className="flex-shrink-0 opacity-0 group-hover:opacity-100 w-6 h-6 rounded flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all text-xs"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteRace(race._id); }}
+                          title="Delete race"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                <h3 className="text-xs font-semibold text-slate-900">
                   Quick lane swap
                 </h3>
                 <p className="mt-1 text-xs text-slate-500">
@@ -5618,7 +6746,7 @@ const CompetitionRaces = () => {
                   the draw.
                 </p>
 
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div className="mt-3 grid gap-3 grid-cols-1">
                   <div className="space-y-2">
                     <Label htmlFor="swapSourceRace">Source race</Label>
                     <Select
