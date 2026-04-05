@@ -32,6 +32,10 @@ import {
   FlaskConical,
 } from "lucide-react";
 import { generateRaceCode, formatCategoryAbbreviation } from "../lib/rowing";
+import {
+  buildStartListTableBody,
+  sortStartListLanes,
+} from "../lib/startListPdf";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -429,6 +433,89 @@ const RaceDetail = () => {
     if (!race || !competition) return;
     toast.info(`Generating ${isResults ? "Results" : "Start List"} PDF...`);
 
+    // Single-race export should only use the currently opened race.
+    const pseudoRace = {
+      ...race,
+      lanes: (race.lanes || []).map((l) => ({
+        ...l,
+        _originalRaceId: race._id,
+      })),
+    };
+
+    const allOrigRaces = [race];
+    const origRaceLookup = new Map(
+      allOrigRaces.filter((r) => r?._id).map((r) => [String(r._id), r]),
+    );
+
+    const distinctEnTitles = new Set();
+    const distinctArTitles = new Set();
+    const distinctCodes = new Set();
+    const distinctOrders = new Set();
+
+    allOrigRaces.forEach((r) => {
+      const c = categories.find(
+        (x) => toDocumentId(x) === toDocumentId(r.category),
+      );
+      const b = boatClasses.find(
+        (x) => toDocumentId(x) === toDocumentId(r.boatClass),
+      );
+      const evtEn = `${c?.titles?.en || ""}`.trim();
+      const evtAr = `${c?.titles?.ar || ""}`.trim();
+      if (evtEn) distinctEnTitles.add(evtEn);
+      if (evtAr) distinctArTitles.add(evtAr);
+      if (c || b) distinctCodes.add(generateRaceCode(c, b));
+      if (r.order) distinctOrders.add(r.order);
+    });
+
+    let fullEventName =
+      `${category?.titles?.en || ""} ${boatClass?.names?.en || ""}`.trim();
+    if (!fullEventName) {
+      fullEventName = Array.from(distinctEnTitles).join(" / ");
+    }
+    const fullEventNameAr =
+      `${category?.titles?.ar || ""} ${boatClass?.names?.ar || ""}`.trim() ||
+      Array.from(distinctArTitles).join(" / ");
+    const rightHeaderCode = Array.from(distinctCodes).join(" / ");
+    const sequenceOrderStr = String(race?.order || 1);
+    const formattedHeaderCode = (
+      rightHeaderCode || generateRaceCode(category, boatClass)
+    )
+      .replace(/([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g, "$1 $2")
+      .replace(/X/g, "x");
+
+    const explicitNonFinalPhases = Array.from(
+      new Set(
+        allOrigRaces
+          .map((r) => String(r?.phase || "").trim())
+          .filter((p) => p && !/^final$/i.test(p)),
+      ),
+    );
+    const journeyValues = Array.from(
+      new Set(
+        allOrigRaces
+          .map((r) => Number(r?.journeyIndex))
+          .filter((j) => Number.isFinite(j) && j > 0),
+      ),
+    ).sort((a, b) => a - b);
+    const configuredMaxJourney =
+      Number(
+        competition?.maximumJourney ??
+          competition?.maxJourney ??
+          competition?.journeysCount,
+      ) || null;
+
+    let phaseStr = "Final";
+    if (explicitNonFinalPhases.length > 0) {
+      phaseStr = explicitNonFinalPhases.join(" / ");
+    } else if (journeyValues.length > 0) {
+      const reachedConfiguredFinal =
+        configuredMaxJourney != null &&
+        journeyValues.every((j) => j >= configuredMaxJourney);
+      phaseStr = reachedConfiguredFinal
+        ? "Final"
+        : `Journey ${journeyValues.join(" / ")}`;
+    }
+
     const dateStr = new Date().toLocaleDateString("en-GB", {
       weekday: "short",
       day: "numeric",
@@ -518,40 +605,39 @@ const RaceDetail = () => {
     // Line 1: Race order | Results/Start List | Race code
     doc.setFontSize(14);
     doc.setFont(fontName, "bold");
-    doc.text(String(race.order || "1"), leftMargin, yPos);
+    doc.text(
+      String(sequenceOrderStr || pseudoRace.order || "1"),
+      leftMargin,
+      yPos,
+    );
     doc.text(isResults ? "Results" : "Start List", center, yPos, {
       align: "center",
     });
-    doc.text(generateRaceCode(category, boatClass), rightMargin, yPos, {
-      align: "right",
-    });
+    doc.text(formattedHeaderCode, rightMargin, yPos, { align: "right" });
 
     // Line 2: (Event) | Category + Boat Class | Phase
     yPos += 5;
     doc.setFontSize(9);
     doc.setFont(fontName, "normal");
     doc.text("(Event)", leftMargin, yPos);
-    doc.setFontSize(12);
+    doc.setFontSize(10);
     doc.setFont(fontName, "bold");
-    const fullEventName =
-      `${category?.titles?.en || ""} ${boatClass?.names?.en || ""}`.trim();
+    fullEventName = fullEventName || `${category?.titles?.en || ""}`.trim();
     doc.text(fullEventName, center, yPos, { align: "center" });
     doc.setFontSize(9);
     doc.setFont(fontName, "normal");
-    doc.text(race.phase || "Final", rightMargin, yPos, { align: "right" });
+    doc.text(phaseStr, rightMargin, yPos, { align: "right" });
 
     // Line 3: Arabic text (center) | Distance (right)
-    const raceDistance = race.distanceOverride || competition?.defaultDistance;
-    if (arabicFontName && (category?.titles?.ar || boatClass?.names?.ar)) {
+    const raceDistance =
+      pseudoRace.distanceOverride ||
+      competition?.defaultDistance ||
+      competition?.distance;
+    if (arabicFontName && fullEventNameAr) {
       yPos += 6;
       doc.setFontSize(14);
       doc.setFont(arabicFontName, "normal");
-      doc.text(
-        `${category?.titles?.ar || ""} ${boatClass?.names?.ar || ""}`.trim(),
-        center,
-        yPos,
-        { align: "center" },
-      );
+      doc.text(fullEventNameAr, center, yPos, { align: "center" });
       doc.setFont(fontName, "normal");
       doc.setFontSize(9);
       if (raceDistance) {
@@ -568,22 +654,26 @@ const RaceDetail = () => {
     // Line 4: Start Time | Race #
     yPos += 4;
     doc.setFontSize(9);
-    const startTime = race.startTime
-      ? new Date(race.startTime).toLocaleTimeString([], {
+    const startTime = pseudoRace.startTime
+      ? new Date(pseudoRace.startTime).toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         })
       : "00:00";
     doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
     doc.setFont(fontName, "bold");
-    doc.text(`Race ${race.order}`, rightMargin, yPos, { align: "right" });
+    doc.text("Race 1", rightMargin, yPos, { align: "right" });
     yPos += 4;
 
     // --- Calculate legend height for bottom margin ---
     const uniqueClubs = Array.from(
-      new Set(race.lanes.map((l) => toDocumentId(l.club)).filter(Boolean)),
+      new Set(
+        pseudoRace.lanes.map((l) => toDocumentId(l.club)).filter(Boolean),
+      ),
     )
-      .map((id) => race.lanes.find((l) => toDocumentId(l.club) === id).club)
+      .map(
+        (id) => pseudoRace.lanes.find((l) => toDocumentId(l.club) === id).club,
+      )
       .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
 
     const legendLineHeight = 4;
@@ -593,24 +683,30 @@ const RaceDetail = () => {
     const bottomMargin = 35 + legendBoxHeight + 14;
 
     // --- Table ---
-    // For results, sort by position. For start list, ALWAYS sort by lane.
-    const exportLanes = [...(race?.lanes || [])].sort((a, b) => {
-      if (isResults) {
-        const statusA = a.result?.status || "ok";
-        const statusB = b.result?.status || "ok";
-
-        const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
-        const pA = priority[statusA] ?? 10;
-        const pB = priority[statusB] ?? 10;
-
-        if (pA !== pB) return pA - pB;
-
-        const posA = a.result?.finishPosition || 999;
-        const posB = b.result?.finishPosition || 999;
-        if (posA !== posB) return posA - posB;
-      }
-      return (a.lane || 0) - (b.lane || 0);
+    const sortedStartListLanes = sortStartListLanes({
+      lanes: pseudoRace?.lanes || [],
+      referenceRace: race,
+      originalRaceLookup: origRaceLookup,
+      toDocumentId,
     });
+
+    const exportLanes = isResults
+      ? [...(pseudoRace?.lanes || [])].sort((a, b) => {
+          const statusA = a.result?.status || "ok";
+          const statusB = b.result?.status || "ok";
+
+          const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+          const pA = priority[statusA] ?? 10;
+          const pB = priority[statusB] ?? 10;
+
+          if (pA !== pB) return pA - pB;
+
+          const posA = a.result?.finishPosition || 999;
+          const posB = b.result?.finishPosition || 999;
+          if (posA !== posB) return posA - posB;
+          return (a.lane || 0) - (b.lane || 0);
+        })
+      : sortedStartListLanes;
 
     // Find winning time for delta calculation
     const winnerElapsed = isResults
@@ -619,63 +715,32 @@ const RaceDetail = () => {
         )?.result?.elapsedMs
       : null;
 
+    const formatNameForPdf = (a) => {
+      if (!a) return "Unknown";
+      const first = a.firstName || "";
+      const last = (a.lastName || "").toUpperCase();
+      return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
+    };
+
+    const normalizeMember = (m) => {
+      if (!m || typeof m !== "object") return null;
+      return m;
+    };
+
     const deltaMap = new Map();
-    const tableBody = exportLanes.map((lane, rowIdx) => {
-      const athlete = lane.athlete;
+    const resultsTableBody = exportLanes.map((lane, rowIdx) => {
+      const athlete = normalizeMember(lane.athlete);
       const clubCode =
         lane.club?.code || lane.club?.name?.slice(0, 3).toUpperCase() || "-";
 
       let athleteName = "Unassigned";
-      let license = "";
-      let dob = "";
-      let timeStr = "";
-      let points = 0;
-
-      if (isResults) {
-        const pos = lane.result?.finishPosition || "-";
-        const status = lane.result?.status || "ok";
-        timeStr =
-          status !== "ok"
-            ? status.toUpperCase()
-            : formatElapsedTime(lane.result?.elapsedMs);
-        // Store time delta for 2nd place and below (rendered separately)
-        if (
-          status === "ok" &&
-          lane.result?.elapsedMs &&
-          pos > 1 &&
-          winnerElapsed
-        ) {
-          const deltaMs = lane.result.elapsedMs - winnerElapsed;
-          const deltaStr = formatDeltaSeconds(deltaMs);
-          if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
-        }
-        if (
-          (status === "ok" || status === "dnf") &&
-          pos > 0 &&
-          pos <= 8
-        ) {
-          points = calculatePoints(pos, activeRankingSystem);
-        }
-      }
-
-      // Helper to format name with uppercase last name
-      const formatNameForPdf = (a) => {
-        if (!a) return "Unknown";
-        const first = a.firstName || "";
-        const last = (a.lastName || "").toUpperCase();
-        return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
-      };
-
       if (athlete) {
         athleteName = formatNameForPdf(athlete);
-        license = athlete.licenseNumber || "";
-        dob = athlete.birthDate
-          ? new Date(athlete.birthDate).toLocaleDateString("en-GB")
-          : "";
-      } else if (lane.crew?.length > 0) {
+      } else if (Array.isArray(lane.crew) && lane.crew.length > 0) {
         athleteName = lane.crew
           .map((m, i, arr) => {
-            const name = formatNameForPdf(m);
+            const member = normalizeMember(m);
+            const name = formatNameForPdf(member);
             let pos = "";
             if (arr.length > 1) {
               if (i === 0) pos = "(b) ";
@@ -684,35 +749,81 @@ const RaceDetail = () => {
             }
             return `${pos}${name}`;
           })
-          .join("\n");
-        license = lane.crew.map((m) => m.licenseNumber || "-").join("\n");
-        dob = lane.crew
-          .map((m) =>
-            m.birthDate
-              ? new Date(m.birthDate).toLocaleDateString("en-GB")
-              : "-",
-          )
-          .join("\n");
+          .join(" / ");
       }
 
-      return isResults
-        ? [
-            lane.result?.finishPosition || "-",
-            lane.lane,
-            clubCode,
-            athleteName,
-            timeStr,
-            points,
-          ]
-        : [lane.lane, clubCode, athleteName, license, dob];
+      const pos = lane.result?.finishPosition || "-";
+      const status = lane.result?.status || "ok";
+      const timeStr =
+        status !== "ok"
+          ? status.toUpperCase()
+          : formatElapsedTime(lane.result?.elapsedMs);
+
+      if (
+        status === "ok" &&
+        lane.result?.elapsedMs &&
+        pos > 1 &&
+        winnerElapsed
+      ) {
+        const deltaMs = lane.result.elapsedMs - winnerElapsed;
+        const deltaStr = formatDeltaSeconds(deltaMs);
+        if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
+      }
+
+      const points =
+        (status === "ok" || status === "dnf") && pos > 0 && pos <= 8
+          ? calculatePoints(pos, activeRankingSystem)
+          : 0;
+
+      return [
+        String(pos),
+        String(lane.lane || ""),
+        String(clubCode),
+        String(athleteName),
+        String(timeStr),
+        String(points),
+      ];
     });
+
+    const raceAthleteLookup = new Map();
+    for (const lane of pseudoRace?.lanes || []) {
+      const athleteId = toDocumentId(lane?.athlete);
+      if (athleteId && lane?.athlete && typeof lane.athlete === "object") {
+        raceAthleteLookup.set(athleteId, lane.athlete);
+      }
+      if (Array.isArray(lane?.crew)) {
+        for (const member of lane.crew) {
+          const mId = toDocumentId(member);
+          if (mId && member && typeof member === "object") {
+            raceAthleteLookup.set(mId, member);
+          }
+        }
+      }
+    }
+
+    const { tableBody: fullStartListTableBody } = buildStartListTableBody({
+      lanes: exportLanes,
+      referenceRace: race,
+      originalRaceLookup: origRaceLookup,
+      athleteLookup: raceAthleteLookup,
+      categories,
+      boatClasses,
+      toDocumentId,
+      generateRaceCode,
+      formatName: formatNameForPdf,
+      sortLanes: false,
+    });
+
+    const startListTableBody = fullStartListTableBody.map((row) =>
+      row.slice(0, 5),
+    );
 
     autoTable(doc, {
       startY: yPos,
       head: isResults
         ? [["Rank", "Lane", "Club", "Name", "Time", "Points"]]
         : [["Lane", "Club", "Name", "License", "DOB"]],
-      body: tableBody,
+      body: isResults ? resultsTableBody : startListTableBody,
       theme: "plain",
       headStyles: {
         fillColor: [255, 255, 255],
@@ -723,9 +834,18 @@ const RaceDetail = () => {
         cellPadding: 1,
       },
       styles: {
-        fontSize: isResults ? 8 : 9,
-        cellPadding: isResults ? 0.8 : 1,
-        minCellHeight: isResults ? 6.5 : undefined,
+        ...(isResults
+          ? {
+              fontSize: 8,
+              cellPadding: 0.8,
+              minCellHeight: 6.5,
+              overflow: "linebreak",
+              valign: "middle",
+            }
+          : {
+              fontSize: 9,
+              cellPadding: 1,
+            }),
         font: fontName,
       },
       columnStyles: isResults
@@ -734,7 +854,12 @@ const RaceDetail = () => {
             1: { cellWidth: 12 },
             2: { cellWidth: 25, fontStyle: "bold" },
             3: { fontStyle: "bold" },
-            4: { cellWidth: 22, halign: "right", fontStyle: "bold", fontSize: 9 },
+            4: {
+              cellWidth: 22,
+              halign: "right",
+              fontStyle: "bold",
+              fontSize: 9,
+            },
             5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
           }
         : {
@@ -786,9 +911,10 @@ const RaceDetail = () => {
 
     // --- Status/Progression Box (ensure no overlap with legend) ---
     const progressionBoxEnd = yPos + 7;
-    const legendTop = uniqueClubs.length > 0
-      ? pageHeight - 30 - (uniqueClubs.length * legendLineHeight + 7)
-      : pageHeight - 30;
+    const legendTop =
+      uniqueClubs.length > 0
+        ? pageHeight - 30 - (uniqueClubs.length * legendLineHeight + 7)
+        : pageHeight - 30;
     if (progressionBoxEnd < legendTop) {
       doc.setDrawColor(0);
       doc.setLineWidth(0.3);
@@ -819,9 +945,14 @@ const RaceDetail = () => {
       // Legend on last page
       if (i === pageCount) {
         const uniqueClubs = Array.from(
-          new Set(race.lanes.map((l) => toDocumentId(l.club)).filter(Boolean)),
+          new Set(
+            pseudoRace.lanes.map((l) => toDocumentId(l.club)).filter(Boolean),
+          ),
         )
-          .map((id) => race.lanes.find((l) => toDocumentId(l.club) === id).club)
+          .map(
+            (id) =>
+              pseudoRace.lanes.find((l) => toDocumentId(l.club) === id).club,
+          )
           .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
 
         if (uniqueClubs.length > 0) {
@@ -883,19 +1014,14 @@ const RaceDetail = () => {
         );
         doc.setFontSize(8);
         doc.setTextColor(100);
-        doc.text(
-          `Page ${i} of ${pageCount}`,
-          rightMargin,
-          pageHeight - h - 8,
-          {
-            align: "right",
-          },
-        );
+        doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - h - 8, {
+          align: "right",
+        });
       }
     }
 
     doc.save(
-      `${isResults ? "Results" : "StartList"}_${competition.code}_Race${race.order}.pdf`,
+      `${isResults ? "Results" : "StartList"}_${competition.code}_Race${pseudoRace.order}.pdf`,
     );
   };
 
@@ -1261,7 +1387,7 @@ const RaceDetail = () => {
                   {sortedLanes.map((lane, index) => {
                     const status = lane.result?.status || "ok";
                     const isWinner = lane.result?.finishPosition === 1;
-                    
+
                     // Fallback position for DNF if not explicitly stored
                     let effectivePos = lane.result?.finishPosition;
                     if (
@@ -1269,9 +1395,16 @@ const RaceDetail = () => {
                       status === "dnf" &&
                       activeRankingSystem?.dnfGetsPointsIfFewFinishers !== false
                     ) {
-                      const lastFinisher = Math.max(0, ...race.lanes
-                        .filter(l => l.result?.status === "ok" && l.result?.finishPosition)
-                        .map(l => l.result.finishPosition));
+                      const lastFinisher = Math.max(
+                        0,
+                        ...(race?.lanes || [])
+                          .filter(
+                            (l) =>
+                              l.result?.status === "ok" &&
+                              l.result?.finishPosition,
+                          )
+                          .map((l) => l.result.finishPosition),
+                      );
                       effectivePos = lastFinisher + 1;
                     }
 
@@ -1332,24 +1465,25 @@ const RaceDetail = () => {
                                   : "-"}
                             </p>
                           </div>
-                          {race.status === "completed" && (status === "ok" || status === "dnf") && (
-                            <div className="flex items-center gap-2">
-                              {status === "ok" &&
-                                lane.result?.finishPosition > 1 &&
-                                winningTime &&
-                                lane.result?.elapsedMs && (
-                                  <span className="text-xs font-medium text-rose-500">
-                                    +
-                                    {formatDeltaSeconds(
-                                      lane.result.elapsedMs - winningTime,
-                                    )}
-                                  </span>
-                                )}
-                              <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-none font-bold">
-                                {points} PTS
-                              </Badge>
-                            </div>
-                          )}
+                          {race.status === "completed" &&
+                            (status === "ok" || status === "dnf") && (
+                              <div className="flex items-center gap-2">
+                                {status === "ok" &&
+                                  lane.result?.finishPosition > 1 &&
+                                  winningTime &&
+                                  lane.result?.elapsedMs && (
+                                    <span className="text-xs font-medium text-rose-500">
+                                      +
+                                      {formatDeltaSeconds(
+                                        lane.result.elapsedMs - winningTime,
+                                      )}
+                                    </span>
+                                  )}
+                                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-none font-bold">
+                                  {points} PTS
+                                </Badge>
+                              </div>
+                            )}
                         </div>
 
                         <ChevronRight className="h-5 w-5 text-slate-300 transition-colors group-hover:text-indigo-400" />

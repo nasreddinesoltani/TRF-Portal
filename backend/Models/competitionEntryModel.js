@@ -42,6 +42,12 @@ const competitionEntrySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "BoatClass",
     },
+    journeyIndex: {
+      type: Number,
+      index: true,
+      // If undefined/null, applies conceptually to the whole competition
+      // For multi-journey, this targets a specific journey (1, 2, 3...)
+    },
     crewNumber: {
       type: Number,
       default: 1,
@@ -87,7 +93,7 @@ const competitionEntrySchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Uniqueness is now handled in the controller to support crew boats
@@ -101,7 +107,7 @@ competitionEntrySchema.index({ competition: 1, status: 1 });
 
 const CompetitionEntry = mongoose.model(
   "CompetitionEntry",
-  competitionEntrySchema
+  competitionEntrySchema,
 );
 
 export default CompetitionEntry;

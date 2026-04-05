@@ -10,6 +10,7 @@ import {
   swapRaceLanes,
   computeCompetitionRankings,
   autoGenerateRaces,
+  combineRaces,
 } from "../Controllers/competitionRaceController.js";
 import { protect, allowRoles } from "../Middleware/authMiddleware.js";
 
@@ -30,6 +31,10 @@ router
 router
   .route("/lane-swaps")
   .post(allowRoles("admin", "jury_president"), swapRaceLanes);
+
+router
+  .route("/combine")
+  .post(allowRoles("admin", "jury_president"), combineRaces);
 
 router
   .route("/auto-generate")

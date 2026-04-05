@@ -1,5 +1,10 @@
 import jwt from "jsonwebtoken";
 
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  return typeof secret === "string" && secret.trim().length > 0 ? secret : null;
+};
+
 const protect = (req, res, next) => {
   let token;
 
@@ -17,12 +22,16 @@ const protect = (req, res, next) => {
       .json({ message: "Not authorized to access this route" });
   }
 
+  const jwtSecret = getJwtSecret();
+  if (!jwtSecret) {
+    return res.status(500).json({
+      message: "Server authentication is not configured (missing JWT secret)",
+    });
+  }
+
   try {
     // Verify token
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "your_jwt_secret_key"
-    );
+    const decoded = jwt.verify(token, jwtSecret);
     req.user = decoded;
     next();
   } catch (error) {

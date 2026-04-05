@@ -135,6 +135,13 @@ const authUser = asyncHandler(async (req, res) => {
       user.clubId && user.clubId._id ? user.clubId._id : user.clubId;
     const userClubId = rawClubId ? rawClubId.toString() : null;
 
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret || !jwtSecret.trim()) {
+      return res.status(500).json({
+        message: "Server authentication is not configured (missing JWT secret)",
+      });
+    }
+
     // Generate JWT token
     const token = jwt.sign(
       {
@@ -143,8 +150,8 @@ const authUser = asyncHandler(async (req, res) => {
         role: user.role,
         clubId: userClubId,
       },
-      process.env.JWT_SECRET || "your_jwt_secret_key",
-      { expiresIn: "7d" }
+      jwtSecret,
+      { expiresIn: "7d" },
     );
 
     console.log("User logged in successfully:", user._id);

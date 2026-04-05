@@ -14,14 +14,13 @@ import { Select } from "../components/ui/select";
 import { Label } from "../components/ui/label";
 import { DataGrid } from "../components/DataGrid";
 import { generateRaceCode, formatCategoryAbbreviation } from "../lib/rowing";
+import { buildStartListTableBody } from "../lib/startListPdf";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 const API_BASE_URL = "";
 const ENTRY_SEARCH_LIMIT = 25;
 const DEFAULT_LANES_PER_RACE = 6;
-
-
 
 // ==================== WIZARD STEPS ====================
 const WIZARD_STEPS = [
@@ -945,7 +944,6 @@ const EntriesTable = ({
   onWithdraw,
   onDelete,
   isAdmin,
-
 }) => {
   const sortedEntries = useMemo(
     () =>
@@ -974,7 +972,6 @@ const EntriesTable = ({
       <table className="min-w-full text-left text-sm">
         <thead className="bg-gradient-to-r from-slate-50 to-slate-100 text-xs uppercase text-slate-500">
           <tr>
-
             <th className="px-3 py-3 w-20">Seed</th>
             <th className="px-3 py-3 w-40">Crew #</th>
             <th className="px-3 py-3">Athlete</th>
@@ -1004,7 +1001,9 @@ const EntriesTable = ({
                       onEntryChange(
                         entry.uid || entry.id,
                         "seed",
-                        event.target.value ? parseInt(event.target.value, 10) : undefined
+                        event.target.value
+                          ? parseInt(event.target.value, 10)
+                          : undefined,
                       )
                     }
                     className="h-7 w-12 text-center text-xs"
@@ -1126,7 +1125,7 @@ const EntriesTable = ({
                         className="text-slate-400 hover:text-red-600 hover:bg-red-50 h-7 w-7 p-0 rounded-full"
                         title="Remove manual entry"
                       >
-                         ✕
+                        ✕
                       </Button>
                     )}
                   </div>
@@ -1838,6 +1837,7 @@ const CompetitionRaces = () => {
   const [registrationStats, setRegistrationStats] = useState(null);
   const [activeRankingSystem, setActiveRankingSystem] = useState(null);
   const initialDataLoadedRef = React.useRef(false);
+  const skipAutoFillAfterGenerateRef = useRef(false);
 
   const [entrySearchTerm, setEntrySearchTerm] = useState("");
   const [entrySearchResults, setEntrySearchResults] = useState([]);
@@ -1884,37 +1884,55 @@ const CompetitionRaces = () => {
   // Auto-fill configuration when category changes
   useEffect(() => {
     if (!autoGenState.category) return;
-    
+    if (skipAutoFillAfterGenerateRef.current) {
+      skipAutoFillAfterGenerateRef.current = false;
+      return;
+    }
+
     // Find relevant races for this category
     const categoryId = autoGenState.category;
-    let relevantRaces = races.filter(r => 
-      (typeof r.category === 'string' ? r.category === categoryId : r.category?._id === categoryId)
+    let relevantRaces = races.filter((r) =>
+      typeof r.category === "string"
+        ? r.category === categoryId
+        : r.category?._id === categoryId,
     );
-    
+
     // If a boat class is selected, filter further by that boat class
     if (autoGenState.boatClass) {
-      const bcFilter = relevantRaces.filter(r =>
-        (typeof r.boatClass === 'string' ? r.boatClass === autoGenState.boatClass : r.boatClass?._id === autoGenState.boatClass)
+      const bcFilter = relevantRaces.filter((r) =>
+        typeof r.boatClass === "string"
+          ? r.boatClass === autoGenState.boatClass
+          : r.boatClass?._id === autoGenState.boatClass,
       );
       // Only apply boat class filter if races exist for it
       if (bcFilter.length > 0) {
         relevantRaces = bcFilter;
       }
     }
-    
+
     if (relevantRaces.length > 0) {
       // Sort by order to get correct sequence
-      const sortedRaces = [...relevantRaces].sort((a, b) => (a.order || 0) - (b.order || 0));
-      
+      const sortedRaces = [...relevantRaces].sort(
+        (a, b) => (a.order || 0) - (b.order || 0),
+      );
+
       const firstRace = sortedRaces[0];
       const lastRace = sortedRaces[sortedRaces.length - 1];
 
       // Calculate max lanes (in case they differ)
-      const maxLanes = Math.max(...sortedRaces.map(r => parseInt(r.lanesPerRace || 0) || (r.lanes || []).length));
-      
+      const maxLanes = Math.max(
+        ...sortedRaces.map(
+          (r) => parseInt(r.lanesPerRace || 0) || (r.lanes || []).length,
+        ),
+      );
+
       // Calculate interval
       let intervalMinutes = 10;
-      if (sortedRaces.length > 1 && sortedRaces[0].startTime && sortedRaces[1].startTime) {
+      if (
+        sortedRaces.length > 1 &&
+        sortedRaces[0].startTime &&
+        sortedRaces[1].startTime
+      ) {
         const first = new Date(sortedRaces[0].startTime).getTime();
         const second = new Date(sortedRaces[1].startTime).getTime();
         if (!isNaN(first) && !isNaN(second)) {
@@ -1938,17 +1956,22 @@ const CompetitionRaces = () => {
       // Use the starting race number from the existing block for recall/overwrite
       const startRaceNum = firstRace.order || 1;
 
-      setAutoGenState(prev => ({
+      setAutoGenState((prev) => ({
         ...prev,
         // Use existing boatClass selection if present, otherwise infer from last race
-        boatClass: prev.boatClass || lastRace.boatClass?._id || lastRace.boatClass,
+        boatClass:
+          prev.boatClass || lastRace.boatClass?._id || lastRace.boatClass,
         lanesPerRace: maxLanes > 0 ? maxLanes.toString() : prev.lanesPerRace,
         distance: dist ? dist.toString() : prev.distance,
-        intervalMinutes: intervalMinutes > 0 ? intervalMinutes.toString() : prev.intervalMinutes,
+        intervalMinutes:
+          intervalMinutes > 0
+            ? intervalMinutes.toString()
+            : prev.intervalMinutes,
         startTime: startTimeStr || prev.startTime,
         startRaceNumber: startRaceNum.toString(),
         sessionLabel: firstRace.sessionLabel || prev.sessionLabel,
-        racePrefix: firstRace.name?.replace(/\s*\d+$/, "").trim() || prev.racePrefix,
+        racePrefix:
+          firstRace.name?.replace(/\s*\d+$/, "").trim() || prev.racePrefix,
       }));
     }
   }, [autoGenState.category, autoGenState.boatClass, races]);
@@ -1962,7 +1985,16 @@ const CompetitionRaces = () => {
     targetLane: "",
   });
   const [performingSwap, setPerformingSwap] = useState(false);
+  const [scheduleState, setScheduleState] = useState({
+    raceId: "",
+    order: "",
+    startTime: "",
+  });
+  const [savingSchedule, setSavingSchedule] = useState(false);
   const [pendingManualCrew, setPendingManualCrew] = useState([]);
+
+  const canManageRaceSchedule =
+    user?.role === "admin" || user?.role === "jury_president";
 
   const requiredCrewSize = useMemo(() => {
     if (!autoGenState.boatClass) return 1;
@@ -2522,7 +2554,7 @@ const CompetitionRaces = () => {
 
   const handleAutoGenFieldChange = useCallback((event) => {
     const { name, value, type, checked } = event.target;
-    
+
     // Special handling for category change to trigger entry loading
     if (name === "category") {
       handleCategorySelect(value);
@@ -2546,7 +2578,6 @@ const CompetitionRaces = () => {
   }, []);
 
   // Apply preset configuration
-
 
   // Toggle section expansion
   const toggleSection = useCallback((section) => {
@@ -2622,6 +2653,100 @@ const CompetitionRaces = () => {
       [name]: value,
     }));
   }, []);
+
+  const formatDateTimeLocalValue = useCallback((value) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const pad = (n) => n.toString().padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+      date.getDate(),
+    )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }, []);
+
+  const handleScheduleRaceChange = useCallback(
+    (event) => {
+      const raceId = event.target.value;
+      if (!raceId) {
+        setScheduleState({ raceId: "", order: "", startTime: "" });
+        return;
+      }
+      const race = races.find((item) => item._id === raceId);
+      setScheduleState({
+        raceId,
+        order: race?.order != null ? String(race.order) : "",
+        startTime: formatDateTimeLocalValue(race?.startTime),
+      });
+    },
+    [formatDateTimeLocalValue, races],
+  );
+
+  const handleScheduleFieldChange = useCallback((event) => {
+    const { name, value } = event.target;
+    setScheduleState((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  }, []);
+
+  const submitRaceScheduleUpdate = useCallback(async () => {
+    if (!token || !competitionDocumentId || !canManageRaceSchedule) {
+      return;
+    }
+
+    if (!scheduleState.raceId) {
+      toast.error("Select a race to update");
+      return;
+    }
+
+    const orderValue = Number(scheduleState.order);
+    if (!Number.isInteger(orderValue) || orderValue < 1) {
+      toast.error("Event number must be a positive integer");
+      return;
+    }
+
+    if (!scheduleState.startTime) {
+      toast.error("Start time is required");
+      return;
+    }
+
+    setSavingSchedule(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/${scheduleState.raceId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            order: orderValue,
+            startTime: scheduleState.startTime,
+          }),
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Failed to update race schedule");
+      }
+
+      toast.success("Race schedule updated");
+      await loadRaces();
+    } catch (error) {
+      console.error("Failed to update race schedule", error);
+      toast.error(error.message || "Failed to update race schedule");
+    } finally {
+      setSavingSchedule(false);
+    }
+  }, [
+    canManageRaceSchedule,
+    competitionDocumentId,
+    loadRaces,
+    scheduleState,
+    token,
+  ]);
 
   const handleAddEntry = useCallback(
     async (athlete) => {
@@ -3408,9 +3533,7 @@ const CompetitionRaces = () => {
       autoGenState.category
     ) {
       const catId = autoGenState.category;
-      const catData = registrationStats.byCategory.find(
-        (c) => c.id === catId,
-      );
+      const catData = registrationStats.byCategory.find((c) => c.id === catId);
       if (catData && Array.isArray(catData.entries)) {
         const dbEntries = catData.entries.map((e, idx) => {
           const athleteId = toDocumentId(e.athlete);
@@ -3829,6 +3952,9 @@ const CompetitionRaces = () => {
       setWizardStep(1);
       setCompletedSteps([]);
       setSelectedPreset(null);
+      // Prevent category auto-fill effect from overwriting incremented next values
+      // after races reload.
+      skipAutoFillAfterGenerateRef.current = true;
       await loadRaces();
       await loadRegistrationSummary(); // Refresh categories overview
     } catch (error) {
@@ -4172,9 +4298,39 @@ const CompetitionRaces = () => {
 
   const exportStartListPDF = useCallback(
     async (racesToExport = null) => {
-      const targetRaces = Array.isArray(racesToExport)
+      // --- GROUP BY START TIME LOGIC ---
+      const rawTargetRaces = Array.isArray(racesToExport)
         ? racesToExport
         : sortedRaces;
+      const timeMap = new Map();
+      rawTargetRaces.forEach((race) => {
+        const timeKey = race.startTime
+          ? new Date(race.startTime).getTime().toString()
+          : `no-time-${race._id || Math.random()}`;
+        if (!timeMap.has(timeKey)) {
+          timeMap.set(timeKey, {
+            ...race,
+            lanes: [...(race.lanes || [])].map((l) => ({
+              ...l,
+              _originalRaceId: race._id,
+            })),
+          });
+        } else {
+          const existing = timeMap.get(timeKey);
+          existing.lanes.push(
+            ...(race.lanes || []).map((l) => ({
+              ...l,
+              _originalRaceId: race._id,
+            })),
+          );
+          if (race.order && (!existing.order || race.order < existing.order)) {
+            existing.order = race.order;
+          }
+        }
+      });
+      const targetRaces = Array.from(timeMap.values()).sort(
+        (a, b) => (a.order || 0) - (b.order || 0),
+      );
 
       if (!targetRaces.length) {
         toast.info("No races to export");
@@ -4184,16 +4340,21 @@ const CompetitionRaces = () => {
       toast.info("Generating Start List PDF...");
 
       try {
-      const dateStr = new Date().toLocaleDateString("en-GB", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
+        const dateStr = new Date().toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
 
-      // Load images for header/footer (parallel)
-      const [headerData, footerData, logoData, sponsorData, arabicFontBase64] =
-        await Promise.all([
+        // Load images for header/footer (parallel)
+        const [
+          headerData,
+          footerData,
+          logoData,
+          sponsorData,
+          arabicFontBase64,
+        ] = await Promise.all([
           loadImage("/header.png"),
           loadImage("/footer.png"),
           loadImage("/logo.png"),
@@ -4201,75 +4362,601 @@ const CompetitionRaces = () => {
           loadFont("/fonts/Amiri-Regular.ttf"),
         ]);
 
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
+        const doc = new jsPDF({
+          orientation: "portrait",
+          unit: "mm",
+          format: "a4",
+        });
 
-      // Register Arabic font if loaded successfully
-      let arabicFontName = null;
-      if (arabicFontBase64) {
-        try {
-          doc.addFileToVFS("Amiri-Regular.ttf", arabicFontBase64);
-          doc.addFont("Amiri-Regular.ttf", "Amiri", "normal");
-          arabicFontName = "Amiri";
-        } catch (err) {
-          console.warn("Could not register Arabic font:", err);
+        // Register Arabic font if loaded successfully
+        let arabicFontName = null;
+        if (arabicFontBase64) {
+          try {
+            doc.addFileToVFS("Amiri-Regular.ttf", arabicFontBase64);
+            doc.addFont("Amiri-Regular.ttf", "Amiri", "normal");
+            arabicFontName = "Amiri";
+          } catch (err) {
+            console.warn("Could not register Arabic font:", err);
+          }
         }
+
+        const fontName = "helvetica";
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const leftMargin = 14;
+        const rightMargin = 196;
+        const center = 105;
+
+        // Calculate header height (3mm top margin + 8mm gap after line)
+        let headerHeight = 32;
+        if (headerData) {
+          const imgProps = doc.getImageProperties(headerData);
+          headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
+        }
+
+        // Use event date instead of generation date
+        const eventDateStr = competition?.startDate
+          ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })
+          : dateStr;
+
+        // Location (safe string extraction)
+        const compLocation = String(
+          competition?.location?.name ||
+            competition?.venue?.name ||
+            (typeof competition?.venue === "string"
+              ? competition.venue
+              : null) ||
+            (typeof competition?.location === "string"
+              ? competition.location
+              : null) ||
+            "Location",
+        );
+
+        const competitionTitle =
+          competition?.names?.en ||
+          competition?.name ||
+          competition?.code ||
+          "Competition";
+
+        // Map to store clubs per page for legend
+        const pageClubsMap = new Map();
+
+        for (let raceIndex = 0; raceIndex < targetRaces.length; raceIndex++) {
+          const race = targetRaces[raceIndex];
+          if (raceIndex > 0) {
+            doc.addPage();
+          }
+
+          let yPos = headerHeight;
+
+          // Race Header Block
+          const categoryId = toDocumentId(race.category);
+          const category = categoryId
+            ? categories.find((item) => toDocumentId(item) === categoryId)
+            : null;
+          const boatClassId = toDocumentId(race.boatClass);
+          const boatClass = boatClassId
+            ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
+            : null;
+
+          // --- AGGREGATE ORIGINAL RACE INFO ---
+          const distinctOrigIds = Array.from(
+            new Set(
+              (race.lanes || []).map((l) => l._originalRaceId).filter(Boolean),
+            ),
+          );
+          const allOrigRaces = distinctOrigIds.length
+            ? distinctOrigIds
+                .map((id) =>
+                  (typeof rawTargetRaces !== "undefined"
+                    ? rawTargetRaces
+                    : rawRacesWithResults
+                  ).find((r) => r._id === id),
+                )
+                .filter(Boolean)
+            : [race];
+          const origRaceLookup = new Map(
+            allOrigRaces.filter((r) => r?._id).map((r) => [String(r._id), r]),
+          );
+
+          const distinctEnTitles = new Set();
+          const distinctArTitles = new Set();
+          const distinctCodes = new Set();
+          const distinctOrders = new Set();
+
+          allOrigRaces.forEach((r) => {
+            const c = categories.find(
+              (x) => toDocumentId(x) === toDocumentId(r.category),
+            );
+            const b = boatClasses.find(
+              (x) => toDocumentId(x) === toDocumentId(r.boatClass),
+            );
+            const evtEn = `${c?.titles?.en || ""}`.trim();
+            const evtAr = `${c?.titles?.ar || ""}`.trim();
+            if (evtEn) distinctEnTitles.add(evtEn);
+            if (evtAr) distinctArTitles.add(evtAr);
+            if (c || b) distinctCodes.add(generateRaceCode(c, b));
+            if (r.order) distinctOrders.add(r.order);
+          });
+
+          let fullEventName = Array.from(distinctEnTitles).join(" / ");
+          let fullEventNameAr = Array.from(distinctArTitles).join(" / ");
+          let rightHeaderCode = Array.from(distinctCodes).join(" / ");
+          let orderStr =
+            Array.from(distinctOrders)
+              .sort((a, b) => a - b)
+              .join(" / ") ||
+            race.order ||
+            "1";
+
+          // Compute Phase: Journey by journeyIndex, Final only when configured max journey is reached.
+          const explicitNonFinalPhases = Array.from(
+            new Set(
+              allOrigRaces
+                .map((r) => String(r?.phase || "").trim())
+                .filter((p) => p && !/^final$/i.test(p)),
+            ),
+          );
+          const journeyValues = Array.from(
+            new Set(
+              allOrigRaces
+                .map((r) => Number(r?.journeyIndex))
+                .filter((j) => Number.isFinite(j) && j > 0),
+            ),
+          ).sort((a, b) => a - b);
+          const configuredMaxJourney =
+            Number(
+              competition?.maximumJourney ??
+                competition?.maxJourney ??
+                competition?.journeysCount,
+            ) || null;
+
+          let phaseStr = "Final";
+          if (explicitNonFinalPhases.length > 0) {
+            phaseStr = explicitNonFinalPhases.join(" / ");
+          } else if (journeyValues.length > 0) {
+            const reachedConfiguredFinal =
+              configuredMaxJourney != null &&
+              journeyValues.every((j) => j >= configuredMaxJourney);
+            phaseStr = reachedConfiguredFinal
+              ? "Final"
+              : `Journey ${journeyValues.join(" / ")}`;
+          }
+
+          // Use our mapped variables in the template rendering below
+
+          // --- Header Section (matches RaceDetail) ---
+          // Competition title centered (14pt bold)
+          doc.setFontSize(14);
+          doc.setFont(fontName, "bold");
+          doc.setTextColor(0, 0, 0);
+          doc.text(competitionTitle, center, yPos, { align: "center" });
+
+          // Location left, date right (9pt normal) on same line
+          doc.setFontSize(9);
+          doc.setFont(fontName, "normal");
+          doc.text(compLocation, leftMargin, yPos);
+          doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
+
+          yPos += 2;
+          doc.setLineWidth(0.5);
+          doc.setDrawColor(0);
+          doc.line(leftMargin, yPos, rightMargin, yPos);
+          yPos += 5;
+
+          // --- Line 1: Race order | Start List | Race code (14pt bold) ---
+          doc.setFontSize(12);
+          doc.setFont(fontName, "bold");
+          doc.text(String(orderStr), leftMargin, yPos);
+          doc.text("Start List", center, yPos, { align: "center" });
+          doc.text(
+            (rightHeaderCode || generateRaceCode(category, boatClass))
+              .replace(
+                /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
+                "$1 $2",
+              )
+              .replace(/X/g, "x"),
+            rightMargin,
+            yPos,
+            {
+              align: "right",
+            },
+          );
+
+          // --- Line 2: (Event) | Category + Boat Class | Phase ---
+          yPos += 5;
+          doc.setFontSize(9);
+          doc.setFont(fontName, "normal");
+          doc.text("(Event)", leftMargin, yPos);
+          doc.setFontSize(11);
+          doc.setFont(fontName, "bold");
+          fullEventName =
+            fullEventName || `${category?.titles?.en || ""}`.trim();
+          doc.text(fullEventName, center, yPos, { align: "center" });
+          doc.setFontSize(9);
+          doc.setFont(fontName, "normal");
+          doc.text(phaseStr, rightMargin, yPos, { align: "right" });
+
+          // --- Line 3: Arabic text (center) | Distance (right) ---
+          const raceDistance =
+            race.distanceOverride ??
+            race.distance ??
+            allOrigRaces.find((r) => r?.distanceOverride != null)
+              ?.distanceOverride ??
+            competition?.defaultDistance ??
+            competition?.distance ??
+            null;
+          const catTitleAr = category?.titles?.ar || "";
+          fullEventNameAr = fullEventNameAr || `${catTitleAr}`.trim();
+
+          if (fullEventNameAr && arabicFontName) {
+            yPos += 6;
+            doc.setFontSize(13);
+            doc.setFont(arabicFontName, "normal");
+            doc.text(fullEventNameAr, center, yPos, { align: "center" });
+            doc.setFont(fontName, "normal");
+            doc.setFontSize(9);
+            if (raceDistance) {
+              doc.text(`Distance: ${raceDistance}m`, rightMargin, yPos, {
+                align: "right",
+              });
+            }
+          } else if (raceDistance) {
+            yPos += 4;
+            doc.setFontSize(9);
+            doc.text(`Distance: ${raceDistance}m`, center, yPos, {
+              align: "center",
+            });
+          }
+
+          // --- Line 4: Start Time | Race # ---
+          yPos += 4;
+          doc.setFontSize(9);
+          doc.setFont(fontName, "normal");
+          const startTime = race.startTime
+            ? new Date(race.startTime).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "00:00";
+          doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
+          doc.setFont(fontName, "bold");
+          doc.text(`Race ${raceIndex + 1}`, rightMargin, yPos, {
+            align: "right",
+          });
+          yPos += 4;
+
+          // --- Calculate legend for bottom margin ---
+          const uniqueClubs = Array.from(
+            new Set(
+              (race.lanes || [])
+                .map((l) => toDocumentId(l.club))
+                .filter(Boolean),
+            ),
+          )
+            .map(
+              (id) =>
+                (race.lanes || []).find((l) => toDocumentId(l.club) === id)
+                  ?.club,
+            )
+            .filter(Boolean)
+            .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+
+          const legendLineHeight = 4;
+          const legendBoxHeight =
+            uniqueClubs.length > 0
+              ? uniqueClubs.length * legendLineHeight + 7
+              : 0;
+          const bottomMargin = 35 + legendBoxHeight + 14;
+
+          // Store clubs for this page
+          pageClubsMap.set(raceIndex + 1, uniqueClubs);
+
+          // --- Helper: format name with uppercase last name ---
+          const formatNameForPdf = (a) => {
+            if (!a) return "Unknown";
+            const first = a.firstName || "";
+            const last = (a.lastName || "").toUpperCase();
+            return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
+          };
+
+          // --- Table ---
+          const { tableBody } = buildStartListTableBody({
+            lanes: race.lanes || [],
+            referenceRace: race,
+            originalRaceLookup: origRaceLookup,
+            athleteLookup: raceAthleteLookup,
+            categories,
+            boatClasses,
+            toDocumentId,
+            generateRaceCode,
+            formatName: formatNameForPdf,
+          });
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [["Lane", "Club", "Name", "License", "DOB", "Event"]],
+            body: tableBody,
+            theme: "plain",
+            headStyles: {
+              fillColor: [255, 255, 255],
+              textColor: [0, 0, 0],
+              fontStyle: "bold",
+              lineWidth: 0.1,
+              lineColor: [0, 0, 0],
+              cellPadding: 1,
+            },
+            styles: {
+              fontSize: 9,
+              cellPadding: 1,
+              font: fontName,
+            },
+            columnStyles: {
+              0: { cellWidth: 15, halign: "center" },
+              1: { fontStyle: "bold" },
+              2: { fontStyle: "bold" },
+            },
+            margin: {
+              left: leftMargin,
+              right: 14,
+              bottom: bottomMargin,
+              top: headerHeight,
+            },
+            didParseCell: (data) => {
+              if (data.section === "head") {
+                data.cell.styles.lineWidth = {
+                  top: 0.1,
+                  bottom: 0.1,
+                  left: 0.1,
+                  right: 0.1,
+                };
+              }
+            },
+          });
+
+          yPos = doc.lastAutoTable.finalY + 4;
+
+          // Progression Rule Box (ensure no overlap with legend)
+          const progressionEnd = yPos + 7;
+          const legendTop =
+            uniqueClubs.length > 0
+              ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
+              : pageHeight - 35;
+          if (progressionEnd < legendTop) {
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.rect(leftMargin, yPos, 182, 7);
+            doc.setFontSize(8);
+            doc.setFont(fontName, "normal");
+            const statusText =
+              race.notes || "Progression System: Subject to competition rules.";
+            doc.text(statusText, leftMargin + 2, yPos + 5);
+          }
+        }
+
+        // --- Post-Processing: Add Header, Legend & Footer to ALL Pages ---
+        const pageCount = doc.internal.getNumberOfPages();
+
+        for (let i = 1; i <= pageCount; i++) {
+          doc.setPage(i);
+
+          // --- Header Image ---
+          if (headerData) {
+            const imgProps = doc.getImageProperties(headerData);
+            const h = pageWidth / (imgProps.width / imgProps.height);
+            doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(leftMargin, h + 5, rightMargin, h + 5);
+          }
+
+          // --- Legend on each page ---
+          const pageClubs = pageClubsMap.get(i) || [];
+          if (pageClubs.length > 0) {
+            const clubs = [...pageClubs].sort((a, b) =>
+              (a.code || "").localeCompare(b.code || ""),
+            );
+
+            const lineHeight = 4;
+            const boxHeight = clubs.length * lineHeight + 7;
+            const legendY = pageHeight - 35 - boxHeight;
+
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.rect(leftMargin, legendY, 182, boxHeight);
+
+            doc.setFontSize(9);
+            doc.setFont(fontName, "bold");
+            doc.setTextColor(0, 0, 0);
+            doc.text("Legend:", leftMargin + 2, legendY + 5);
+
+            doc.setFontSize(8);
+            let clubY = legendY + 9;
+
+            for (const club of clubs) {
+              const code = club.code || "---";
+              const frenchName =
+                club.name || club.names?.fr || club.names?.en || "";
+              const arabicName = club.nameAr || club.names?.ar || "";
+
+              doc.setFont(fontName, "bold");
+              doc.text(code + ": ", leftMargin + 4, clubY);
+
+              const codeWidth = doc.getTextWidth(code + ": ");
+              doc.setFont(fontName, "normal");
+              doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+
+              if (arabicName && arabicFontName) {
+                const frenchWidth = doc.getTextWidth(frenchName);
+                doc.setFont(arabicFontName, "normal");
+                doc.text(
+                  " : " + arabicName,
+                  leftMargin + 4 + codeWidth + frenchWidth,
+                  clubY,
+                );
+                doc.setFont(fontName, "normal");
+              }
+              clubY += lineHeight;
+            }
+          }
+
+          // --- Footer Image ---
+          if (footerData) {
+            const imgProps = doc.getImageProperties(footerData);
+            const h = pageWidth / (imgProps.width / imgProps.height);
+            doc.addImage(
+              footerData,
+              "PNG",
+              0,
+              pageHeight - h - 3,
+              pageWidth,
+              h,
+            );
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(
+              leftMargin,
+              pageHeight - h - 5,
+              rightMargin,
+              pageHeight - h - 5,
+            );
+            doc.setFontSize(8);
+            doc.setTextColor(100);
+            doc.text(
+              `Page ${i} of ${pageCount}`,
+              rightMargin,
+              pageHeight - h - 8,
+              { align: "right" },
+            );
+          } else if (sponsorData) {
+            const imgProps = doc.getImageProperties(sponsorData);
+            const ratio = imgProps.width / imgProps.height;
+            let w = 180;
+            let h = w / ratio;
+            if (h > 20) {
+              h = 20;
+              w = h * ratio;
+            }
+            const x = leftMargin + (180 - w) / 2;
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(
+              leftMargin,
+              pageHeight - h - 5,
+              rightMargin,
+              pageHeight - h - 5,
+            );
+            doc.addImage(sponsorData, "PNG", x, pageHeight - h - 3, w, h);
+            doc.setFontSize(8);
+            doc.setFont(fontName, "normal");
+            doc.setTextColor(100, 100, 100);
+            doc.text(
+              `Page ${i} of ${pageCount}`,
+              rightMargin,
+              pageHeight - h - 8,
+              {
+                align: "right",
+              },
+            );
+          } else {
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(leftMargin, pageHeight - 15, rightMargin, pageHeight - 15);
+            doc.setFontSize(8);
+            doc.setFont(fontName, "normal");
+            doc.setTextColor(100, 100, 100);
+            doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - 8, {
+              align: "right",
+            });
+          }
+        }
+
+        doc.save(`StartList_${competition?.code || "Competition"}.pdf`);
+        toast.success("Start List PDF exported successfully");
+      } catch (err) {
+        console.error("exportStartListPDF error:", err);
+        toast.error(
+          "Failed to export Start List PDF: " +
+            (err.message || "Unknown error"),
+        );
       }
+    },
+    [
+      sortedRaces,
+      competition,
+      categories,
+      boatClasses,
+      raceAthleteLookup,
+      raceClubLookup,
+      eventNumberMap,
+    ],
+  );
 
-      const fontName = "helvetica";
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const leftMargin = 14;
-      const rightMargin = 196;
-      const center = 105;
+  const exportResultsPDF = useCallback(
+    async (race) => {
+      if (!race) return;
 
-      // Calculate header height (3mm top margin + 8mm gap after line)
-      let headerHeight = 32;
-      if (headerData) {
-        const imgProps = doc.getImageProperties(headerData);
-        headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
-      }
+      toast.info("Generating Results PDF...");
 
-      // Use event date instead of generation date
-      const eventDateStr = competition?.startDate
-        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
-            weekday: "short",
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          })
-        : dateStr;
+      try {
+        const dateStr = new Date().toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
 
-      // Location (safe string extraction)
-      const compLocation = String(
-        competition?.location?.name ||
-        competition?.venue?.name ||
-        (typeof competition?.venue === "string" ? competition.venue : null) ||
-        (typeof competition?.location === "string" ? competition.location : null) ||
-        "Location"
-      );
+        const [
+          headerData,
+          footerData,
+          logoData,
+          sponsorData,
+          arabicFontBase64,
+        ] = await Promise.all([
+          loadImage("/header.png"),
+          loadImage("/footer.png"),
+          loadImage("/logo.png"),
+          loadImage("/sponsors.png"),
+          loadFont("/fonts/Amiri-Regular.ttf"),
+        ]);
 
-      const competitionTitle =
-        competition?.names?.en ||
-        competition?.name ||
-        competition?.code ||
-        "Competition";
+        const doc = new jsPDF({
+          orientation: "portrait",
+          unit: "mm",
+          format: "a4",
+        });
 
-      // Map to store clubs per page for legend
-      const pageClubsMap = new Map();
+        let arabicFontName = null;
+        if (arabicFontBase64) {
+          try {
+            doc.addFileToVFS("Amiri-Regular.ttf", arabicFontBase64);
+            doc.addFont("Amiri-Regular.ttf", "Amiri", "normal");
+            arabicFontName = "Amiri";
+          } catch (err) {
+            console.warn("Could not register Arabic font:", err);
+          }
+        }
 
-      for (let raceIndex = 0; raceIndex < targetRaces.length; raceIndex++) {
-        const race = targetRaces[raceIndex];
-        if (raceIndex > 0) {
-          doc.addPage();
+        const fontName = "helvetica";
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const leftMargin = 14;
+        const rightMargin = 196;
+        const center = 105;
+
+        let headerHeight = 32;
+        if (headerData) {
+          const imgProps = doc.getImageProperties(headerData);
+          headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
         }
 
         let yPos = headerHeight;
 
-        // Race Header Block
         const categoryId = toDocumentId(race.category);
         const category = categoryId
           ? categories.find((item) => toDocumentId(item) === categoryId)
@@ -4279,14 +4966,123 @@ const CompetitionRaces = () => {
           ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
           : null;
 
+        // Use event date instead of generation date
+        const eventDateStr = competition?.startDate
+          ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })
+          : dateStr;
+
+        // Location (safe string extraction)
+        const compLocation = String(
+          competition?.location?.name ||
+            competition?.venue?.name ||
+            (typeof competition?.venue === "string"
+              ? competition.venue
+              : null) ||
+            (typeof competition?.location === "string"
+              ? competition.location
+              : null) ||
+            "Location",
+        );
+
+        // --- AGGREGATE ORIGINAL RACE INFO ---
+        const distinctOrigIds = Array.from(
+          new Set(
+            (race.lanes || []).map((l) => l._originalRaceId).filter(Boolean),
+          ),
+        );
+        const allOrigRaces = distinctOrigIds.length
+          ? distinctOrigIds
+              .map((id) =>
+                (typeof rawTargetRaces !== "undefined"
+                  ? rawTargetRaces
+                  : rawRacesWithResults
+                ).find((r) => r._id === id),
+              )
+              .filter(Boolean)
+          : [race];
+
+        const distinctEnTitles = new Set();
+        const distinctArTitles = new Set();
+        const distinctCodes = new Set();
+        const distinctOrders = new Set();
+
+        allOrigRaces.forEach((r) => {
+          const c = categories.find(
+            (x) => toDocumentId(x) === toDocumentId(r.category),
+          );
+          const b = boatClasses.find(
+            (x) => toDocumentId(x) === toDocumentId(r.boatClass),
+          );
+          const evtEn = `${c?.titles?.en || ""}`.trim();
+          const evtAr = `${c?.titles?.ar || ""}`.trim();
+          if (evtEn) distinctEnTitles.add(evtEn);
+          if (evtAr) distinctArTitles.add(evtAr);
+          if (c || b) distinctCodes.add(generateRaceCode(c, b));
+          if (r.order) distinctOrders.add(r.order);
+        });
+
+        let fullEventName = Array.from(distinctEnTitles).join(" / ");
+        let fullEventNameAr = Array.from(distinctArTitles).join(" / ");
+        let rightHeaderCode = Array.from(distinctCodes).join(" / ");
+        let orderStr =
+          Array.from(distinctOrders)
+            .sort((a, b) => a - b)
+            .join(" / ") ||
+          race.order ||
+          "1";
+
+        // Compute Phase: Journey by journeyIndex, Final only when configured max journey is reached.
+        const explicitNonFinalPhases = Array.from(
+          new Set(
+            allOrigRaces
+              .map((r) => String(r?.phase || "").trim())
+              .filter((p) => p && !/^final$/i.test(p)),
+          ),
+        );
+        const journeyValues = Array.from(
+          new Set(
+            allOrigRaces
+              .map((r) => Number(r?.journeyIndex))
+              .filter((j) => Number.isFinite(j) && j > 0),
+          ),
+        ).sort((a, b) => a - b);
+        const configuredMaxJourney =
+          Number(
+            competition?.maximumJourney ??
+              competition?.maxJourney ??
+              competition?.journeysCount,
+          ) || null;
+
+        let phaseStr = "Final";
+        if (explicitNonFinalPhases.length > 0) {
+          phaseStr = explicitNonFinalPhases.join(" / ");
+        } else if (journeyValues.length > 0) {
+          const reachedConfiguredFinal =
+            configuredMaxJourney != null &&
+            journeyValues.every((j) => j >= configuredMaxJourney);
+          phaseStr = reachedConfiguredFinal
+            ? "Final"
+            : `Journey ${journeyValues.join(" / ")}`;
+        }
+
+        // Use our mapped variables in the template rendering below
+
         // --- Header Section (matches RaceDetail) ---
-        // Competition title centered (14pt bold)
         doc.setFontSize(14);
         doc.setFont(fontName, "bold");
         doc.setTextColor(0, 0, 0);
+        const competitionTitle =
+          competition?.names?.en ||
+          competition?.name ||
+          competition?.code ||
+          "Competition";
         doc.text(competitionTitle, center, yPos, { align: "center" });
 
-        // Location left, date right (9pt normal) on same line
         doc.setFontSize(9);
         doc.setFont(fontName, "normal");
         doc.text(compLocation, leftMargin, yPos);
@@ -4294,42 +5090,56 @@ const CompetitionRaces = () => {
 
         yPos += 2;
         doc.setLineWidth(0.5);
-        doc.setDrawColor(0);
         doc.line(leftMargin, yPos, rightMargin, yPos);
         yPos += 5;
 
-        // --- Line 1: Race order | Start List | Race code (14pt bold) ---
-        doc.setFontSize(14);
+        // --- Line 1: Race order | Results | Race code ---
+        doc.setFontSize(12);
         doc.setFont(fontName, "bold");
-        doc.text(String(race.order || "1"), leftMargin, yPos);
-        doc.text("Start List", center, yPos, { align: "center" });
-        doc.text(generateRaceCode(category, boatClass), rightMargin, yPos, {
-          align: "right",
-        });
+        doc.text(String(orderStr), leftMargin, yPos);
+        doc.text("Results", center, yPos, { align: "center" });
+        doc.text(
+          (rightHeaderCode || generateRaceCode(category, boatClass))
+            .replace(
+              /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
+              "$1 $2",
+            )
+            .replace(/X/g, "x"),
+          rightMargin,
+          yPos,
+          {
+            align: "right",
+          },
+        );
 
         // --- Line 2: (Event) | Category + Boat Class | Phase ---
         yPos += 5;
         doc.setFontSize(9);
         doc.setFont(fontName, "normal");
         doc.text("(Event)", leftMargin, yPos);
-        doc.setFontSize(12);
+        doc.setFontSize(11);
         doc.setFont(fontName, "bold");
-        const fullEventName =
-          `${category?.titles?.en || ""} ${boatClass?.names?.en || ""}`.trim();
+        fullEventName = fullEventName || `${category?.titles?.en || ""}`.trim();
         doc.text(fullEventName, center, yPos, { align: "center" });
         doc.setFontSize(9);
         doc.setFont(fontName, "normal");
-        doc.text(race.phase || "Final", rightMargin, yPos, { align: "right" });
+        doc.text(phaseStr, rightMargin, yPos, { align: "right" });
 
         // --- Line 3: Arabic text (center) | Distance (right) ---
-        const raceDistance = race.distanceOverride || competition?.defaultDistance;
+        const raceDistance =
+          race.distanceOverride ??
+          race.distance ??
+          allOrigRaces.find((r) => r?.distanceOverride != null)
+            ?.distanceOverride ??
+          competition?.defaultDistance ??
+          competition?.distance ??
+          null;
         const catTitleAr = category?.titles?.ar || "";
-        const boatTitleAr = boatClass?.names?.ar || "";
-        const fullEventNameAr = `${catTitleAr} ${boatTitleAr}`.trim();
+        fullEventNameAr = fullEventNameAr || `${catTitleAr}`.trim();
 
         if (fullEventNameAr && arabicFontName) {
           yPos += 6;
-          doc.setFontSize(14);
+          doc.setFontSize(13);
           doc.setFont(arabicFontName, "normal");
           doc.text(fullEventNameAr, center, yPos, { align: "center" });
           doc.setFont(fontName, "normal");
@@ -4367,13 +5177,12 @@ const CompetitionRaces = () => {
         // --- Calculate legend for bottom margin ---
         const uniqueClubs = Array.from(
           new Set(
-            (race.lanes || [])
-              .map((l) => toDocumentId(l.club))
-              .filter(Boolean),
+            (race.lanes || []).map((l) => toDocumentId(l.club)).filter(Boolean),
           ),
         )
-          .map((id) =>
-            (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
+          .map(
+            (id) =>
+              (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
           )
           .filter(Boolean)
           .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
@@ -4385,9 +5194,6 @@ const CompetitionRaces = () => {
             : 0;
         const bottomMargin = 35 + legendBoxHeight + 14;
 
-        // Store clubs for this page
-        pageClubsMap.set(raceIndex + 1, uniqueClubs);
-
         // --- Helper: format name with uppercase last name ---
         const formatNameForPdf = (a) => {
           if (!a) return "Unknown";
@@ -4396,83 +5202,112 @@ const CompetitionRaces = () => {
           return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
         };
 
-        // --- Table ---
-        const exportLanes = [...(race.lanes || [])].sort(
-          (a, b) => (a.lane || 0) - (b.lane || 0),
-        );
+        // Sort lanes by result (matching RaceDetail)
+        const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
+          const statusA = a.result?.status || "ok";
+          const statusB = b.result?.status || "ok";
+          const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+          const pA = priority[statusA] ?? 10;
+          const pB = priority[statusB] ?? 10;
+          if (pA !== pB) return pA - pB;
+          const posA = a.result?.finishPosition || 999;
+          const posB = b.result?.finishPosition || 999;
+          if (posA !== posB) return posA - posB;
+          return (a.lane || 0) - (b.lane || 0);
+        });
 
-        const tableBody = exportLanes.map((lane) => {
-          const athleteId = toDocumentId(lane?.athlete);
-          const athlete = athleteId
-            ? raceAthleteLookup.get(athleteId) ||
-              (typeof lane.athlete === "object" ? lane.athlete : null)
-            : typeof lane.athlete === "object"
-              ? lane.athlete
-              : null;
+        const winningTime = sortedLanes.find(
+          (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
+        )?.result?.elapsedMs;
 
+        // Build table data (matching RaceDetail)
+        const deltaMap = new Map();
+        const tableBody = sortedLanes.map((lane, rowIdx) => {
           const clubCode =
             lane.club?.code ||
             lane.club?.name?.slice(0, 3).toUpperCase() ||
             "-";
 
           let athleteName = "Unassigned";
-          let license = "";
-          let dob = "";
+          const athleteId = toDocumentId(lane.athlete);
+          const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
+
+          const pos = lane.result?.finishPosition || "-";
+          const status = lane.result?.status || "ok";
+          let timeStr =
+            status !== "ok"
+              ? status.toUpperCase()
+              : formatElapsedTime(lane.result?.elapsedMs);
+          // Store time delta for 2nd place and below (rendered separately)
+          if (
+            status === "ok" &&
+            lane.result?.elapsedMs &&
+            pos > 1 &&
+            winningTime
+          ) {
+            const deltaMs = lane.result.elapsedMs - winningTime;
+            const deltaStr = formatDeltaSeconds(deltaMs);
+            if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
+          }
+          let points = 0;
+          if ((status === "ok" || status === "dnf") && pos > 0 && pos <= 8) {
+            points = calculatePoints(pos, activeRankingSystem);
+          }
 
           if (athlete) {
             athleteName = formatNameForPdf(athlete);
-            license = athlete.licenseNumber || "";
-            dob = athlete.birthDate
-              ? new Date(athlete.birthDate).toLocaleDateString("en-GB")
-              : "";
-          } else if (Array.isArray(lane?.crew) && lane.crew.length > 0) {
+          } else if (Array.isArray(lane.crew) && lane.crew.length > 0) {
             athleteName = lane.crew
-              .map((member, idx, arr) => {
-                const mId = toDocumentId(member);
-                const m = mId
-                  ? raceAthleteLookup.get(mId) ||
-                    (typeof member === "object" ? member : null)
-                  : typeof member === "object"
-                    ? member
-                    : null;
-                const name = formatNameForPdf(m);
-                let pos = "";
+              .map((m, i, arr) => {
+                const mId = toDocumentId(m);
+                const member = mId ? raceAthleteLookup.get(mId) : null;
+                const name = formatNameForPdf(member);
+                let position = "";
                 if (arr.length > 1) {
-                  if (idx === 0) pos = "(b) ";
-                  else if (idx === arr.length - 1) pos = "(s) ";
-                  else pos = `(${idx + 1}) `;
+                  if (i === 0) position = "(b) ";
+                  else if (i === arr.length - 1) position = "(s) ";
+                  else position = `(${i + 1}) `;
                 }
-                return `${pos}${name}`;
-              })
-              .join("\n");
-            license = lane.crew
-              .map((m) => {
-                const mId = toDocumentId(m);
-                const member = mId
-                  ? raceAthleteLookup.get(mId) || m
-                  : m;
-                return (typeof member === "object" ? member?.licenseNumber : null) || "-";
-              })
-              .join("\n");
-            dob = lane.crew
-              .map((m) => {
-                const mId = toDocumentId(m);
-                const member = mId
-                  ? raceAthleteLookup.get(mId) || m
-                  : m;
-                return typeof member === "object" && member?.birthDate
-                  ? new Date(member.birthDate).toLocaleDateString("en-GB")
-                  : "-";
+                return `${position}${name}`;
               })
               .join("\n");
           }
 
-          return [lane.lane, clubCode, athleteName, license, dob];
+          const oRace =
+            rawRacesWithResults.find((r) => r._id === lane._originalRaceId) ||
+            race;
+
+          const lCatId =
+            toDocumentId(oRace.category) || toDocumentId(lane?.category);
+
+          const lBcId =
+            toDocumentId(oRace.boatClass) || toDocumentId(lane?.boatClass);
+
+          const lCat = categories.find((c) => toDocumentId(c) === lCatId);
+
+          const lBc = boatClasses.find((c) => toDocumentId(c) === lBcId);
+
+          const lEvent = generateRaceCode(lCat, lBc)
+            .replace(
+              /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
+              "$1 $2",
+            )
+            .replace(/X/g, "x");
+
+          return [
+            pos,
+            rowIdx + 1,
+            clubCode,
+            athleteName,
+            timeStr,
+            points,
+            lEvent,
+          ];
         });
 
         autoTable(doc, {
           startY: yPos,
-          head: [["Lane", "Club", "Name", "License", "DOB"]],
+          head: [["Rank", "Lane", "Club", "Name", "Time", "Points", "Event"]],
           body: tableBody,
           theme: "plain",
           headStyles: {
@@ -4484,14 +5319,23 @@ const CompetitionRaces = () => {
             cellPadding: 1,
           },
           styles: {
-            fontSize: 9,
-            cellPadding: 1,
+            fontSize: 8,
+            cellPadding: 0.8,
+            minCellHeight: 6.5,
             font: fontName,
           },
           columnStyles: {
-            0: { cellWidth: 15, halign: "center" },
-            1: { fontStyle: "bold" },
-            2: { fontStyle: "bold" },
+            0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
+            1: { cellWidth: 12 },
+            2: { cellWidth: 25, fontStyle: "bold" },
+            3: { fontStyle: "bold" },
+            4: {
+              cellWidth: 22,
+              halign: "right",
+              fontStyle: "bold",
+              fontSize: 9,
+            },
+            5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
           },
           margin: {
             left: leftMargin,
@@ -4509,164 +5353,215 @@ const CompetitionRaces = () => {
               };
             }
           },
+          didDrawCell: (data) => {
+            if (data.section === "body" && data.column.index === 4) {
+              const delta = deltaMap.get(data.row.index);
+              if (delta) {
+                doc.setFontSize(7);
+                doc.setFont(fontName, "normal");
+                doc.setTextColor(80, 80, 80);
+                const pad =
+                  typeof data.cell.styles.cellPadding === "number"
+                    ? data.cell.styles.cellPadding
+                    : data.cell.styles.cellPadding?.right || 0;
+                const x = data.cell.x + data.cell.width - pad;
+                const y = data.cell.y + data.cell.height - 0.3;
+                doc.text(delta, x, y, { align: "right" });
+                doc.setFontSize(8);
+                doc.setFont(fontName, "normal");
+                doc.setTextColor(0, 0, 0);
+              }
+            }
+          },
         });
 
         yPos = doc.lastAutoTable.finalY + 4;
 
-        // Progression Rule Box (ensure no overlap with legend)
+        // --- Status Box (ensure no overlap with legend) ---
         const progressionEnd = yPos + 7;
-        const legendTop = uniqueClubs.length > 0
-          ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
-          : pageHeight - 35;
+        const legendTop =
+          uniqueClubs.length > 0
+            ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
+            : pageHeight - 35;
         if (progressionEnd < legendTop) {
           doc.setDrawColor(0);
           doc.setLineWidth(0.3);
           doc.rect(leftMargin, yPos, 182, 7);
           doc.setFontSize(8);
           doc.setFont(fontName, "normal");
-          const statusText =
-            race.notes || "Progression System: Subject to competition rules.";
-          doc.text(statusText, leftMargin + 2, yPos + 5);
-        }
-      }
-
-      // --- Post-Processing: Add Header, Legend & Footer to ALL Pages ---
-      const pageCount = doc.internal.getNumberOfPages();
-
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-
-        // --- Header Image ---
-        if (headerData) {
-          const imgProps = doc.getImageProperties(headerData);
-          const h = pageWidth / (imgProps.width / imgProps.height);
-          doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(leftMargin, h + 5, rightMargin, h + 5);
-        }
-
-        // --- Legend on each page ---
-        const pageClubs = pageClubsMap.get(i) || [];
-        if (pageClubs.length > 0) {
-          const clubs = [...pageClubs].sort((a, b) =>
-            (a.code || "").localeCompare(b.code || ""),
+          doc.text(
+            "Official Results - Times are final.",
+            leftMargin + 2,
+            yPos + 5,
           );
+        }
 
-          const lineHeight = 4;
-          const boxHeight = clubs.length * lineHeight + 7;
-          const legendY = pageHeight - 35 - boxHeight;
+        // --- Post-Processing: Add Header, Legend & Footer ---
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+          doc.setPage(i);
 
-          doc.setDrawColor(0);
-          doc.setLineWidth(0.3);
-          doc.rect(leftMargin, legendY, 182, boxHeight);
+          // Header Image
+          if (headerData) {
+            const imgProps = doc.getImageProperties(headerData);
+            const h = pageWidth / (imgProps.width / imgProps.height);
+            doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(leftMargin, h + 5, rightMargin, h + 5);
+          }
 
-          doc.setFontSize(9);
-          doc.setFont(fontName, "bold");
-          doc.setTextColor(0, 0, 0);
-          doc.text("Legend:", leftMargin + 2, legendY + 5);
+          // Legend on last page
+          if (i === pageCount && uniqueClubs.length > 0) {
+            const lineHeight = 4;
+            const boxHeight = uniqueClubs.length * lineHeight + 7;
+            const legendY = pageHeight - 35 - boxHeight;
 
-          doc.setFontSize(8);
-          let clubY = legendY + 9;
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.rect(leftMargin, legendY, 182, boxHeight);
 
-          for (const club of clubs) {
-            const code = club.code || "---";
-            const frenchName =
-              club.name || club.names?.fr || club.names?.en || "";
-            const arabicName = club.nameAr || club.names?.ar || "";
-
+            doc.setFontSize(9);
             doc.setFont(fontName, "bold");
-            doc.text(code + ": ", leftMargin + 4, clubY);
+            doc.setTextColor(0, 0, 0);
+            doc.text("Legend:", leftMargin + 2, legendY + 5);
 
-            const codeWidth = doc.getTextWidth(code + ": ");
-            doc.setFont(fontName, "normal");
-            doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+            doc.setFontSize(8);
+            let clubY = legendY + 9;
+            for (const club of uniqueClubs) {
+              const code = club.code || "---";
+              const frenchName =
+                club.name || club.names?.fr || club.names?.en || "";
+              const arabicName = club.nameAr || club.names?.ar || "";
 
-            if (arabicName && arabicFontName) {
-              const frenchWidth = doc.getTextWidth(frenchName);
-              doc.setFont(arabicFontName, "normal");
-              doc.text(
-                " : " + arabicName,
-                leftMargin + 4 + codeWidth + frenchWidth,
-                clubY,
-              );
+              doc.setFont(fontName, "bold");
+              doc.text(code + ": ", leftMargin + 4, clubY);
+
+              const codeWidth = doc.getTextWidth(code + ": ");
               doc.setFont(fontName, "normal");
+              doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+
+              if (arabicName && arabicFontName) {
+                const frenchWidth = doc.getTextWidth(frenchName);
+                doc.setFont(arabicFontName, "normal");
+                doc.text(
+                  " : " + arabicName,
+                  leftMargin + 4 + codeWidth + frenchWidth,
+                  clubY,
+                );
+                doc.setFont(fontName, "normal");
+              }
+              clubY += lineHeight;
             }
-            clubY += lineHeight;
+          }
+
+          // Footer Image
+          if (footerData) {
+            const imgProps = doc.getImageProperties(footerData);
+            const h = pageWidth / (imgProps.width / imgProps.height);
+            doc.addImage(
+              footerData,
+              "PNG",
+              0,
+              pageHeight - h - 3,
+              pageWidth,
+              h,
+            );
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(
+              leftMargin,
+              pageHeight - h - 5,
+              rightMargin,
+              pageHeight - h - 5,
+            );
+            doc.setFontSize(8);
+            doc.setTextColor(100);
+            doc.text(
+              `Page ${i} of ${pageCount}`,
+              rightMargin,
+              pageHeight - h - 8,
+              { align: "right" },
+            );
           }
         }
 
-        // --- Footer Image ---
-        if (footerData) {
-          const imgProps = doc.getImageProperties(footerData);
-          const h = pageWidth / (imgProps.width / imgProps.height);
-          doc.addImage(footerData, "PNG", 0, pageHeight - h - 3, pageWidth, h);
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(leftMargin, pageHeight - h - 5, rightMargin, pageHeight - h - 5);
-          doc.setFontSize(8);
-          doc.setTextColor(100);
-          doc.text(
-            `Page ${i} of ${pageCount}`,
-            rightMargin,
-            pageHeight - h - 8,
-            { align: "right" },
-          );
-        } else if (sponsorData) {
-          const imgProps = doc.getImageProperties(sponsorData);
-          const ratio = imgProps.width / imgProps.height;
-          let w = 180;
-          let h = w / ratio;
-          if (h > 20) { h = 20; w = h * ratio; }
-          const x = leftMargin + (180 - w) / 2;
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(leftMargin, pageHeight - h - 5, rightMargin, pageHeight - h - 5);
-          doc.addImage(sponsorData, "PNG", x, pageHeight - h - 3, w, h);
-          doc.setFontSize(8);
-          doc.setFont(fontName, "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - h - 8, {
-            align: "right",
-          });
-        } else {
-          doc.setDrawColor(128, 0, 0);
-          doc.setLineWidth(0.8);
-          doc.line(leftMargin, pageHeight - 15, rightMargin, pageHeight - 15);
-          doc.setFontSize(8);
-          doc.setFont(fontName, "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - 8, {
-            align: "right",
-          });
-        }
-      }
-
-      doc.save(`StartList_${competition?.code || "Competition"}.pdf`);
-      toast.success("Start List PDF exported successfully");
+        const raceCode = generateRaceCode(category, boatClass);
+        doc.save(
+          `Results_${competition?.code || "Comp"}_${raceCode}_Race${race.order}.pdf`,
+        );
+        toast.success("Results PDF exported successfully");
       } catch (err) {
-        console.error("exportStartListPDF error:", err);
-        toast.error("Failed to export Start List PDF: " + (err.message || "Unknown error"));
+        console.error("exportResultsPDF error:", err);
+        toast.error(
+          "Failed to export Results PDF: " + (err.message || "Unknown error"),
+        );
       }
     },
     [
-      sortedRaces,
       competition,
       categories,
       boatClasses,
       raceAthleteLookup,
       raceClubLookup,
       eventNumberMap,
+      activeRankingSystem,
     ],
   );
 
-  const exportResultsPDF = useCallback(
-    async (race) => {
-      if (!race) return;
+  // Export all results to a single PDF
+  const exportAllResultsPDF = useCallback(async () => {
+    // Filter races that have results (completed or have times)
+    const rawRacesWithResults = sortedRaces.filter((race) => {
+      const hasResults = race.lanes?.some(
+        (lane) =>
+          lane.result?.finishPosition ||
+          lane.result?.elapsedMs ||
+          lane.result?.status === "ok",
+      );
+      return race.status === "completed" || hasResults;
+    });
+    // --- GROUP BY START TIME LOGIC ---
+    const resultsTimeMap = new Map();
+    rawRacesWithResults.forEach((race) => {
+      const timeKey = race.startTime
+        ? new Date(race.startTime).getTime().toString()
+        : `no-time-${race._id || Math.random()}`;
+      if (!resultsTimeMap.has(timeKey)) {
+        resultsTimeMap.set(timeKey, {
+          ...race,
+          lanes: [...(race.lanes || [])].map((l) => ({
+            ...l,
+            _originalRaceId: race._id,
+          })),
+        });
+      } else {
+        const existing = resultsTimeMap.get(timeKey);
+        existing.lanes.push(
+          ...(race.lanes || []).map((l) => ({
+            ...l,
+            _originalRaceId: race._id,
+          })),
+        );
+        if (race.order && (!existing.order || race.order < existing.order)) {
+          existing.order = race.order;
+        }
+      }
+    });
+    const racesWithResults = Array.from(resultsTimeMap.values()).sort(
+      (a, b) => (a.order || 0) - (b.order || 0),
+    );
 
-      toast.info("Generating Results PDF...");
+    if (racesWithResults.length === 0) {
+      toast.info("No races with results to export");
+      return;
+    }
 
-      try {
+    toast.info(
+      `Generating Results PDF for ${racesWithResults.length} race(s)...`,
+    );
+
+    try {
       const dateStr = new Date().toLocaleDateString("en-GB", {
         weekday: "short",
         day: "numeric",
@@ -4674,6 +5569,17 @@ const CompetitionRaces = () => {
         year: "numeric",
       });
 
+      // Use event date instead of generation date
+      const eventDateStr = competition?.startDate
+        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : dateStr;
+
+      // Load assets in parallel
       const [headerData, footerData, logoData, sponsorData, arabicFontBase64] =
         await Promise.all([
           loadImage("/header.png"),
@@ -4707,143 +5613,30 @@ const CompetitionRaces = () => {
       const rightMargin = 196;
       const center = 105;
 
+      // Header height (reduced spacing)
       let headerHeight = 32;
       if (headerData) {
         const imgProps = doc.getImageProperties(headerData);
         headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
       }
 
-      let yPos = headerHeight;
-
-      const categoryId = toDocumentId(race.category);
-      const category = categoryId
-        ? categories.find((item) => toDocumentId(item) === categoryId)
-        : null;
-      const boatClassId = toDocumentId(race.boatClass);
-      const boatClass = boatClassId
-        ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
-        : null;
-
-      // Use event date instead of generation date
-      const eventDateStr = competition?.startDate
-        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
-            weekday: "short",
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          })
-        : dateStr;
-
       // Location (safe string extraction)
       const compLocation = String(
         competition?.location?.name ||
-        competition?.venue?.name ||
-        (typeof competition?.venue === "string" ? competition.venue : null) ||
-        (typeof competition?.location === "string" ? competition.location : null) ||
-        "Location"
+          competition?.venue?.name ||
+          (typeof competition?.venue === "string" ? competition.venue : null) ||
+          (typeof competition?.location === "string"
+            ? competition.location
+            : null) ||
+          "Location",
       );
-
-      // --- Header Section (matches RaceDetail) ---
-      doc.setFontSize(14);
-      doc.setFont(fontName, "bold");
-      doc.setTextColor(0, 0, 0);
       const competitionTitle =
         competition?.names?.en ||
         competition?.name ||
         competition?.code ||
         "Competition";
-      doc.text(competitionTitle, center, yPos, { align: "center" });
 
-      doc.setFontSize(9);
-      doc.setFont(fontName, "normal");
-      doc.text(compLocation, leftMargin, yPos);
-      doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
-
-      yPos += 2;
-      doc.setLineWidth(0.5);
-      doc.line(leftMargin, yPos, rightMargin, yPos);
-      yPos += 5;
-
-      // --- Line 1: Race order | Results | Race code ---
-      doc.setFontSize(14);
-      doc.setFont(fontName, "bold");
-      doc.text(String(race.order || "1"), leftMargin, yPos);
-      doc.text("Results", center, yPos, { align: "center" });
-      doc.text(generateRaceCode(category, boatClass), rightMargin, yPos, {
-        align: "right",
-      });
-
-      // --- Line 2: (Event) | Category + Boat Class | Phase ---
-      yPos += 5;
-      doc.setFontSize(9);
-      doc.setFont(fontName, "normal");
-      doc.text("(Event)", leftMargin, yPos);
-      doc.setFontSize(12);
-      doc.setFont(fontName, "bold");
-      const fullEventName =
-        `${category?.titles?.en || ""} ${boatClass?.names?.en || ""}`.trim();
-      doc.text(fullEventName, center, yPos, { align: "center" });
-      doc.setFontSize(9);
-      doc.setFont(fontName, "normal");
-      doc.text(race.phase || "Final", rightMargin, yPos, { align: "right" });
-
-      // --- Line 3: Arabic text (center) | Distance (right) ---
-      const raceDistance = race.distanceOverride || competition?.defaultDistance;
-      const catTitleAr = category?.titles?.ar || "";
-      const boatTitleAr = boatClass?.names?.ar || "";
-      const fullEventNameAr = `${catTitleAr} ${boatTitleAr}`.trim();
-
-      if (fullEventNameAr && arabicFontName) {
-        yPos += 6;
-        doc.setFontSize(14);
-        doc.setFont(arabicFontName, "normal");
-        doc.text(fullEventNameAr, center, yPos, { align: "center" });
-        doc.setFont(fontName, "normal");
-        doc.setFontSize(9);
-        if (raceDistance) {
-          doc.text(`Distance: ${raceDistance}m`, rightMargin, yPos, {
-            align: "right",
-          });
-        }
-      } else if (raceDistance) {
-        yPos += 4;
-        doc.setFontSize(9);
-        doc.text(`Distance: ${raceDistance}m`, center, yPos, { align: "center" });
-      }
-
-      // --- Line 4: Start Time | Race # ---
-      yPos += 4;
-      doc.setFontSize(9);
-      doc.setFont(fontName, "normal");
-      const startTime = race.startTime
-        ? new Date(race.startTime).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : "00:00";
-      doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
-      doc.setFont(fontName, "bold");
-      doc.text(`Race ${race.order || "1"}`, rightMargin, yPos, { align: "right" });
-      yPos += 4;
-
-      // --- Calculate legend for bottom margin ---
-      const uniqueClubs = Array.from(
-        new Set(
-          (race.lanes || []).map((l) => toDocumentId(l.club)).filter(Boolean),
-        ),
-      )
-        .map((id) =>
-          (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
-        )
-        .filter(Boolean)
-        .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
-
-      const legendLineHeight = 4;
-      const legendBoxHeight =
-        uniqueClubs.length > 0 ? uniqueClubs.length * legendLineHeight + 7 : 0;
-      const bottomMargin = 35 + legendBoxHeight + 14;
-
-      // --- Helper: format name with uppercase last name ---
+      // Helper: format name with uppercase last name
       const formatNameForPdf = (a) => {
         if (!a) return "Unknown";
         const first = a.firstName || "";
@@ -4851,166 +5644,434 @@ const CompetitionRaces = () => {
         return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
       };
 
-      // Sort lanes by result (matching RaceDetail)
-      const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
-        const statusA = a.result?.status || "ok";
-        const statusB = b.result?.status || "ok";
-        const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
-        const pA = priority[statusA] ?? 10;
-        const pB = priority[statusB] ?? 10;
-        if (pA !== pB) return pA - pB;
-        const posA = a.result?.finishPosition || 999;
-        const posB = b.result?.finishPosition || 999;
-        if (posA !== posB) return posA - posB;
-        return (a.lane || 0) - (b.lane || 0);
-      });
+      let isFirstRace = true;
 
-      const winningTime = sortedLanes.find(
-        (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
-      )?.result?.elapsedMs;
+      // Track which pages belong to which race (for per-race legends)
+      const racePageRanges = [];
 
-      // Build table data (matching RaceDetail)
-      const deltaMap = new Map();
-      const tableBody = sortedLanes.map((lane, rowIdx) => {
-        const clubCode =
-          lane.club?.code ||
-          lane.club?.name?.slice(0, 3).toUpperCase() ||
-          "-";
-
-        let athleteName = "Unassigned";
-        const athleteId = toDocumentId(lane.athlete);
-        const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
-
-        const pos = lane.result?.finishPosition || "-";
-        const status = lane.result?.status || "ok";
-        let timeStr =
-          status !== "ok"
-            ? status.toUpperCase()
-            : formatElapsedTime(lane.result?.elapsedMs);
-        // Store time delta for 2nd place and below (rendered separately)
-        if (
-          status === "ok" &&
-          lane.result?.elapsedMs &&
-          pos > 1 &&
-          winningTime
-        ) {
-          const deltaMs = lane.result.elapsedMs - winningTime;
-          const deltaStr = formatDeltaSeconds(deltaMs);
-          if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
+      for (const race of racesWithResults) {
+        if (!isFirstRace) {
+          doc.addPage();
         }
-        let points = 0;
-        if (
-          (status === "ok" || status === "dnf") &&
-          pos > 0 &&
-          pos <= 8
-        ) {
-          points = calculatePoints(pos, activeRankingSystem);
+        isFirstRace = false;
+
+        const raceStartPage = doc.internal.getNumberOfPages();
+
+        let yPos = headerHeight;
+
+        const categoryId = toDocumentId(race.category);
+        const category = categoryId
+          ? categories.find((item) => toDocumentId(item) === categoryId)
+          : null;
+        const boatClassId = toDocumentId(race.boatClass);
+        const boatClass = boatClassId
+          ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
+          : null;
+
+        // --- AGGREGATE ORIGINAL RACE INFO ---
+        const distinctOrigIds = Array.from(
+          new Set(
+            (race.lanes || []).map((l) => l._originalRaceId).filter(Boolean),
+          ),
+        );
+        const allOrigRaces = distinctOrigIds.length
+          ? distinctOrigIds
+              .map((id) =>
+                (typeof rawTargetRaces !== "undefined"
+                  ? rawTargetRaces
+                  : rawRacesWithResults
+                ).find((r) => r._id === id),
+              )
+              .filter(Boolean)
+          : [race];
+
+        const distinctEnTitles = new Set();
+        const distinctArTitles = new Set();
+        const distinctCodes = new Set();
+        const distinctOrders = new Set();
+
+        allOrigRaces.forEach((r) => {
+          const c = categories.find(
+            (x) => toDocumentId(x) === toDocumentId(r.category),
+          );
+          const b = boatClasses.find(
+            (x) => toDocumentId(x) === toDocumentId(r.boatClass),
+          );
+          const evtEn = `${c?.titles?.en || ""}`.trim();
+          const evtAr = `${c?.titles?.ar || ""}`.trim();
+          if (evtEn) distinctEnTitles.add(evtEn);
+          if (evtAr) distinctArTitles.add(evtAr);
+          if (c || b) distinctCodes.add(generateRaceCode(c, b));
+          if (r.order) distinctOrders.add(r.order);
+        });
+
+        let fullEventName = Array.from(distinctEnTitles).join(" / ");
+        let fullEventNameAr = Array.from(distinctArTitles).join(" / ");
+        let rightHeaderCode = Array.from(distinctCodes).join(" / ");
+        let orderStr =
+          Array.from(distinctOrders)
+            .sort((a, b) => a - b)
+            .join(" / ") ||
+          race.order ||
+          "1";
+
+        // Compute Phase: Journey by journeyIndex, Final only when configured max journey is reached.
+        const explicitNonFinalPhases = Array.from(
+          new Set(
+            allOrigRaces
+              .map((r) => String(r?.phase || "").trim())
+              .filter((p) => p && !/^final$/i.test(p)),
+          ),
+        );
+        const journeyValues = Array.from(
+          new Set(
+            allOrigRaces
+              .map((r) => Number(r?.journeyIndex))
+              .filter((j) => Number.isFinite(j) && j > 0),
+          ),
+        ).sort((a, b) => a - b);
+        const configuredMaxJourney =
+          Number(
+            competition?.maximumJourney ??
+              competition?.maxJourney ??
+              competition?.journeysCount,
+          ) || null;
+
+        let phaseStr = "Final";
+        if (explicitNonFinalPhases.length > 0) {
+          phaseStr = explicitNonFinalPhases.join(" / ");
+        } else if (journeyValues.length > 0) {
+          const reachedConfiguredFinal =
+            configuredMaxJourney != null &&
+            journeyValues.every((j) => j >= configuredMaxJourney);
+          phaseStr = reachedConfiguredFinal
+            ? "Final"
+            : `Journey ${journeyValues.join(" / ")}`;
         }
 
-        if (athlete) {
-          athleteName = formatNameForPdf(athlete);
-        } else if (Array.isArray(lane.crew) && lane.crew.length > 0) {
-          athleteName = lane.crew
-            .map((m, i, arr) => {
-              const mId = toDocumentId(m);
-              const member = mId ? raceAthleteLookup.get(mId) : null;
-              const name = formatNameForPdf(member);
-              let position = "";
-              if (arr.length > 1) {
-                if (i === 0) position = "(b) ";
-                else if (i === arr.length - 1) position = "(s) ";
-                else position = `(${i + 1}) `;
-              }
-              return `${position}${name}`;
-            })
-            .join("\n");
-        }
+        // Use our mapped variables in the template rendering below
 
-        return [pos, lane.lane, clubCode, athleteName, timeStr, points];
-      });
+        // --- Header Section (matches RaceDetail) ---
+        doc.setFontSize(14);
+        doc.setFont(fontName, "bold");
+        doc.setTextColor(0, 0, 0);
+        doc.text(competitionTitle, center, yPos, { align: "center" });
 
-      autoTable(doc, {
-        startY: yPos,
-        head: [["Rank", "Lane", "Club", "Name", "Time", "Points"]],
-        body: tableBody,
-        theme: "plain",
-        headStyles: {
-          fillColor: [255, 255, 255],
-          textColor: [0, 0, 0],
-          fontStyle: "bold",
-          lineWidth: 0.1,
-          lineColor: [0, 0, 0],
-          cellPadding: 1,
-        },
-        styles: {
-          fontSize: 8,
-          cellPadding: 0.8,
-          minCellHeight: 6.5,
-          font: fontName,
-        },
-        columnStyles: {
-          0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
-          1: { cellWidth: 12 },
-          2: { cellWidth: 25, fontStyle: "bold" },
-          3: { fontStyle: "bold" },
-          4: { cellWidth: 22, halign: "right", fontStyle: "bold", fontSize: 9 },
-          5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
-        },
-        margin: {
-          left: leftMargin,
-          right: 14,
-          bottom: bottomMargin,
-          top: headerHeight,
-        },
-        didParseCell: (data) => {
-          if (data.section === "head") {
-            data.cell.styles.lineWidth = {
-              top: 0.1,
-              bottom: 0.1,
-              left: 0.1,
-              right: 0.1,
-            };
-          }
-        },
-        didDrawCell: (data) => {
-          if (data.section === "body" && data.column.index === 4) {
-            const delta = deltaMap.get(data.row.index);
-            if (delta) {
-              doc.setFontSize(7);
-              doc.setFont(fontName, "normal");
-              doc.setTextColor(80, 80, 80);
-              const pad =
-                typeof data.cell.styles.cellPadding === "number"
-                  ? data.cell.styles.cellPadding
-                  : data.cell.styles.cellPadding?.right || 0;
-              const x = data.cell.x + data.cell.width - pad;
-              const y = data.cell.y + data.cell.height - 0.3;
-              doc.text(delta, x, y, { align: "right" });
-              doc.setFontSize(8);
-              doc.setFont(fontName, "normal");
-              doc.setTextColor(0, 0, 0);
-            }
-          }
-        },
-      });
-
-      yPos = doc.lastAutoTable.finalY + 4;
-
-      // --- Status Box (ensure no overlap with legend) ---
-      const progressionEnd = yPos + 7;
-      const legendTop = uniqueClubs.length > 0
-        ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
-        : pageHeight - 35;
-      if (progressionEnd < legendTop) {
-        doc.setDrawColor(0);
-        doc.setLineWidth(0.3);
-        doc.rect(leftMargin, yPos, 182, 7);
-        doc.setFontSize(8);
+        doc.setFontSize(9);
         doc.setFont(fontName, "normal");
-        doc.text("Official Results - Times are final.", leftMargin + 2, yPos + 5);
+        doc.text(compLocation, leftMargin, yPos);
+        doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
+
+        yPos += 2;
+        doc.setLineWidth(0.5);
+        doc.line(leftMargin, yPos, rightMargin, yPos);
+        yPos += 5;
+
+        // --- Line 1: Race order | Results | Race code ---
+        doc.setFontSize(12);
+        doc.setFont(fontName, "bold");
+        doc.text(String(orderStr), leftMargin, yPos);
+        doc.text("Results", center, yPos, { align: "center" });
+        doc.text(
+          (rightHeaderCode || generateRaceCode(category, boatClass))
+            .replace(
+              /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
+              "$1 $2",
+            )
+            .replace(/X/g, "x"),
+          rightMargin,
+          yPos,
+          {
+            align: "right",
+          },
+        );
+
+        // --- Line 2: (Event) | Category + Boat Class | Phase ---
+        yPos += 5;
+        doc.setFontSize(9);
+        doc.setFont(fontName, "normal");
+        doc.text("(Event)", leftMargin, yPos);
+        doc.setFontSize(11);
+        doc.setFont(fontName, "bold");
+        fullEventName = fullEventName || `${category?.titles?.en || ""}`.trim();
+        doc.text(fullEventName, center, yPos, { align: "center" });
+        doc.setFontSize(9);
+        doc.setFont(fontName, "normal");
+        doc.text(phaseStr, rightMargin, yPos, { align: "right" });
+
+        // --- Line 3: Arabic text (center) | Distance (right) ---
+        const raceDistance =
+          race.distanceOverride ??
+          race.distance ??
+          allOrigRaces.find((r) => r?.distanceOverride != null)
+            ?.distanceOverride ??
+          competition?.defaultDistance ??
+          competition?.distance ??
+          null;
+        const catTitleAr = category?.titles?.ar || "";
+        fullEventNameAr = fullEventNameAr || `${catTitleAr}`.trim();
+
+        if (fullEventNameAr && arabicFontName) {
+          yPos += 6;
+          doc.setFontSize(13);
+          doc.setFont(arabicFontName, "normal");
+          doc.text(fullEventNameAr, center, yPos, { align: "center" });
+          doc.setFont(fontName, "normal");
+          doc.setFontSize(9);
+          if (raceDistance) {
+            doc.text(`Distance: ${raceDistance}m`, rightMargin, yPos, {
+              align: "right",
+            });
+          }
+        } else if (raceDistance) {
+          yPos += 4;
+          doc.setFontSize(9);
+          doc.text(`Distance: ${raceDistance}m`, center, yPos, {
+            align: "center",
+          });
+        }
+
+        // --- Line 4: Start Time | Race # ---
+        yPos += 4;
+        doc.setFontSize(9);
+        doc.setFont(fontName, "normal");
+        const startTime = race.startTime
+          ? new Date(race.startTime).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "00:00";
+        doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
+        doc.setFont(fontName, "bold");
+        doc.text(`Race ${race.order || "1"}`, rightMargin, yPos, {
+          align: "right",
+        });
+        yPos += 4;
+
+        // --- Calculate legend for bottom margin ---
+        const uniqueClubs = Array.from(
+          new Set(
+            (race.lanes || []).map((l) => toDocumentId(l.club)).filter(Boolean),
+          ),
+        )
+          .map(
+            (id) =>
+              (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
+          )
+          .filter(Boolean)
+          .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+
+        const legendLineHeight = 4;
+        const legendBoxHeight =
+          uniqueClubs.length > 0
+            ? uniqueClubs.length * legendLineHeight + 7
+            : 0;
+        const bottomMargin = 35 + legendBoxHeight + 14;
+
+        // Sort lanes by result (matching RaceDetail)
+        const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
+          const statusA = a.result?.status || "ok";
+          const statusB = b.result?.status || "ok";
+          const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+          const pA = priority[statusA] ?? 10;
+          const pB = priority[statusB] ?? 10;
+          if (pA !== pB) return pA - pB;
+          const posA = a.result?.finishPosition || 999;
+          const posB = b.result?.finishPosition || 999;
+          if (posA !== posB) return posA - posB;
+          return (a.lane || 0) - (b.lane || 0);
+        });
+
+        // Find winning time for delta calculation
+        const winningTime = sortedLanes.find(
+          (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
+        )?.result?.elapsedMs;
+
+        // Build table data (matching RaceDetail)
+        const deltaMap = new Map();
+        const tableBody = sortedLanes.map((lane, rowIdx) => {
+          const clubCode =
+            lane.club?.code ||
+            lane.club?.name?.slice(0, 3).toUpperCase() ||
+            "-";
+
+          let athleteName = "Unassigned";
+          const athleteId = toDocumentId(lane.athlete);
+          const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
+
+          const pos = lane.result?.finishPosition || "-";
+          const status = lane.result?.status || "ok";
+          let timeStr =
+            status !== "ok"
+              ? status.toUpperCase()
+              : formatElapsedTime(lane.result?.elapsedMs);
+          // Store time delta for 2nd place and below (rendered separately)
+          if (
+            status === "ok" &&
+            lane.result?.elapsedMs &&
+            pos > 1 &&
+            winningTime
+          ) {
+            const deltaMs = lane.result.elapsedMs - winningTime;
+            const deltaStr = formatDeltaSeconds(deltaMs);
+            if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
+          }
+          let points = 0;
+          if ((status === "ok" || status === "dnf") && pos > 0 && pos <= 8) {
+            points = calculatePoints(pos, activeRankingSystem);
+          }
+
+          if (athlete) {
+            athleteName = formatNameForPdf(athlete);
+          } else if (Array.isArray(lane.crew) && lane.crew.length > 0) {
+            athleteName = lane.crew
+              .map((m, i, arr) => {
+                const mId = toDocumentId(m);
+                const member = mId ? raceAthleteLookup.get(mId) : null;
+                const name = formatNameForPdf(member);
+                let position = "";
+                if (arr.length > 1) {
+                  if (i === 0) position = "(b) ";
+                  else if (i === arr.length - 1) position = "(s) ";
+                  else position = `(${i + 1}) `;
+                }
+                return `${position}${name}`;
+              })
+              .join("\n");
+          }
+
+          const oRace =
+            rawRacesWithResults.find((r) => r._id === lane._originalRaceId) ||
+            race;
+
+          const lCatId =
+            toDocumentId(oRace.category) || toDocumentId(lane?.category);
+
+          const lBcId =
+            toDocumentId(oRace.boatClass) || toDocumentId(lane?.boatClass);
+
+          const lCat = categories.find((c) => toDocumentId(c) === lCatId);
+
+          const lBc = boatClasses.find((c) => toDocumentId(c) === lBcId);
+
+          const lEvent = generateRaceCode(lCat, lBc)
+            .replace(
+              /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
+              "$1 $2",
+            )
+            .replace(/X/g, "x");
+
+          return [
+            pos,
+            rowIdx + 1,
+            clubCode,
+            athleteName,
+            timeStr,
+            points,
+            lEvent,
+          ];
+        });
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [["Rank", "Lane", "Club", "Name", "Time", "Points", "Event"]],
+          body: tableBody,
+          theme: "plain",
+          headStyles: {
+            fillColor: [255, 255, 255],
+            textColor: [0, 0, 0],
+            fontStyle: "bold",
+            lineWidth: 0.1,
+            lineColor: [0, 0, 0],
+            cellPadding: 1,
+          },
+          styles: {
+            fontSize: 8,
+            cellPadding: 0.8,
+            minCellHeight: 6.5,
+            font: fontName,
+          },
+          columnStyles: {
+            0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
+            1: { cellWidth: 12 },
+            2: { cellWidth: 25, fontStyle: "bold" },
+            3: { fontStyle: "bold" },
+            4: {
+              cellWidth: 22,
+              halign: "right",
+              fontStyle: "bold",
+              fontSize: 9,
+            },
+            5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
+          },
+          margin: {
+            left: leftMargin,
+            right: 14,
+            bottom: bottomMargin,
+            top: headerHeight,
+          },
+          didParseCell: (data) => {
+            if (data.section === "head") {
+              data.cell.styles.lineWidth = {
+                top: 0.1,
+                bottom: 0.1,
+                left: 0.1,
+                right: 0.1,
+              };
+            }
+          },
+          didDrawCell: (data) => {
+            if (data.section === "body" && data.column.index === 4) {
+              const delta = deltaMap.get(data.row.index);
+              if (delta) {
+                doc.setFontSize(7);
+                doc.setFont(fontName, "normal");
+                doc.setTextColor(80, 80, 80);
+                const pad =
+                  typeof data.cell.styles.cellPadding === "number"
+                    ? data.cell.styles.cellPadding
+                    : data.cell.styles.cellPadding?.right || 0;
+                const x = data.cell.x + data.cell.width - pad;
+                const y = data.cell.y + data.cell.height - 0.3;
+                doc.text(delta, x, y, { align: "right" });
+                doc.setFontSize(8);
+                doc.setFont(fontName, "normal");
+                doc.setTextColor(0, 0, 0);
+              }
+            }
+          },
+        });
+
+        yPos = doc.lastAutoTable.finalY + 4;
+
+        // --- Status Box (ensure no overlap with legend) ---
+        const progressionEnd = yPos + 7;
+        const legendTop =
+          uniqueClubs.length > 0
+            ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
+            : pageHeight - 35;
+        if (progressionEnd < legendTop) {
+          doc.setDrawColor(0);
+          doc.setLineWidth(0.3);
+          doc.rect(leftMargin, yPos, 182, 7);
+          doc.setFontSize(8);
+          doc.setFont(fontName, "normal");
+          doc.text(
+            "Official Results - Times are final.",
+            leftMargin + 2,
+            yPos + 5,
+          );
+        }
+
+        const raceEndPage = doc.internal.getNumberOfPages();
+        racePageRanges.push({
+          startPage: raceStartPage,
+          endPage: raceEndPage,
+          clubs: uniqueClubs,
+        });
       }
 
-      // --- Post-Processing: Add Header, Legend & Footer ---
+      // --- Post-Processing: Add Header, Legend & Footer to all pages ---
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -5025,10 +6086,12 @@ const CompetitionRaces = () => {
           doc.line(leftMargin, h + 5, rightMargin, h + 5);
         }
 
-        // Legend on last page
-        if (i === pageCount && uniqueClubs.length > 0) {
+        // Legend on last page of each race
+        const raceRange = racePageRanges.find((r) => r.endPage === i);
+        if (raceRange && raceRange.clubs.length > 0) {
+          const clubs = raceRange.clubs;
           const lineHeight = 4;
-          const boxHeight = uniqueClubs.length * lineHeight + 7;
+          const boxHeight = clubs.length * lineHeight + 7;
           const legendY = pageHeight - 35 - boxHeight;
 
           doc.setDrawColor(0);
@@ -5042,7 +6105,7 @@ const CompetitionRaces = () => {
 
           doc.setFontSize(8);
           let clubY = legendY + 9;
-          for (const club of uniqueClubs) {
+          for (const club of clubs) {
             const code = club.code || "---";
             const frenchName =
               club.name || club.names?.fr || club.names?.en || "";
@@ -5093,518 +6156,13 @@ const CompetitionRaces = () => {
         }
       }
 
-      const raceCode = generateRaceCode(category, boatClass);
-      doc.save(
-        `Results_${competition?.code || "Comp"}_${raceCode}_Race${race.order}.pdf`,
-      );
-      toast.success("Results PDF exported successfully");
-      } catch (err) {
-        console.error("exportResultsPDF error:", err);
-        toast.error("Failed to export Results PDF: " + (err.message || "Unknown error"));
-      }
-    },
-    [
-      competition,
-      categories,
-      boatClasses,
-      raceAthleteLookup,
-      raceClubLookup,
-      eventNumberMap,
-      activeRankingSystem,
-    ],
-  );
-
-  // Export all results to a single PDF
-  const exportAllResultsPDF = useCallback(async () => {
-    // Filter races that have results (completed or have times)
-    const racesWithResults = sortedRaces.filter((race) => {
-      const hasResults = race.lanes?.some(
-        (lane) =>
-          lane.result?.finishPosition ||
-          lane.result?.elapsedMs ||
-          lane.result?.status === "ok",
-      );
-      return race.status === "completed" || hasResults;
-    });
-
-    if (racesWithResults.length === 0) {
-      toast.info("No races with results to export");
-      return;
-    }
-
-    toast.info(`Generating Results PDF for ${racesWithResults.length} race(s)...`);
-
-    try {
-    const dateStr = new Date().toLocaleDateString("en-GB", {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-
-    // Use event date instead of generation date
-    const eventDateStr = competition?.startDate
-      ? new Date(competition.startDate).toLocaleDateString("en-GB", {
-          weekday: "short",
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        })
-      : dateStr;
-
-    // Load assets in parallel
-    const [headerData, footerData, logoData, sponsorData, arabicFontBase64] =
-      await Promise.all([
-        loadImage("/header.png"),
-        loadImage("/footer.png"),
-        loadImage("/logo.png"),
-        loadImage("/sponsors.png"),
-        loadFont("/fonts/Amiri-Regular.ttf"),
-      ]);
-
-    const doc = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4",
-    });
-
-    let arabicFontName = null;
-    if (arabicFontBase64) {
-      try {
-        doc.addFileToVFS("Amiri-Regular.ttf", arabicFontBase64);
-        doc.addFont("Amiri-Regular.ttf", "Amiri", "normal");
-        arabicFontName = "Amiri";
-      } catch (err) {
-        console.warn("Could not register Arabic font:", err);
-      }
-    }
-
-    const fontName = "helvetica";
-    const pageWidth = 210;
-    const pageHeight = 297;
-    const leftMargin = 14;
-    const rightMargin = 196;
-    const center = 105;
-
-    // Header height (reduced spacing)
-    let headerHeight = 32;
-    if (headerData) {
-      const imgProps = doc.getImageProperties(headerData);
-      headerHeight =
-        pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
-    }
-
-    // Location (safe string extraction)
-    const compLocation = String(
-      competition?.location?.name ||
-        competition?.venue?.name ||
-        (typeof competition?.venue === "string" ? competition.venue : null) ||
-        (typeof competition?.location === "string"
-          ? competition.location
-          : null) ||
-        "Location",
-    );
-    const competitionTitle =
-      competition?.names?.en ||
-      competition?.name ||
-      competition?.code ||
-      "Competition";
-
-    // Helper: format name with uppercase last name
-    const formatNameForPdf = (a) => {
-      if (!a) return "Unknown";
-      const first = a.firstName || "";
-      const last = (a.lastName || "").toUpperCase();
-      return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
-    };
-
-    let isFirstRace = true;
-
-    // Track which pages belong to which race (for per-race legends)
-    const racePageRanges = [];
-
-    for (const race of racesWithResults) {
-      if (!isFirstRace) {
-        doc.addPage();
-      }
-      isFirstRace = false;
-
-      const raceStartPage = doc.internal.getNumberOfPages();
-
-      let yPos = headerHeight;
-
-      const categoryId = toDocumentId(race.category);
-      const category = categoryId
-        ? categories.find((item) => toDocumentId(item) === categoryId)
-        : null;
-      const boatClassId = toDocumentId(race.boatClass);
-      const boatClass = boatClassId
-        ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
-        : null;
-
-      // --- Header Section (matches RaceDetail) ---
-      doc.setFontSize(14);
-      doc.setFont(fontName, "bold");
-      doc.setTextColor(0, 0, 0);
-      doc.text(competitionTitle, center, yPos, { align: "center" });
-
-      doc.setFontSize(9);
-      doc.setFont(fontName, "normal");
-      doc.text(compLocation, leftMargin, yPos);
-      doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
-
-      yPos += 2;
-      doc.setLineWidth(0.5);
-      doc.line(leftMargin, yPos, rightMargin, yPos);
-      yPos += 5;
-
-      // --- Line 1: Race order | Results | Race code ---
-      doc.setFontSize(14);
-      doc.setFont(fontName, "bold");
-      doc.text(String(race.order || "1"), leftMargin, yPos);
-      doc.text("Results", center, yPos, { align: "center" });
-      doc.text(generateRaceCode(category, boatClass), rightMargin, yPos, {
-        align: "right",
-      });
-
-      // --- Line 2: (Event) | Category + Boat Class | Phase ---
-      yPos += 5;
-      doc.setFontSize(9);
-      doc.setFont(fontName, "normal");
-      doc.text("(Event)", leftMargin, yPos);
-      doc.setFontSize(12);
-      doc.setFont(fontName, "bold");
-      const fullEventName =
-        `${category?.titles?.en || ""} ${boatClass?.names?.en || ""}`.trim();
-      doc.text(fullEventName, center, yPos, { align: "center" });
-      doc.setFontSize(9);
-      doc.setFont(fontName, "normal");
-      doc.text(race.phase || "Final", rightMargin, yPos, { align: "right" });
-
-      // --- Line 3: Arabic text (center) | Distance (right) ---
-      const raceDistance = race.distanceOverride || competition?.defaultDistance;
-      const catTitleAr = category?.titles?.ar || "";
-      const boatTitleAr = boatClass?.names?.ar || "";
-      const fullEventNameAr = `${catTitleAr} ${boatTitleAr}`.trim();
-
-      if (fullEventNameAr && arabicFontName) {
-        yPos += 6;
-        doc.setFontSize(14);
-        doc.setFont(arabicFontName, "normal");
-        doc.text(fullEventNameAr, center, yPos, { align: "center" });
-        doc.setFont(fontName, "normal");
-        doc.setFontSize(9);
-        if (raceDistance) {
-          doc.text(`Distance: ${raceDistance}m`, rightMargin, yPos, {
-            align: "right",
-          });
-        }
-      } else if (raceDistance) {
-        yPos += 4;
-        doc.setFontSize(9);
-        doc.text(`Distance: ${raceDistance}m`, center, yPos, {
-          align: "center",
-        });
-      }
-
-      // --- Line 4: Start Time | Race # ---
-      yPos += 4;
-      doc.setFontSize(9);
-      doc.setFont(fontName, "normal");
-      const startTime = race.startTime
-        ? new Date(race.startTime).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : "00:00";
-      doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
-      doc.setFont(fontName, "bold");
-      doc.text(`Race ${race.order || "1"}`, rightMargin, yPos, {
-        align: "right",
-      });
-      yPos += 4;
-
-      // --- Calculate legend for bottom margin ---
-      const uniqueClubs = Array.from(
-        new Set(
-          (race.lanes || []).map((l) => toDocumentId(l.club)).filter(Boolean),
-        ),
-      )
-        .map((id) =>
-          (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
-        )
-        .filter(Boolean)
-        .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
-
-      const legendLineHeight = 4;
-      const legendBoxHeight =
-        uniqueClubs.length > 0
-          ? uniqueClubs.length * legendLineHeight + 7
-          : 0;
-      const bottomMargin = 35 + legendBoxHeight + 14;
-
-      // Sort lanes by result (matching RaceDetail)
-      const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
-        const statusA = a.result?.status || "ok";
-        const statusB = b.result?.status || "ok";
-        const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
-        const pA = priority[statusA] ?? 10;
-        const pB = priority[statusB] ?? 10;
-        if (pA !== pB) return pA - pB;
-        const posA = a.result?.finishPosition || 999;
-        const posB = b.result?.finishPosition || 999;
-        if (posA !== posB) return posA - posB;
-        return (a.lane || 0) - (b.lane || 0);
-      });
-
-      // Find winning time for delta calculation
-      const winningTime = sortedLanes.find(
-        (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
-      )?.result?.elapsedMs;
-
-      // Build table data (matching RaceDetail)
-      const deltaMap = new Map();
-      const tableBody = sortedLanes.map((lane, rowIdx) => {
-        const clubCode =
-          lane.club?.code ||
-          lane.club?.name?.slice(0, 3).toUpperCase() ||
-          "-";
-
-        let athleteName = "Unassigned";
-        const athleteId = toDocumentId(lane.athlete);
-        const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
-
-        const pos = lane.result?.finishPosition || "-";
-        const status = lane.result?.status || "ok";
-        let timeStr =
-          status !== "ok"
-            ? status.toUpperCase()
-            : formatElapsedTime(lane.result?.elapsedMs);
-        // Store time delta for 2nd place and below (rendered separately)
-        if (
-          status === "ok" &&
-          lane.result?.elapsedMs &&
-          pos > 1 &&
-          winningTime
-        ) {
-          const deltaMs = lane.result.elapsedMs - winningTime;
-          const deltaStr = formatDeltaSeconds(deltaMs);
-          if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
-        }
-        let points = 0;
-        if (
-          (status === "ok" || status === "dnf") &&
-          pos > 0 &&
-          pos <= 8
-        ) {
-          points = calculatePoints(pos, activeRankingSystem);
-        }
-
-        if (athlete) {
-          athleteName = formatNameForPdf(athlete);
-        } else if (Array.isArray(lane.crew) && lane.crew.length > 0) {
-          athleteName = lane.crew
-            .map((m, i, arr) => {
-              const mId = toDocumentId(m);
-              const member = mId ? raceAthleteLookup.get(mId) : null;
-              const name = formatNameForPdf(member);
-              let position = "";
-              if (arr.length > 1) {
-                if (i === 0) position = "(b) ";
-                else if (i === arr.length - 1) position = "(s) ";
-                else position = `(${i + 1}) `;
-              }
-              return `${position}${name}`;
-            })
-            .join("\n");
-        }
-
-        return [pos, lane.lane, clubCode, athleteName, timeStr, points];
-      });
-
-      autoTable(doc, {
-        startY: yPos,
-        head: [["Rank", "Lane", "Club", "Name", "Time", "Points"]],
-        body: tableBody,
-        theme: "plain",
-        headStyles: {
-          fillColor: [255, 255, 255],
-          textColor: [0, 0, 0],
-          fontStyle: "bold",
-          lineWidth: 0.1,
-          lineColor: [0, 0, 0],
-          cellPadding: 1,
-        },
-        styles: {
-          fontSize: 8,
-          cellPadding: 0.8,
-          minCellHeight: 6.5,
-          font: fontName,
-        },
-        columnStyles: {
-          0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
-          1: { cellWidth: 12 },
-          2: { cellWidth: 25, fontStyle: "bold" },
-          3: { fontStyle: "bold" },
-          4: { cellWidth: 22, halign: "right", fontStyle: "bold", fontSize: 9 },
-          5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
-        },
-        margin: {
-          left: leftMargin,
-          right: 14,
-          bottom: bottomMargin,
-          top: headerHeight,
-        },
-        didParseCell: (data) => {
-          if (data.section === "head") {
-            data.cell.styles.lineWidth = {
-              top: 0.1,
-              bottom: 0.1,
-              left: 0.1,
-              right: 0.1,
-            };
-          }
-        },
-        didDrawCell: (data) => {
-          if (data.section === "body" && data.column.index === 4) {
-            const delta = deltaMap.get(data.row.index);
-            if (delta) {
-              doc.setFontSize(7);
-              doc.setFont(fontName, "normal");
-              doc.setTextColor(80, 80, 80);
-              const pad =
-                typeof data.cell.styles.cellPadding === "number"
-                  ? data.cell.styles.cellPadding
-                  : data.cell.styles.cellPadding?.right || 0;
-              const x = data.cell.x + data.cell.width - pad;
-              const y = data.cell.y + data.cell.height - 0.3;
-              doc.text(delta, x, y, { align: "right" });
-              doc.setFontSize(8);
-              doc.setFont(fontName, "normal");
-              doc.setTextColor(0, 0, 0);
-            }
-          }
-        },
-      });
-
-      yPos = doc.lastAutoTable.finalY + 4;
-
-      // --- Status Box (ensure no overlap with legend) ---
-      const progressionEnd = yPos + 7;
-      const legendTop = uniqueClubs.length > 0
-        ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
-        : pageHeight - 35;
-      if (progressionEnd < legendTop) {
-        doc.setDrawColor(0);
-        doc.setLineWidth(0.3);
-        doc.rect(leftMargin, yPos, 182, 7);
-        doc.setFontSize(8);
-        doc.setFont(fontName, "normal");
-        doc.text(
-          "Official Results - Times are final.",
-          leftMargin + 2,
-          yPos + 5,
-        );
-      }
-
-      const raceEndPage = doc.internal.getNumberOfPages();
-      racePageRanges.push({
-        startPage: raceStartPage,
-        endPage: raceEndPage,
-        clubs: uniqueClubs,
-      });
-    }
-
-    // --- Post-Processing: Add Header, Legend & Footer to all pages ---
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-
-      // Header Image
-      if (headerData) {
-        const imgProps = doc.getImageProperties(headerData);
-        const h = pageWidth / (imgProps.width / imgProps.height);
-        doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
-        doc.setDrawColor(128, 0, 0);
-        doc.setLineWidth(0.8);
-        doc.line(leftMargin, h + 5, rightMargin, h + 5);
-      }
-
-      // Legend on last page of each race
-      const raceRange = racePageRanges.find((r) => r.endPage === i);
-      if (raceRange && raceRange.clubs.length > 0) {
-        const clubs = raceRange.clubs;
-        const lineHeight = 4;
-        const boxHeight = clubs.length * lineHeight + 7;
-        const legendY = pageHeight - 35 - boxHeight;
-
-        doc.setDrawColor(0);
-        doc.setLineWidth(0.3);
-        doc.rect(leftMargin, legendY, 182, boxHeight);
-
-        doc.setFontSize(9);
-        doc.setFont(fontName, "bold");
-        doc.setTextColor(0, 0, 0);
-        doc.text("Legend:", leftMargin + 2, legendY + 5);
-
-        doc.setFontSize(8);
-        let clubY = legendY + 9;
-        for (const club of clubs) {
-          const code = club.code || "---";
-          const frenchName =
-            club.name || club.names?.fr || club.names?.en || "";
-          const arabicName = club.nameAr || club.names?.ar || "";
-
-          doc.setFont(fontName, "bold");
-          doc.text(code + ": ", leftMargin + 4, clubY);
-
-          const codeWidth = doc.getTextWidth(code + ": ");
-          doc.setFont(fontName, "normal");
-          doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
-
-          if (arabicName && arabicFontName) {
-            const frenchWidth = doc.getTextWidth(frenchName);
-            doc.setFont(arabicFontName, "normal");
-            doc.text(
-              " : " + arabicName,
-              leftMargin + 4 + codeWidth + frenchWidth,
-              clubY,
-            );
-            doc.setFont(fontName, "normal");
-          }
-          clubY += lineHeight;
-        }
-      }
-
-      // Footer Image
-      if (footerData) {
-        const imgProps = doc.getImageProperties(footerData);
-        const h = pageWidth / (imgProps.width / imgProps.height);
-        doc.addImage(footerData, "PNG", 0, pageHeight - h - 3, pageWidth, h);
-        doc.setDrawColor(128, 0, 0);
-        doc.setLineWidth(0.8);
-        doc.line(
-          leftMargin,
-          pageHeight - h - 5,
-          rightMargin,
-          pageHeight - h - 5,
-        );
-        doc.setFontSize(8);
-        doc.setTextColor(100);
-        doc.text(
-          `Page ${i} of ${pageCount}`,
-          rightMargin,
-          pageHeight - h - 8,
-          { align: "right" },
-        );
-      }
-    }
-
-    doc.save(`Results_${competition?.code || "Competition"}_All.pdf`);
-    toast.success(`Exported results for ${racesWithResults.length} race(s)`);
+      doc.save(`Results_${competition?.code || "Competition"}_All.pdf`);
+      toast.success(`Exported results for ${racesWithResults.length} race(s)`);
     } catch (err) {
       console.error("exportAllResultsPDF error:", err);
-      toast.error("Failed to export Results PDF: " + (err.message || "Unknown error"));
+      toast.error(
+        "Failed to export Results PDF: " + (err.message || "Unknown error"),
+      );
     }
   }, [
     sortedRaces,
@@ -6063,539 +6621,539 @@ const CompetitionRaces = () => {
           <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-4 items-start">
             {/* LEFT COLUMN: Race Generator + Start List */}
             <div className="space-y-4">
-            {/* Generation Progress Overlay */}
-            <GenerationProgress
-              isGenerating={isGenerating}
-              progress={generationProgress}
-              stage={generationStage}
-            />
-
-            <section className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-lg overflow-hidden relative">
-              {/* Header with gradient accent */}
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
-
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
-                    <Icons.Sparkles />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900">
-                      Race Generator
-                    </h2>
-                    <p className="text-sm text-slate-500">
-                      Create races with automatic lane allocations
-                    </p>
-                  </div>
-                </div>
-                {/* Quick Stats */}
-                <div className="hidden md:flex items-center gap-3">
-                  <div className="text-center px-3 py-1 rounded-lg bg-blue-50 border border-blue-100">
-                    <p className="text-xs text-blue-600 font-medium">Entries</p>
-                    <p className="text-lg font-bold text-blue-700">
-                      {relevantEntries.length}
-                    </p>
-                  </div>
-                  <div className="text-center px-3 py-1 rounded-lg bg-indigo-50 border border-indigo-100">
-                    <p className="text-xs text-indigo-600 font-medium">Heats</p>
-                    <p className="text-lg font-bold text-indigo-700">
-                      {Math.ceil(
-                        relevantEntries.length /
-                          (parseInt(autoGenState.lanesPerRace) || 6),
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Validation Feedback */}
-              <ValidationFeedback
-                errors={validationErrors}
-                warnings={validationWarnings}
+              {/* Generation Progress Overlay */}
+              <GenerationProgress
+                isGenerating={isGenerating}
+                progress={generationProgress}
+                stage={generationStage}
               />
 
+              <section className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-lg overflow-hidden relative">
+                {/* Header with gradient accent */}
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
 
-
-              {/* Main Configuration Grid */}
-              <div className="grid gap-3 lg:grid-cols-3 mb-4">
-                {/* Event Selection Card */}
-                <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                    <span className="text-base">📋</span> Event
-                  </h3>
-                  <div className="space-y-2">
-                    <div className="space-y-1">
-                      <Label
-                        htmlFor="autoCategory"
-                        className="text-xs text-slate-500"
-                      >
-                        Category
-                      </Label>
-                      <Select
-                        id="autoCategory"
-                        name="category"
-                        value={autoGenState.category}
-                        onChange={handleAutoGenFieldChange}
-                        className="h-8 text-xs"
-                      >
-                        <option value="">Select category</option>
-                        {allowedCategories.map((category) => {
-                          const id = toDocumentId(category);
-                          const abbr =
-                            category.abbreviation || category.code || "";
-                          const fullName = category.titles?.en || "";
-                          const label = fullName
-                            ? `${abbr} - ${fullName}`
-                            : abbr || `Category ${id?.slice(-4)}`;
-                          return (
-                            <option key={id} value={id}>
-                              {label}
-                            </option>
-                          );
-                        })}
-                      </Select>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                      <Icons.Sparkles />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label
-                        htmlFor="autoBoatClass"
-                        className="text-xs text-slate-500"
-                      >
-                        Boat Class
-                      </Label>
-                      <Select
-                        id="autoBoatClass"
-                        name="boatClass"
-                        value={autoGenState.boatClass}
-                        onChange={handleAutoGenFieldChange}
-                        className="h-8 text-xs"
-                      >
-                        <option value="">All boat classes</option>
-                        {allowedBoatClasses.map((boatClass) => {
-                          const id = toDocumentId(boatClass);
-                          const code = boatClass.code || "";
-                          const fullName = boatClass.names?.en || "";
-                          const weight = boatClass.weightClass;
-                          const weightSuffix =
-                            weight && weight !== "open"
-                              ? ` (${weight.charAt(0).toUpperCase() + weight.slice(1)})`
-                              : "";
-                          const label = fullName
-                            ? `${code} - ${fullName}${weightSuffix}`
-                            : code || `Boat class ${id?.slice(-4)}`;
-                          return (
-                            <option key={id} value={id}>
-                              {label}
-                            </option>
-                          );
-                        })}
-                      </Select>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900">
+                        Race Generator
+                      </h2>
+                      <p className="text-sm text-slate-500">
+                        Create races with automatic lane allocations
+                      </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label
-                          htmlFor="autoJourney"
-                          className="text-xs text-slate-500"
-                        >
-                          Journey
-                        </Label>
-                        <Input
-                          id="autoJourney"
-                          name="journeyIndex"
-                          type="number"
-                          min="1"
-                          value={autoGenState.journeyIndex}
-                          onChange={handleAutoGenFieldChange}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label
-                          htmlFor="autoLaneCount"
-                          className="text-xs text-slate-500"
-                        >
-                          Lanes/Race
-                        </Label>
-                        <Input
-                          id="autoLaneCount"
-                          name="lanesPerRace"
-                          type="number"
-                          min="1"
-                          max={getMaxLanesForDiscipline(
-                            competition?.discipline,
-                          )}
-                          value={autoGenState.lanesPerRace}
-                          onChange={handleAutoGenFieldChange}
-                          className="h-8 text-xs"
-                        />
-                      </div>
+                  </div>
+                  {/* Quick Stats */}
+                  <div className="hidden md:flex items-center gap-3">
+                    <div className="text-center px-3 py-1 rounded-lg bg-blue-50 border border-blue-100">
+                      <p className="text-xs text-blue-600 font-medium">
+                        Entries
+                      </p>
+                      <p className="text-lg font-bold text-blue-700">
+                        {relevantEntries.length}
+                      </p>
+                    </div>
+                    <div className="text-center px-3 py-1 rounded-lg bg-indigo-50 border border-indigo-100">
+                      <p className="text-xs text-indigo-600 font-medium">
+                        Heats
+                      </p>
+                      <p className="text-lg font-bold text-indigo-700">
+                        {Math.ceil(
+                          relevantEntries.length /
+                            (parseInt(autoGenState.lanesPerRace) || 6),
+                        )}
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Race Settings Card */}
-                <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                    <span className="text-base">⚙️</span> Settings
-                  </h3>
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
+                {/* Validation Feedback */}
+                <ValidationFeedback
+                  errors={validationErrors}
+                  warnings={validationWarnings}
+                />
+
+                {/* Main Configuration Grid */}
+                <div className="grid gap-3 lg:grid-cols-3 mb-4">
+                  {/* Event Selection Card */}
+                  <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
+                    <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                      <span className="text-base">📋</span> Event
+                    </h3>
+                    <div className="space-y-2">
                       <div className="space-y-1">
                         <Label
-                          htmlFor="autoStrategy"
+                          htmlFor="autoCategory"
                           className="text-xs text-slate-500"
                         >
-                          Strategy
+                          Category
                         </Label>
                         <Select
-                          id="autoStrategy"
-                          name="strategy"
-                          value={autoGenState.strategy}
+                          id="autoCategory"
+                          name="category"
+                          value={autoGenState.category}
                           onChange={handleAutoGenFieldChange}
                           className="h-8 text-xs"
                         >
-                          <option value="random">Random</option>
-                          <option value="seeded">Seeded</option>
+                          <option value="">Select category</option>
+                          {allowedCategories.map((category) => {
+                            const id = toDocumentId(category);
+                            const abbr =
+                              category.abbreviation || category.code || "";
+                            const fullName = category.titles?.en || "";
+                            const label = fullName
+                              ? `${abbr} - ${fullName}`
+                              : abbr || `Category ${id?.slice(-4)}`;
+                            return (
+                              <option key={id} value={id}>
+                                {label}
+                              </option>
+                            );
+                          })}
                         </Select>
                       </div>
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <Label
-                          htmlFor="autoPrefix"
+                          htmlFor="autoBoatClass"
                           className="text-xs text-slate-500"
                         >
-                          Race Prefix
+                          Boat Class
+                        </Label>
+                        <Select
+                          id="autoBoatClass"
+                          name="boatClass"
+                          value={autoGenState.boatClass}
+                          onChange={handleAutoGenFieldChange}
+                          className="h-8 text-xs"
+                        >
+                          <option value="">All boat classes</option>
+                          {allowedBoatClasses.map((boatClass) => {
+                            const id = toDocumentId(boatClass);
+                            const code = boatClass.code || "";
+                            const fullName = boatClass.names?.en || "";
+                            const weight = boatClass.weightClass;
+                            const weightSuffix =
+                              weight && weight !== "open"
+                                ? ` (${weight.charAt(0).toUpperCase() + weight.slice(1)})`
+                                : "";
+                            const label = fullName
+                              ? `${code} - ${fullName}${weightSuffix}`
+                              : code || `Boat class ${id?.slice(-4)}`;
+                            return (
+                              <option key={id} value={id}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor="autoJourney"
+                            className="text-xs text-slate-500"
+                          >
+                            Journey
+                          </Label>
+                          <Input
+                            id="autoJourney"
+                            name="journeyIndex"
+                            type="number"
+                            min="1"
+                            value={autoGenState.journeyIndex}
+                            onChange={handleAutoGenFieldChange}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor="autoLaneCount"
+                            className="text-xs text-slate-500"
+                          >
+                            Lanes/Race
+                          </Label>
+                          <Input
+                            id="autoLaneCount"
+                            name="lanesPerRace"
+                            type="number"
+                            min="1"
+                            max={getMaxLanesForDiscipline(
+                              competition?.discipline,
+                            )}
+                            value={autoGenState.lanesPerRace}
+                            onChange={handleAutoGenFieldChange}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Race Settings Card */}
+                  <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
+                    <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                      <span className="text-base">⚙️</span> Settings
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor="autoStrategy"
+                            className="text-xs text-slate-500"
+                          >
+                            Strategy
+                          </Label>
+                          <Select
+                            id="autoStrategy"
+                            name="strategy"
+                            value={autoGenState.strategy}
+                            onChange={handleAutoGenFieldChange}
+                            className="h-8 text-xs"
+                          >
+                            <option value="random">Random</option>
+                            <option value="seeded">Seeded</option>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor="autoPrefix"
+                            className="text-xs text-slate-500"
+                          >
+                            Race Prefix
+                          </Label>
+                          <Input
+                            id="autoPrefix"
+                            name="racePrefix"
+                            value={autoGenState.racePrefix}
+                            onChange={handleAutoGenFieldChange}
+                            placeholder="Heat"
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="autoSession"
+                          className="text-xs text-slate-500"
+                        >
+                          Session Label
                         </Label>
                         <Input
-                          id="autoPrefix"
-                          name="racePrefix"
-                          value={autoGenState.racePrefix}
+                          id="autoSession"
+                          name="sessionLabel"
+                          value={autoGenState.sessionLabel}
                           onChange={handleAutoGenFieldChange}
-                          placeholder="Heat"
+                          placeholder="Morning programme"
                           className="h-8 text-xs"
                         />
                       </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label
-                        htmlFor="autoSession"
-                        className="text-xs text-slate-500"
-                      >
-                        Session Label
-                      </Label>
-                      <Input
-                        id="autoSession"
-                        name="sessionLabel"
-                        value={autoGenState.sessionLabel}
-                        onChange={handleAutoGenFieldChange}
-                        placeholder="Morning programme"
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label
-                        htmlFor="autoDistance"
-                        className="text-xs text-slate-500"
-                      >
-                        Distance (m)
-                      </Label>
-                      <Input
-                        id="autoDistance"
-                        name="distance"
-                        type="number"
-                        min="0"
-                        step="100"
-                        value={autoGenState.distance}
-                        onChange={handleAutoGenFieldChange}
-                        placeholder="Default"
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Timing Card */}
-                <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                    <Icons.Clock /> Schedule
-                  </h3>
-                  <div className="space-y-2">
-                    <div className="space-y-1">
-                      <Label
-                        htmlFor="autoStartTime"
-                        className="text-xs text-slate-500"
-                      >
-                        Start Time
-                      </Label>
-                      <Input
-                        id="autoStartTime"
-                        name="startTime"
-                        type="datetime-local"
-                        value={autoGenState.startTime}
-                        onChange={handleAutoGenFieldChange}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <Label
-                          htmlFor="autoInterval"
+                          htmlFor="autoDistance"
                           className="text-xs text-slate-500"
                         >
-                          Interval (min)
+                          Distance (m)
                         </Label>
                         <Input
-                          id="autoInterval"
-                          name="intervalMinutes"
+                          id="autoDistance"
+                          name="distance"
                           type="number"
                           min="0"
-                          value={autoGenState.intervalMinutes}
+                          step="100"
+                          value={autoGenState.distance}
                           onChange={handleAutoGenFieldChange}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label
-                          htmlFor="autoStartNumber"
-                          className="text-xs text-slate-500"
-                        >
-                          Start Race #
-                        </Label>
-                        <Input
-                          id="autoStartNumber"
-                          name="startRaceNumber"
-                          type="number"
-                          min="1"
-                          value={autoGenState.startRaceNumber}
-                          onChange={handleAutoGenFieldChange}
-                          placeholder="Auto"
+                          placeholder="Default"
                           className="h-8 text-xs"
                         />
                       </div>
                     </div>
-                    {/* Overwrite toggle */}
-                    <label className="flex items-center gap-3 p-2 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors">
-                      <input
-                        id="autoOverwrite"
-                        name="overwriteExisting"
-                        type="checkbox"
-                        checked={autoGenState.overwriteExisting}
-                        onChange={handleAutoGenFieldChange}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-slate-700">
-                        Overwrite existing races
-                      </span>
-                    </label>
                   </div>
-                </div>
-              </div>
 
-              {/* Advanced Options (Collapsible) */}
-              <div className="mb-4">
-                <button
-                  type="button"
-                  onClick={() => toggleSection("advanced")}
-                  className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors mb-3"
-                >
-                  <span
-                    className={`transition-transform duration-200 ${expandedSections.advanced ? "rotate-90" : ""}`}
-                  >
-                    <Icons.ChevronRight />
-                  </span>
-                  Advanced Options
-                </button>
-
-                {expandedSections.advanced && (
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 p-4 rounded-xl bg-slate-50 border border-slate-200 animate-in fade-in duration-200">
-                    <label className="flex items-center gap-3 p-3 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
-                      <input
-                        name="allowJuniorsInSenior"
-                        type="checkbox"
-                        checked={autoGenState.allowJuniorsInSenior || false}
-                        onChange={handleAutoGenFieldChange}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-slate-700">
-                        Allow juniors in senior
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-3 p-3 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
-                      <input
-                        name="allowMastersInSenior"
-                        type="checkbox"
-                        checked={autoGenState.allowMastersInSenior || false}
-                        onChange={handleAutoGenFieldChange}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-slate-700">
-                        Allow masters in senior
-                      </span>
-                    </label>
-                    {(user?.role === "admin" ||
-                      user?.role === "jury_president") && (
-                      <>
-                        <label className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200 cursor-pointer hover:border-blue-400 transition-colors">
-                          <input
-                            name="allowMultipleEntries"
-                            type="checkbox"
-                            checked={autoGenState.allowMultipleEntries}
-                            onChange={handleAutoGenFieldChange}
-                            className="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-blue-700">
-                            Multiple entries/athlete
-                          </span>
-                        </label>
-                        <label className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200 cursor-pointer hover:border-amber-400 transition-colors">
-                          <input
-                            name="bypassAgeVerification"
-                            type="checkbox"
-                            checked={
-                              autoGenState.bypassAgeVerification || false
-                            }
-                            onChange={handleAutoGenFieldChange}
-                            className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span className="text-sm text-amber-700">
-                            Bypass age check
-                          </span>
-                        </label>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-
-
-              {/* Start List Section */}
-              <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm mb-4">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div>
+                  {/* Timing Card */}
+                  <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
                     <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                      <Icons.Users />
-                      Start List
-                      <span className="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">
-                        {relevantEntries.length} entries
-                      </span>
+                      <Icons.Clock /> Schedule
                     </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Add competitors by name or license number
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Input
-                      placeholder="🔍 Search athletes..."
-                      value={entrySearchTerm}
-                      onChange={(event) =>
-                        setEntrySearchTerm(event.target.value)
-                      }
-                      className="w-56 h-8 text-xs"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSortBySeed}
-                      disabled={entries.length < 2}
-                      title="Sort entries by seed number"
-                    >
-                      📊 Sort
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleClearEntries}
-                      disabled={!entries.length}
-                      className="text-slate-500 hover:text-rose-600"
-                    >
-                      Clear
-                    </Button>
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="autoStartTime"
+                          className="text-xs text-slate-500"
+                        >
+                          Start Time
+                        </Label>
+                        <Input
+                          id="autoStartTime"
+                          name="startTime"
+                          type="datetime-local"
+                          value={autoGenState.startTime}
+                          onChange={handleAutoGenFieldChange}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor="autoInterval"
+                            className="text-xs text-slate-500"
+                          >
+                            Interval (min)
+                          </Label>
+                          <Input
+                            id="autoInterval"
+                            name="intervalMinutes"
+                            type="number"
+                            min="0"
+                            value={autoGenState.intervalMinutes}
+                            onChange={handleAutoGenFieldChange}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor="autoStartNumber"
+                            className="text-xs text-slate-500"
+                          >
+                            Start Race #
+                          </Label>
+                          <Input
+                            id="autoStartNumber"
+                            name="startRaceNumber"
+                            type="number"
+                            min="1"
+                            value={autoGenState.startRaceNumber}
+                            onChange={handleAutoGenFieldChange}
+                            placeholder="Auto"
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+                      {/* Overwrite toggle */}
+                      <label className="flex items-center gap-3 p-2 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors">
+                        <input
+                          id="autoOverwrite"
+                          name="overwriteExisting"
+                          type="checkbox"
+                          checked={autoGenState.overwriteExisting}
+                          onChange={handleAutoGenFieldChange}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-slate-700">
+                          Overwrite existing races
+                        </span>
+                      </label>
+                    </div>
                   </div>
                 </div>
 
-                <SearchResultsList
-                  term={entrySearchTerm.trim()}
-                  results={filteredEntryResults}
-                  loading={entrySearchLoading}
-                  error={entrySearchError}
-                  onPick={handleAddEntry}
-                />
-
-                <PendingManualCrewDisplay
-                  crew={pendingManualCrew}
-                  requiredSize={requiredCrewSize}
-                  onCancel={() => setPendingManualCrew([])}
-                />
-
-                <EntriesTable
-                  entries={relevantEntries}
-                  onEntryChange={handleEntryFieldChange}
-                  onRemove={handleRemoveEntry}
-                  onWithdraw={handleWithdrawEntry}
-                  onDelete={handleDeleteEntry}
-                  isAdmin={
-                    user?.role === "admin" || user?.role === "jury_president"
-                  }
-                />
-              </div>
-
-              {/* Heat Distribution Preview (Collapsible) */}
-              {relevantEntries.length > 0 && (
+                {/* Advanced Options (Collapsible) */}
                 <div className="mb-4">
                   <button
                     type="button"
-                    onClick={() => toggleSection("preview")}
+                    onClick={() => toggleSection("advanced")}
                     className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors mb-3"
                   >
                     <span
-                      className={`transition-transform duration-200 ${expandedSections.preview ? "rotate-90" : ""}`}
+                      className={`transition-transform duration-200 ${expandedSections.advanced ? "rotate-90" : ""}`}
                     >
                       <Icons.ChevronRight />
                     </span>
-                    Heat Distribution Preview
+                    Advanced Options
                   </button>
 
-                  {expandedSections.preview && (
-                    <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm animate-in fade-in duration-200">
-                      <HeatDistributionPreview
-                        entries={relevantEntries}
-                        lanesPerRace={autoGenState.lanesPerRace}
-                        strategy={autoGenState.strategy}
-                      />
+                  {expandedSections.advanced && (
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 p-4 rounded-xl bg-slate-50 border border-slate-200 animate-in fade-in duration-200">
+                      <label className="flex items-center gap-3 p-3 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
+                        <input
+                          name="allowJuniorsInSenior"
+                          type="checkbox"
+                          checked={autoGenState.allowJuniorsInSenior || false}
+                          onChange={handleAutoGenFieldChange}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-slate-700">
+                          Allow juniors in senior
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-3 p-3 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
+                        <input
+                          name="allowMastersInSenior"
+                          type="checkbox"
+                          checked={autoGenState.allowMastersInSenior || false}
+                          onChange={handleAutoGenFieldChange}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-slate-700">
+                          Allow masters in senior
+                        </span>
+                      </label>
+                      {(user?.role === "admin" ||
+                        user?.role === "jury_president") && (
+                        <>
+                          <label className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200 cursor-pointer hover:border-blue-400 transition-colors">
+                            <input
+                              name="allowMultipleEntries"
+                              type="checkbox"
+                              checked={autoGenState.allowMultipleEntries}
+                              onChange={handleAutoGenFieldChange}
+                              className="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-blue-700">
+                              Multiple entries/athlete
+                            </span>
+                          </label>
+                          <label className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200 cursor-pointer hover:border-amber-400 transition-colors">
+                            <input
+                              name="bypassAgeVerification"
+                              type="checkbox"
+                              checked={
+                                autoGenState.bypassAgeVerification || false
+                              }
+                              onChange={handleAutoGenFieldChange}
+                              className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className="text-sm text-amber-700">
+                              Bypass age check
+                            </span>
+                          </label>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleSaveEntries}
-                  disabled={
-                    Object.keys(dbEntryOverrides).length === 0 &&
-                    entries.length === 0
-                  }
-                >
-                  Save Changes
-                </Button>
-                <Button
-                  type="button"
-                  onClick={submitAutoGeneration}
-                  disabled={
-                    submittingAutoGen ||
-                    relevantEntries.length === 0 ||
-                    !autoGenState.category
-                  }
-                  className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg px-6"
-                >
-                  <Icons.Sparkles />
-                  {submittingAutoGen ? "Generating..." : "Generate Races"}
-                </Button>
-              </div>
-            </section>
+                {/* Start List Section */}
+                <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm mb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                        <Icons.Users />
+                        Start List
+                        <span className="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">
+                          {relevantEntries.length} entries
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Add competitors by name or license number
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Input
+                        placeholder="🔍 Search athletes..."
+                        value={entrySearchTerm}
+                        onChange={(event) =>
+                          setEntrySearchTerm(event.target.value)
+                        }
+                        className="w-56 h-8 text-xs"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSortBySeed}
+                        disabled={entries.length < 2}
+                        title="Sort entries by seed number"
+                      >
+                        📊 Sort
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleClearEntries}
+                        disabled={!entries.length}
+                        className="text-slate-500 hover:text-rose-600"
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+
+                  <SearchResultsList
+                    term={entrySearchTerm.trim()}
+                    results={filteredEntryResults}
+                    loading={entrySearchLoading}
+                    error={entrySearchError}
+                    onPick={handleAddEntry}
+                  />
+
+                  <PendingManualCrewDisplay
+                    crew={pendingManualCrew}
+                    requiredSize={requiredCrewSize}
+                    onCancel={() => setPendingManualCrew([])}
+                  />
+
+                  <EntriesTable
+                    entries={relevantEntries}
+                    onEntryChange={handleEntryFieldChange}
+                    onRemove={handleRemoveEntry}
+                    onWithdraw={handleWithdrawEntry}
+                    onDelete={handleDeleteEntry}
+                    isAdmin={
+                      user?.role === "admin" || user?.role === "jury_president"
+                    }
+                  />
+                </div>
+
+                {/* Heat Distribution Preview (Collapsible) */}
+                {relevantEntries.length > 0 && (
+                  <div className="mb-4">
+                    <button
+                      type="button"
+                      onClick={() => toggleSection("preview")}
+                      className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors mb-3"
+                    >
+                      <span
+                        className={`transition-transform duration-200 ${expandedSections.preview ? "rotate-90" : ""}`}
+                      >
+                        <Icons.ChevronRight />
+                      </span>
+                      Heat Distribution Preview
+                    </button>
+
+                    {expandedSections.preview && (
+                      <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm animate-in fade-in duration-200">
+                        <HeatDistributionPreview
+                          entries={relevantEntries}
+                          lanesPerRace={autoGenState.lanesPerRace}
+                          strategy={autoGenState.strategy}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleSaveEntries}
+                    disabled={
+                      Object.keys(dbEntryOverrides).length === 0 &&
+                      entries.length === 0
+                    }
+                  >
+                    Save Changes
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={submitAutoGeneration}
+                    disabled={
+                      submittingAutoGen ||
+                      relevantEntries.length === 0 ||
+                      !autoGenState.category
+                    }
+                    className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg px-6"
+                  >
+                    <Icons.Sparkles />
+                    {submittingAutoGen ? "Generating..." : "Generate Races"}
+                  </Button>
+                </div>
+              </section>
             </div>
 
             {/* RIGHT COLUMN: Existing Races */}
@@ -6652,7 +7210,9 @@ const CompetitionRaces = () => {
               {loadingRaces ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="ml-2 text-sm text-slate-500">Loading races...</span>
+                  <span className="ml-2 text-sm text-slate-500">
+                    Loading races...
+                  </span>
                 </div>
               ) : sortedRaces.length === 0 ? (
                 <div className="text-center py-8 text-sm text-slate-400">
@@ -6660,73 +7220,114 @@ const CompetitionRaces = () => {
                   No races scheduled yet
                 </div>
               ) : (
-                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+                <div
+                  className="space-y-2 max-h-[600px] overflow-y-auto pr-1"
+                  style={{ scrollbarWidth: "thin" }}
+                >
                   {sortedRaces.map((race) => {
                     const categoryId = toDocumentId(race.category);
                     const boatClassId = toDocumentId(race.boatClass);
                     const category = categoryId
-                      ? categories.find((item) => toDocumentId(item) === categoryId)
+                      ? categories.find(
+                          (item) => toDocumentId(item) === categoryId,
+                        )
                       : null;
                     const boatClass = boatClassId
-                      ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
+                      ? boatClasses.find(
+                          (item) => toDocumentId(item) === boatClassId,
+                        )
                       : null;
                     const eventCode = generateRaceCode(category, boatClass);
                     const totalBoats = (race.lanes || []).length;
                     const statusMap = {
-                      completed: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: '✓' },
-                      in_progress: { bg: 'bg-amber-100', text: 'text-amber-700', label: '▶' },
-                      scheduled: { bg: 'bg-slate-100', text: 'text-slate-500', label: '○' },
+                      completed: {
+                        bg: "bg-emerald-100",
+                        text: "text-emerald-700",
+                        label: "✓",
+                      },
+                      in_progress: {
+                        bg: "bg-amber-100",
+                        text: "text-amber-700",
+                        label: "▶",
+                      },
+                      scheduled: {
+                        bg: "bg-slate-100",
+                        text: "text-slate-500",
+                        label: "○",
+                      },
                     };
                     const st = statusMap[race.status] || statusMap.scheduled;
                     const schedTime = race.startTime
-                      ? new Date(race.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                      ? new Date(race.startTime).toLocaleTimeString("en-GB", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
                       : null;
 
                     return (
                       <div
                         key={race._id}
                         className="group flex items-center gap-2 p-2.5 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-blue-50/50 hover:border-blue-200 transition-all duration-150 cursor-pointer"
-                        onClick={() => navigate(`/competitions/${competitionId}/races/${race._id}`)}
+                        onClick={() =>
+                          navigate(
+                            `/competitions/${competitionId}/races/${race._id}`,
+                          )
+                        }
                       >
                         {/* Race # */}
                         <div className="flex-shrink-0 w-7 h-7 rounded-md bg-white border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
-                          {race.order || '-'}
+                          {race.order || "-"}
                         </div>
 
                         {/* Event Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-slate-800 truncate">{eventCode}</span>
-                            <span className={`flex-shrink-0 w-4 h-4 rounded-full ${st.bg} ${st.text} flex items-center justify-center text-[10px] font-bold`}>
+                            <span className="text-xs font-bold text-slate-800 truncate">
+                              {eventCode}
+                            </span>
+                            <span
+                              className={`flex-shrink-0 w-4 h-4 rounded-full ${st.bg} ${st.text} flex items-center justify-center text-[10px] font-bold`}
+                            >
                               {st.label}
                             </span>
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[11px] text-slate-500 truncate">{race.name || '-'}</span>
+                            <span className="text-[11px] text-slate-500 truncate">
+                              {race.name || "-"}
+                            </span>
                             {schedTime && (
-                              <span className="flex-shrink-0 text-[10px] text-slate-400">⏱ {schedTime}</span>
+                              <span className="flex-shrink-0 text-[10px] text-slate-400">
+                                ⏱ {schedTime}
+                              </span>
                             )}
                           </div>
                         </div>
 
                         {/* Category Name (English) - Centered in empty space */}
                         <div className="hidden sm:block flex-1 text-center px-2">
-                           <span className="text-[11px] font-medium text-slate-500 truncate block">
-                            {category?.titles?.en || category?.name || '-'}
-                           </span>
+                          <span className="text-[11px] font-medium text-slate-500 truncate block">
+                            {category?.titles?.en || category?.name || "-"}
+                          </span>
                         </div>
 
                         {/* Boats count */}
                         <div className="flex-shrink-0 text-center">
-                          <span className="text-xs font-semibold text-slate-600">{totalBoats}</span>
-                          <span className="text-[10px] text-slate-400 block leading-none">boats</span>
+                          <span className="text-xs font-semibold text-slate-600">
+                            {totalBoats}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block leading-none">
+                            boats
+                          </span>
                         </div>
 
                         {/* Delete button */}
                         <button
                           type="button"
                           className="flex-shrink-0 opacity-0 group-hover:opacity-100 w-6 h-6 rounded flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all text-xs"
-                          onClick={(e) => { e.stopPropagation(); handleDeleteRace(race._id); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteRace(race._id);
+                          }}
                           title="Delete race"
                         >
                           ✕
@@ -6738,6 +7339,73 @@ const CompetitionRaces = () => {
               )}
 
               <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                {canManageRaceSchedule && (
+                  <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <h3 className="text-xs font-semibold text-slate-900">
+                      Quick schedule edit
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Update event number and start time without regenerating
+                      races.
+                    </p>
+
+                    <div className="mt-3 grid gap-3 grid-cols-1">
+                      <div className="space-y-2">
+                        <Label htmlFor="scheduleRace">Race</Label>
+                        <Select
+                          id="scheduleRace"
+                          value={scheduleState.raceId}
+                          onChange={handleScheduleRaceChange}
+                        >
+                          <option value="">Select race</option>
+                          {sortedRaces.map((race) => (
+                            <option key={race._id} value={race._id}>
+                              {race.name || `Race ${race.order}`}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="scheduleOrder">Event #</Label>
+                          <Input
+                            id="scheduleOrder"
+                            name="order"
+                            type="number"
+                            min="1"
+                            value={scheduleState.order}
+                            onChange={handleScheduleFieldChange}
+                            disabled={!scheduleState.raceId}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="scheduleStartTime">Start time</Label>
+                          <Input
+                            id="scheduleStartTime"
+                            name="startTime"
+                            type="datetime-local"
+                            value={scheduleState.startTime}
+                            onChange={handleScheduleFieldChange}
+                            disabled={!scheduleState.raceId}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={submitRaceScheduleUpdate}
+                        disabled={savingSchedule || !scheduleState.raceId}
+                      >
+                        {savingSchedule ? "Saving..." : "Save schedule"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <h3 className="text-xs font-semibold text-slate-900">
                   Quick lane swap
                 </h3>

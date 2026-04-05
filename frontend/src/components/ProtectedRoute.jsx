@@ -1,10 +1,14 @@
 import React from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
 export const ProtectedRoute = ({ children, allowedRoles }) => {
   const { isAuthenticated, loading, user } = useAuth();
-  const location = useLocation();
+  const pathname =
+    typeof window !== "undefined" &&
+    typeof window.location?.pathname === "string"
+      ? window.location.pathname
+      : "/";
 
   if (loading) {
     return (
@@ -18,10 +22,10 @@ export const ProtectedRoute = ({ children, allowedRoles }) => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    return <Navigate to="/login" replace />;
   }
 
-  if (user?.mustChangePassword && location.pathname !== "/change-password") {
+  if (user?.mustChangePassword && pathname !== "/change-password") {
     return <Navigate to="/change-password" replace />;
   }
 

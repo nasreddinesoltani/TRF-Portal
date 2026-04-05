@@ -1119,6 +1119,14 @@ const ClubDetail = () => {
 
       return {
         ...athlete,
+        frCategory:
+          athlete.nationalCategory?.titles?.fr ||
+          athlete.nationalCategory?.titles?.ar ||
+          athlete.nationalCategory?.name ||
+          athlete.nationalCategory?.title ||
+          athlete.nationalCategory?.abbreviation ||
+          athlete.nationalCategory?.code ||
+          "",
         documentIssuesText,
         birthDate: athlete.birthDate ? new Date(athlete.birthDate) : null,
       };
@@ -2175,6 +2183,11 @@ const ClubDetail = () => {
         width: 80,
       },
       {
+        headerText: "FR Category",
+        field: "frCategory",
+        width: 110,
+      },
+      {
         headerText: "Birth Date",
         field: "birthDate",
         width: 100,
@@ -2668,6 +2681,21 @@ const ClubDetail = () => {
       <div className="space-y-8">
         {ATHLETE_SECTIONS.map((section) => {
           const bucket = filteredBuckets[section.key] ?? [];
+          const exportBucket = [...bucket].sort((a, b) => {
+            const aTime =
+              a.birthDate instanceof Date
+                ? a.birthDate.getTime()
+                : a.birthDate
+                  ? new Date(a.birthDate).getTime()
+                  : Number.POSITIVE_INFINITY;
+            const bTime =
+              b.birthDate instanceof Date
+                ? b.birthDate.getTime()
+                : b.birthDate
+                  ? new Date(b.birthDate).getTime()
+                  : Number.POSITIVE_INFINITY;
+            return aTime - bTime;
+          });
           const useCards =
             section.key === "active" || section.key === "pending";
           return (
@@ -2761,7 +2789,7 @@ const ClubDetail = () => {
                   >
                     <DataGrid
                       ref={setGridRef(section.key)}
-                      data={bucket}
+                      data={exportBucket}
                       columns={exportColumns}
                       gridId={`export-grid-${section.key}`}
                       showSearch={false}
@@ -2787,7 +2815,7 @@ const ClubDetail = () => {
                   >
                     <DataGrid
                       ref={setGridRef(section.key)}
-                      data={bucket}
+                      data={exportBucket}
                       columns={exportColumns}
                       gridId={`export-grid-${section.key}`}
                       showSearch={false}

@@ -916,13 +916,18 @@ export const updateRaceLanes = asyncHandler(async (req, res) => {
   return res.json(race);
 });
 
-const pickLaneAssignment = (lane) => {
+const pickLaneAssignment = (lane, raceContext = null) => {
+  const defaultCategory = raceContext?.category || undefined;
+  const defaultBoatClass = raceContext?.boatClass || undefined;
+
   if (!lane) {
     return {
       athlete: undefined,
       crew: [],
       crewNumber: undefined,
       club: undefined,
+      category: defaultCategory,
+      boatClass: defaultBoatClass,
       seed: undefined,
       notes: undefined,
       result: undefined,
@@ -933,6 +938,8 @@ const pickLaneAssignment = (lane) => {
     crew: Array.isArray(lane.crew) ? lane.crew : [],
     crewNumber: lane.crewNumber || undefined,
     club: lane.club || undefined,
+    category: lane.category || defaultCategory,
+    boatClass: lane.boatClass || defaultBoatClass,
     seed: lane.seed || undefined,
     notes: lane.notes || undefined,
     result:
@@ -947,6 +954,8 @@ const assignLaneDetails = (lane, details) => {
   lane.crew = Array.isArray(details.crew) ? details.crew : [];
   lane.crewNumber = details.crewNumber || undefined;
   lane.club = details.club || undefined;
+  lane.category = details.category || undefined;
+  lane.boatClass = details.boatClass || undefined;
   lane.seed = details.seed || undefined;
   lane.notes = details.notes || undefined;
   lane.result = details.result || undefined;
@@ -1015,8 +1024,8 @@ export const swapRaceLanes = asyncHandler(async (req, res) => {
   const sourceLane = ensureLaneExists(sourceRace, sourceLaneNumber);
   const targetLane = ensureLaneExists(targetRace, targetLaneNumber);
 
-  const sourcePayload = pickLaneAssignment(sourceLane);
-  const targetPayload = pickLaneAssignment(targetLane);
+  const sourcePayload = pickLaneAssignment(sourceLane, sourceRace);
+  const targetPayload = pickLaneAssignment(targetLane, targetRace);
 
   assignLaneDetails(sourceLane, targetPayload);
   assignLaneDetails(targetLane, sourcePayload);
@@ -1348,3 +1357,67 @@ export const computeCompetitionRankings = asyncHandler(async (req, res) => {
 
   return res.json(response);
 });
+
+// Combine Races (Synchronization approach)
+export const combineRaces = async (req, res) => {
+  try {
+    const { competitionId } = req.params;
+    const { raceIds } = req.body;
+
+    if (!competitionId || !raceIds || raceIds.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select at least two races to combine.",
+      });
+    }
+
+    const races = await CompetitionRace.find({
+      _id: { $in: raceIds },
+      competition: competitionId,
+    });
+
+    if (races.length !== raceIds.length) {
+      return res
+        .status(404)
+        .json({ success: false, message: "One or more races not found." });
+    }
+
+    // Sort races by ID to ensure consistent order
+    races.sort((a, b) => a._id.toString().localeCompare(b._id.toString()));
+
+    const baseOrder = Math.min(...races.map((r) => r.order || Infinity));
+    // Find the race that originally had the minimum order to use its start time
+    let baseTime = new Date();
+    for (const r of races) {
+      if (r.order === baseOrder && r.startTime) {
+        baseTime = r.startTime;
+        break;
+      }
+    }
+
+    let currentLane = 1;
+
+    for (const race of races) {
+      race.order = baseOrder;
+      race.startTime = baseTime;
+
+      // Preserve existing lanes but remap their numbers
+      race.lanes.sort((a, b) => a.lane - b.lane);
+      for (let i = 0; i < race.lanes.length; i++) {
+        race.lanes[i].lane = currentLane++;
+      }
+
+      await race.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Races synchronized successfully!",
+    });
+  } catch (error) {
+    console.error("Error in combineRaces:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error combining races." });
+  }
+};

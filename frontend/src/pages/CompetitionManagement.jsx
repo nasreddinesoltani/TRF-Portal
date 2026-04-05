@@ -267,6 +267,7 @@ const createDefaultFormState = () => {
     notes: "",
     allowedCategories: [],
     allowedBoatClasses: [],
+    stages: [],
   };
 };
 
@@ -509,6 +510,20 @@ const CompetitionManagement = () => {
                   boatClass?._id?.toString?.() || boatClass?.toString?.() || "",
               )
             : [],
+          stages: Array.isArray(payload.stages)
+            ? payload.stages.map((stage) => ({
+                name: stage.name || "",
+                date: formatDateInput(stage.date),
+                registrationOpenDate: formatDateInput(
+                  stage.registrationOpenDate,
+                ),
+                registrationCloseDate: formatDateInput(
+                  stage.registrationCloseDate,
+                ),
+                order: stage.order,
+                isFinalDay: Boolean(stage.isFinalDay),
+              }))
+            : [],
         });
         setDialogOpen(true);
       } catch (error) {
@@ -518,6 +533,39 @@ const CompetitionManagement = () => {
     },
     [canManage, token],
   );
+
+  const handleStageChange = useCallback((index, field, value) => {
+    setFormState((previous) => {
+      const newStages = [...(previous.stages || [])];
+      newStages[index] = { ...newStages[index], [field]: value };
+      return { ...previous, stages: newStages };
+    });
+  }, []);
+
+  const handleAddStage = useCallback(() => {
+    setFormState((previous) => {
+      const newStages = [
+        ...(previous.stages || []),
+        {
+          name: "",
+          date: "",
+          registrationOpenDate: "",
+          registrationCloseDate: "",
+          isFinalDay: false,
+          order: previous.stages?.length ? previous.stages.length + 1 : 1,
+        },
+      ];
+      return { ...previous, stages: newStages };
+    });
+  }, []);
+
+  const handleRemoveStage = useCallback((index) => {
+    setFormState((previous) => {
+      const newStages = [...(previous.stages || [])];
+      newStages.splice(index, 1);
+      return { ...previous, stages: newStages };
+    });
+  }, []);
 
   const handleInputChange = useCallback((event) => {
     const { name, value, type, checked } = event.target;
@@ -578,6 +626,21 @@ const CompetitionManagement = () => {
         ? Number(formState.defaultDistance)
         : undefined,
       notes: formState.notes.trim() || undefined,
+      stages:
+        formState.competitionType === "championship"
+          ? formState.stages.map((stage, idx) => ({
+              name: stage.name || `Journey ${idx + 1}`,
+              date: stage.date ? new Date(stage.date).toISOString() : undefined,
+              registrationOpenDate: stage.registrationOpenDate
+                ? new Date(stage.registrationOpenDate).toISOString()
+                : undefined,
+              registrationCloseDate: stage.registrationCloseDate
+                ? new Date(stage.registrationCloseDate).toISOString()
+                : undefined,
+              order: stage.order ?? idx + 1,
+              isFinalDay: Boolean(stage.isFinalDay),
+            }))
+          : undefined,
       registrationWindow: {
         openAt: formState.registrationOpenAt
           ? new Date(formState.registrationOpenAt).toISOString()
@@ -1964,6 +2027,136 @@ const CompetitionManagement = () => {
                   />
                 </div>
               </div>
+
+              {formState.competitionType === "championship" && (
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-semibold text-slate-700">
+                      Championship Journeys (Stages)
+                    </Label>
+                    {canManage && (
+                      <button
+                        type="button"
+                        onClick={handleAddStage}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+                      >
+                        + Add Journey
+                      </button>
+                    )}
+                  </div>
+                  {(!formState.stages || formState.stages.length === 0) && (
+                    <p className="text-xs text-slate-500 italic">
+                      No journeys defined yet. Please add them.
+                    </p>
+                  )}
+                  {formState.stages?.map((stage, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-4"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold text-sm">
+                          Journey {idx + 1}
+                        </span>
+                        {canManage && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveStage(idx)}
+                            className="text-xs text-red-600 hover:text-red-800"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-slate-500">
+                            Journey Name
+                          </Label>
+                          <Input
+                            type="text"
+                            placeholder="e.g. Journey 1 - Tunis"
+                            value={stage.name}
+                            onChange={(e) =>
+                              handleStageChange(idx, "name", e.target.value)
+                            }
+                            disabled={!canManage}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-slate-500">
+                            Event Date
+                          </Label>
+                          <Input
+                            type="date"
+                            value={stage.date}
+                            onChange={(e) =>
+                              handleStageChange(idx, "date", e.target.value)
+                            }
+                            disabled={!canManage}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-slate-500">
+                            Registration Opens
+                          </Label>
+                          <Input
+                            type="date"
+                            value={stage.registrationOpenDate}
+                            onChange={(e) =>
+                              handleStageChange(
+                                idx,
+                                "registrationOpenDate",
+                                e.target.value,
+                              )
+                            }
+                            disabled={!canManage}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-slate-500">
+                            Registration Closes
+                          </Label>
+                          <Input
+                            type="date"
+                            value={stage.registrationCloseDate}
+                            onChange={(e) =>
+                              handleStageChange(
+                                idx,
+                                "registrationCloseDate",
+                                e.target.value,
+                              )
+                            }
+                            disabled={!canManage}
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id={`stage-final-${idx}`}
+                          checked={stage.isFinalDay || false}
+                          onChange={(e) =>
+                            handleStageChange(
+                              idx,
+                              "isFinalDay",
+                              e.target.checked,
+                            )
+                          }
+                          disabled={!canManage}
+                        />
+                        <Label
+                          htmlFor={`stage-final-${idx}`}
+                          className="text-sm font-medium text-slate-700"
+                        >
+                          Mark as Final Journey (Calculates points for
+                          qualification)
+                        </Label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">

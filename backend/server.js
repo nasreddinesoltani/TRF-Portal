@@ -86,6 +86,11 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Return proper JSON 404 for unknown API routes
+app.use("/api", (req, res) => {
+  res.status(404).json({ message: "API route not found" });
+});
+
 // Serve SPA - all non-API routes go to index.html
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));

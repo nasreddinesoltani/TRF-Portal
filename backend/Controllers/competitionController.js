@@ -105,6 +105,8 @@ const sanitiseStages = (stages = []) => {
       })();
 
       const date = parseDate(stage.date);
+      const registrationOpenDate = parseDate(stage.registrationOpenDate);
+      const registrationCloseDate = parseDate(stage.registrationCloseDate);
       const isFinalDay = Boolean(stage.isFinalDay);
       const notes = stage.notes ? stage.notes.toString().trim() : undefined;
 
@@ -141,6 +143,8 @@ const sanitiseStages = (stages = []) => {
         type: stageType,
         order: orderValue,
         date,
+        registrationOpenDate,
+        registrationCloseDate,
         isFinalDay,
         sessions,
         notes,

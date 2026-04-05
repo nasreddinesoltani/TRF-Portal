@@ -86,6 +86,8 @@ const stageSchema = new mongoose.Schema(
     },
     order: { type: Number, default: 0 },
     date: { type: Date },
+    registrationOpenDate: { type: Date },
+    registrationCloseDate: { type: Date },
     isFinalDay: { type: Boolean, default: false },
     sessions: { type: [sessionSchema], default: [] },
     notes: { type: String, trim: true },

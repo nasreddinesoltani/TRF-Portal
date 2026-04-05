@@ -64,6 +64,14 @@ const laneAssignmentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Club",
     },
+    category: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+    },
+    boatClass: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BoatClass",
+    },
     seed: {
       type: Number,
     },

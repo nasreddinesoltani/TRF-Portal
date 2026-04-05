@@ -130,6 +130,7 @@ const CompetitionRegistration = () => {
 
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [selectedBoatClassId, setSelectedBoatClassId] = useState("");
+  const [selectedJourneyIndex, setSelectedJourneyIndex] = useState("");
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [selectedCrew, setSelectedCrew] = useState([]);
   const [entryNotes, setEntryNotes] = useState("");
@@ -427,7 +428,7 @@ const CompetitionRegistration = () => {
       return "";
     });
   }, [availableBoatClasses]);
-  
+
   const boatClassMap = useMemo(() => {
     const map = new Map();
     boatClasses.forEach((bc) => {
@@ -624,6 +625,11 @@ const CompetitionRegistration = () => {
           crewIds,
           categoryId: selectedCategoryId,
           boatClassId: selectedBoatClassId || undefined,
+          journeyIndex:
+            competition?.competitionType === "championship" &&
+            selectedJourneyIndex
+              ? selectedJourneyIndex
+              : undefined,
           notes: trimmedNotes || undefined,
         },
       ],
@@ -761,7 +767,9 @@ const CompetitionRegistration = () => {
         {
           type: "Text",
           value:
-            competition?.names?.en || competition?.code || "Competition Entries",
+            competition?.names?.en ||
+            competition?.code ||
+            "Competition Entries",
           position: { x: 0, y: 0 },
           style: {
             textBrushColor: "#000000",
@@ -884,7 +892,7 @@ const CompetitionRegistration = () => {
 
           const athlete = entry?.athlete;
           if (!athlete) return null;
-          
+
           const photoUrl = getAthletePhotoUrl(athlete);
           const initials = getAthleteInitials(athlete);
           const displayName = `${athlete.firstName} ${athlete.lastName}`;
@@ -920,11 +928,13 @@ const CompetitionRegistration = () => {
         valueAccessor: (field, data) => {
           if (data?.crew && data.crew.length > 1) {
             return data.crew
-                .map((a) => `${a.firstName} ${a.lastName}`)
-                .join(", ");
+              .map((a) => `${a.firstName} ${a.lastName}`)
+              .join(", ");
           }
           const athlete = data?.athlete;
-          return athlete ? `${athlete.firstName} ${athlete.lastName} (${athlete.licenseNumber})` : "";
+          return athlete
+            ? `${athlete.firstName} ${athlete.lastName} (${athlete.licenseNumber})`
+            : "";
         },
       },
     ];
@@ -953,7 +963,8 @@ const CompetitionRegistration = () => {
         template: (entry) => (
           <div className="space-y-1">
             <span className="text-sm font-medium text-slate-800">
-              {formatCategoryAbbreviation(entry?.category, entry?.boatClass) || "—"}
+              {formatCategoryAbbreviation(entry?.category, entry?.boatClass) ||
+                "—"}
             </span>
             <p className="text-xs text-slate-500">
               {entry?.category?.titles?.en || ""}
@@ -961,7 +972,8 @@ const CompetitionRegistration = () => {
           </div>
         ),
         field: "categoryName",
-        valueAccessor: (field, data) => formatCategoryAbbreviation(data?.category, data?.boatClass),
+        valueAccessor: (field, data) =>
+          formatCategoryAbbreviation(data?.category, data?.boatClass),
       },
       {
         headerText: "Boat Class",
@@ -999,7 +1011,8 @@ const CompetitionRegistration = () => {
         headerText: "Submitted",
         width: 200,
         field: "submittedAt",
-        valueAccessor: (field, data) => data?.submittedAt ? new Date(data.submittedAt).toLocaleString() : "",
+        valueAccessor: (field, data) =>
+          data?.submittedAt ? new Date(data.submittedAt).toLocaleString() : "",
         template: (entry) => {
           const submitted = entry?.submittedAt
             ? new Date(entry.submittedAt).toLocaleString()
@@ -1133,9 +1146,7 @@ const CompetitionRegistration = () => {
           <div className="text-sm font-semibold text-slate-900">
             {displayName}
           </div>
-          <div className="text-xs text-slate-500">
-            {athlete.licenseNumber}
-          </div>
+          <div className="text-xs text-slate-500">{athlete.licenseNumber}</div>
         </div>
       </div>
     );
@@ -1172,13 +1183,14 @@ const CompetitionRegistration = () => {
           const selectedBoatClass = boatClassMap.get(selectedBoatClassId);
           return (
             <span className="font-semibold text-blue-700">
-              {formatCategoryAbbreviation(row?.category, selectedBoatClass) || "—"}
+              {formatCategoryAbbreviation(row?.category, selectedBoatClass) ||
+                "—"}
             </span>
           );
         },
       },
     ],
-    [renderAthleteSummary, boatClassMap, selectedBoatClassId]
+    [renderAthleteSummary, boatClassMap, selectedBoatClassId],
   );
 
   const registrationStatus = competition?.registrationStatus || "not_open";
@@ -1227,7 +1239,6 @@ const CompetitionRegistration = () => {
         </div>
       </div>
 
-
       {loadingSummary ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
           Loading registration workspace…
@@ -1252,7 +1263,13 @@ const CompetitionRegistration = () => {
                   </div>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-[minmax(240px,1fr),minmax(220px,1fr)] xl:grid-cols-[minmax(240px,1fr),minmax(240px,1fr),minmax(200px,1fr)]">
+                <div
+                  className={`grid gap-3 ${
+                    competition?.competitionType === "championship"
+                      ? "md:grid-cols-[minmax(200px,1fr),minmax(200px,1fr),minmax(180px,1fr)] xl:grid-cols-[minmax(200px,1fr),minmax(200px,1fr),minmax(180px,1fr),minmax(200px,1fr)]"
+                      : "md:grid-cols-[minmax(240px,1fr),minmax(220px,1fr)] xl:grid-cols-[minmax(240px,1fr),minmax(240px,1fr),minmax(200px,1fr)]"
+                  }`}
+                >
                   <div className="space-y-1">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Category
@@ -1314,6 +1331,55 @@ const CompetitionRegistration = () => {
                       ))}
                     </Select>
                   </div>
+
+                  {competition?.competitionType === "championship" && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Journey
+                      </label>
+                      <Select
+                        value={selectedJourneyIndex || ""}
+                        onChange={(event) =>
+                          setSelectedJourneyIndex(event.target.value)
+                        }
+                      >
+                        <option value="">Select a journey</option>
+                        {competition?.stages &&
+                        competition.stages.length > 0 ? (
+                          competition.stages.map((stage, sIdx) => {
+                            const jIndex =
+                              stage.order !== undefined && stage.order !== null
+                                ? stage.order
+                                : sIdx + 1;
+
+                            const now = new Date();
+                            const isOpen =
+                              (!stage.registrationOpenDate ||
+                                now > new Date(stage.registrationOpenDate)) &&
+                              (!stage.registrationCloseDate ||
+                                now < new Date(stage.registrationCloseDate));
+
+                            return (
+                              <option
+                                key={`stage-${sIdx}`}
+                                value={jIndex}
+                                disabled={!isOpen && !roleCanManageEntries}
+                              >
+                                Journey {jIndex} - {stage.name}{" "}
+                                {!isOpen && !roleCanManageEntries
+                                  ? "(Closed)"
+                                  : ""}
+                              </option>
+                            );
+                          })
+                        ) : (
+                          <option value="" disabled>
+                            No journeys configured
+                          </option>
+                        )}
+                      </Select>
+                    </div>
+                  )}
 
                   <div className="space-y-1">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1493,7 +1559,7 @@ const CompetitionRegistration = () => {
                               </span>{" "}
                               {formatCategoryAbbreviation(
                                 selectedAthlete.category,
-                                boatClassMap.get(selectedBoatClassId)
+                                boatClassMap.get(selectedBoatClassId),
                               ) || "—"}
                             </p>
                             <p>
@@ -1631,15 +1697,15 @@ const CompetitionRegistration = () => {
                     PDF
                   </Button>
                   {summaryCanManageEntries && entryStatusCounts.pending > 0 && (
-                  <Button
-                    size="sm"
-                    onClick={handleApproveAll}
-                    disabled={isProcessingAll}
-                  >
-                    {isProcessingAll ? "Approving..." : "Approve All Pending"}
-                  </Button>
-                )}
-              </div>
+                    <Button
+                      size="sm"
+                      onClick={handleApproveAll}
+                      disabled={isProcessingAll}
+                    >
+                      {isProcessingAll ? "Approving..." : "Approve All Pending"}
+                    </Button>
+                  )}
+                </div>
               </div>
               <DataGrid
                 ref={submittedGridRef}

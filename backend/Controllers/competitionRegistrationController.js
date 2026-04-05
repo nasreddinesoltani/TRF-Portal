@@ -167,6 +167,7 @@ const serializeEntry = (entry) => {
     crew: Array.isArray(entry.crew) ? entry.crew.map(serializeAthlete) : [],
     category: serializeCategory(entry.category),
     boatClass: serializeBoatClass(entry.boatClass),
+    journeyIndex: entry.journeyIndex || null,
     crewNumber: entry.crewNumber || 1,
     seed: entry.seed || null,
     submittedBy: serializeUser(entry.submittedBy),
@@ -446,6 +447,7 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
       allowUpCategory: competition.allowUpCategory,
       allowedCategories,
       allowedBoatClasses,
+      stages: competition.stages || [],
     },
     club: serializeClub(clubContext?.clubDoc),
     entries: entries.map(serializeEntry),
@@ -563,7 +565,8 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
   if (selectedCategoryDoc) {
     // If selected category is para, only show para athletes
     // If selected category is not para, only show non-para athletes
-    athleteQuery.isPara = selectedCategoryDoc.isPara === true ? true : { $ne: true };
+    athleteQuery.isPara =
+      selectedCategoryDoc.isPara === true ? true : { $ne: true };
   }
 
   if (searchFilters.length) {
@@ -730,6 +733,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       crewIds,
       categoryId: toObjectId(entry.categoryId || entry.category),
       boatClassId: toObjectId(entry.boatClassId || entry.boatClass),
+      journeyIndex: entry.journeyIndex ? Number(entry.journeyIndex) : null,
       seed: entry.seed ? Number(entry.seed) : null,
       notes:
         typeof entry.notes === "string" && entry.notes.trim().length
@@ -793,13 +797,19 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       { crew: { $in: Array.from(allAthleteIds) } },
     ],
     status: { $ne: "withdrawn" },
-  }).select("athlete crew status");
+  }).select("athlete crew status category boatClass journeyIndex");
 
-  const busyAthleteIds = new Set();
+  // To check busy athletes, we now factor in journeyIndex
+  // Map: "athleteId_journeyIndex" -> true
+  const busyAthleteJourneys = new Set();
   existingEntries.forEach((entry) => {
-    if (entry.athlete) busyAthleteIds.add(entry.athlete.toString());
+    const jIndex = entry.journeyIndex || "all";
+    if (entry.athlete)
+      busyAthleteJourneys.add(`${entry.athlete.toString()}_${jIndex}`);
     if (Array.isArray(entry.crew)) {
-      entry.crew.forEach((id) => busyAthleteIds.add(id.toString()));
+      entry.crew.forEach((id) =>
+        busyAthleteJourneys.add(`${id.toString()}_${jIndex}`),
+      );
     }
   });
 
@@ -840,6 +850,39 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
   const creations = [];
 
   for (const entry of parsedEntries) {
+    if (entry.journeyIndex && Array.isArray(competition.stages)) {
+      const stage = competition.stages.find(
+        (st, idx) => (st.order ?? idx + 1) === entry.journeyIndex,
+      );
+      if (stage) {
+        const now = new Date();
+        if (
+          stage.registrationOpenDate &&
+          now < new Date(stage.registrationOpenDate)
+        ) {
+          if (!hasManagementPrivileges(role)) {
+            return res.status(400).json({
+              message: `Registration for ${
+                stage.name || `Journey ${entry.journeyIndex}`
+              } has not opened yet`,
+            });
+          }
+        }
+        if (
+          stage.registrationCloseDate &&
+          now > new Date(stage.registrationCloseDate)
+        ) {
+          if (!hasManagementPrivileges(role)) {
+            return res.status(400).json({
+              message: `Registration for ${
+                stage.name || `Journey ${entry.journeyIndex}`
+              } is closed`,
+            });
+          }
+        }
+      }
+    }
+
     const categoryDoc = categoryMap.get(entry.categoryId.toString());
     if (!categoryDoc) {
       return res.status(400).json({ message: "Category not found" });
@@ -879,20 +922,22 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       const allowMultiple =
         competition.discipline === "beach" ||
         competition.discipline === "coastal" ||
+        competition.competitionType === "championship" ||
         req.body.bypassMultipleEntries === true;
 
-      if (busyAthleteIds.has(idStr)) {
+      const jKey = `${idStr}_${entry.journeyIndex || "all"}`;
+      if (busyAthleteJourneys.has(jKey)) {
         if (!allowMultiple) {
           const athleteName = athlete
             ? `${athlete.firstName || "Athlete"} ${athlete.lastName || idStr}`
             : `Athlete ${idStr}`;
 
           return res.status(400).json({
-            message: `${athleteName} is already registered for this competition`,
+            message: `${athleteName} is already registered for this competition/stage`,
           });
         }
 
-        // If multiple are allowed, check for EXACT duplicate (same athlete, same category, same boat class)
+        // If multiple are allowed, check for EXACT duplicate (same athlete, same category, same boat class, same journey)
         const isDuplicateEvent = existingEntries.some((e) => {
           const isSameAthlete =
             e.athlete?.toString() === idStr ||
@@ -902,7 +947,11 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
             e.category?.toString() === entry.categoryId?.toString();
           const isSameBoatClass =
             e.boatClass?.toString() === entry.boatClassId?.toString();
-          return isSameAthlete && isSameCategory && isSameBoatClass;
+          const isSameJourney = (e.journeyIndex || null) === entry.journeyIndex;
+
+          return (
+            isSameAthlete && isSameCategory && isSameBoatClass && isSameJourney
+          );
         });
 
         if (isDuplicateEvent) {
@@ -910,7 +959,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
             ? `${athlete.firstName || "Athlete"} ${athlete.lastName || idStr}`
             : `Athlete ${idStr}`;
           return res.status(400).json({
-            message: `${athleteName} is already registered for this exact event (Category/Boat Class)`,
+            message: `${athleteName} is already registered for this exact event (Category/Boat/Journey)`,
           });
         }
       }
@@ -987,6 +1036,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       crew: entry.crewIds,
       category: entry.categoryId,
       boatClass: entry.boatClassId || undefined,
+      journeyIndex: entry.journeyIndex || undefined,
       crewNumber: nextNumber,
       seed: entry.seed || null,
       status: "pending",
@@ -997,7 +1047,11 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
     creations.push(creation.save());
 
     // Mark these athletes as busy for subsequent entries in the same batch
-    entry.crewIds.forEach((id) => busyAthleteIds.add(id.toString()));
+    entry.crewIds.forEach((id) =>
+      busyAthleteJourneys.add(
+        `${id.toString()}_${entry.journeyIndex || "all"}`,
+      ),
+    );
   }
 
   const savedEntries = await Promise.all(creations);
