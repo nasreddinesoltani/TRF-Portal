@@ -50,6 +50,15 @@ app.get("/api/test", (req, res) => {
   res.json({ message: "Backend is working!" });
 });
 
+// Minimal health route for monitoring and uptime checks
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use("/api/users", protect, userRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/clubs", clubRoutes);
