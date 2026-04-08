@@ -227,6 +227,67 @@ const formatDisplayDate = (value) => {
   });
 };
 
+const formatElapsedTime = (ms) => {
+  if (!Number.isFinite(ms)) {
+    return "-";
+  }
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const centis = Math.floor((ms % 1000) / 10);
+  if (minutes > 0) {
+    return `${minutes}:${seconds.toString().padStart(2, "0")}.${centis
+      .toString()
+      .padStart(2, "0")}`;
+  }
+  return `${seconds}.${centis.toString().padStart(2, "0")}`;
+};
+
+const formatHistorySourceLabel = (source) => {
+  const sourceMap = {
+    lane_assignment: "Lane assignment",
+    membership_by_date: "Membership by date",
+    membership_by_season: "Membership by season",
+    membership_fallback: "Membership fallback",
+    unresolved: "Unresolved",
+  };
+
+  if (!source) {
+    return "-";
+  }
+
+  return sourceMap[source] || source.replace(/_/g, " ");
+};
+
+const formatCategoryWithBoatClass = (row) => {
+  const categoryLabel =
+    row?.category?.abbreviation ||
+    row?.category?.titles?.en ||
+    row?.category?.name ||
+    "-";
+  const boatClassLabel =
+    row?.boatClass?.code || row?.boatClass?.abbreviation || "";
+
+  return [categoryLabel, boatClassLabel].filter(Boolean).join(" ");
+};
+
+const isChampionshipCompetition = (competition) => {
+  const label =
+    competition?.names?.en || competition?.name || competition?.code || "";
+  return /championship|championnat/i.test(String(label));
+};
+
+const getResultStatusBadgeClass = (statusValue) => {
+  const status = String(statusValue || "").toLowerCase();
+  if (status === "ok") return "bg-emerald-50 text-emerald-700";
+  if (status === "dnf") return "bg-amber-50 text-amber-700";
+  if (status === "dns") return "bg-orange-50 text-orange-700";
+  if (status === "abs") return "bg-slate-100 text-slate-600";
+  if (status === "dsq") return "bg-rose-50 text-rose-700";
+  return "bg-slate-100 text-slate-600";
+};
+
 const formatIssueLabel = (issue) => {
   if (!issue) {
     return "";
@@ -332,6 +393,7 @@ const AthleteCard = ({
   clubs,
   canViewDocuments,
   onOpenDocuments,
+  onOpenBiography,
   onEdit,
   onTransfer,
   onRequestDelete,
@@ -535,6 +597,14 @@ const AthleteCard = ({
       <div className="mt-2 pt-2 border-t border-slate-100 space-y-2">
         {/* Row 1: Action Buttons */}
         <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-[10px] border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"
+            onClick={() => onOpenBiography(athlete)}
+          >
+            Bio
+          </Button>
           {canViewDocuments && (
             <Button
               variant="outline"
@@ -635,6 +705,7 @@ const AthleteCardGrid = ({
   clubs,
   canViewDocuments,
   onOpenDocuments,
+  onOpenBiography,
   onEdit,
   onTransfer,
   onRequestDelete,
@@ -685,6 +756,7 @@ const AthleteCardGrid = ({
           clubs={clubs}
           canViewDocuments={canViewDocuments}
           onOpenDocuments={onOpenDocuments}
+          onOpenBiography={onOpenBiography}
           onEdit={onEdit}
           onTransfer={onTransfer}
           onRequestDelete={onRequestDelete}
@@ -744,6 +816,42 @@ const ClubDetail = () => {
     open: false,
     athlete: null,
   });
+  const [biographyDialog, setBiographyDialog] = useState({
+    open: false,
+    athlete: null,
+    loading: false,
+    error: "",
+    data: null,
+  });
+
+  const biographyOfficialRows = useMemo(() => {
+    const rows = biographyDialog.data?.officialResults || [];
+    return [...rows].sort((a, b) => {
+      const aTime = new Date(a?.publishedAt || 0).getTime();
+      const bTime = new Date(b?.publishedAt || 0).getTime();
+      return bTime - aTime;
+    });
+  }, [biographyDialog.data]);
+
+  const biographyRawRows = useMemo(() => {
+    const rows = biographyDialog.data?.rawRaceResults || [];
+    return [...rows].sort((a, b) => {
+      const aTime = new Date(a?.startTime || 0).getTime();
+      const bTime = new Date(b?.startTime || 0).getTime();
+      if (bTime !== aTime) {
+        return bTime - aTime;
+      }
+      return Number(b?.order || 0) - Number(a?.order || 0);
+    });
+  }, [biographyDialog.data]);
+
+  const biographyEffectivePodiums = useMemo(() => {
+    const summary = biographyDialog.data?.summary || {};
+    if (Number(summary.officialEventCount || 0) > 0) {
+      return summary.officialPodiums || { gold: 0, silver: 0, bronze: 0 };
+    }
+    return summary.racePodiums || { gold: 0, silver: 0, bronze: 0 };
+  }, [biographyDialog.data]);
 
   const [editingAthlete, setEditingAthlete] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -1637,6 +1745,64 @@ const ClubDetail = () => {
     setDocumentDialog({ open: false, athlete: null });
   }, []);
 
+  const closeBiographyDialog = useCallback(() => {
+    setBiographyDialog({
+      open: false,
+      athlete: null,
+      loading: false,
+      error: "",
+      data: null,
+    });
+  }, []);
+
+  const openBiographyDialog = useCallback(
+    async (athlete) => {
+      if (!athlete?._id || !token) {
+        return;
+      }
+
+      setBiographyDialog({
+        open: true,
+        athlete,
+        loading: true,
+        error: "",
+        data: null,
+      });
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/athletes/${athlete._id}/history`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.message || "Failed to load athlete history");
+        }
+
+        setBiographyDialog((previous) => ({
+          ...previous,
+          loading: false,
+          data: payload,
+          error: "",
+        }));
+      } catch (error) {
+        console.error("Failed to load athlete biography", error);
+        setBiographyDialog((previous) => ({
+          ...previous,
+          loading: false,
+          data: null,
+          error: error.message || "Failed to load athlete history",
+        }));
+      }
+    },
+    [token],
+  );
+
   const submitDeletionRequest = useCallback(
     async (event) => {
       event.preventDefault();
@@ -1998,6 +2164,18 @@ const ClubDetail = () => {
         );
       }
 
+      buttons.push(
+        <Button
+          key="bio"
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-[10px] border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"
+          onClick={() => openBiographyDialog(athlete)}
+        >
+          Bio
+        </Button>,
+      );
+
       if (canManage) {
         buttons.push(
           <Button
@@ -2056,6 +2234,7 @@ const ClubDetail = () => {
       handleAdminDelete,
       isAdmin,
       openDocumentsDialog,
+      openBiographyDialog,
       openDeleteDialog,
       openEditDialog,
       openTransferDialog,
@@ -2771,6 +2950,7 @@ const ClubDetail = () => {
                     clubs={clubs}
                     canViewDocuments={canViewDocuments}
                     onOpenDocuments={openDocumentsDialog}
+                    onOpenBiography={openBiographyDialog}
                     onEdit={openEditDialog}
                     onTransfer={openTransferDialog}
                     onRequestDelete={openDeleteDialog}
@@ -3432,6 +3612,249 @@ const ClubDetail = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {biographyDialog.open ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 px-4 py-10">
+          <div className="w-full max-w-6xl rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">
+                Athlete Biography
+              </h2>
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={closeBiographyDialog}
+              >
+                Close
+              </Button>
+            </div>
+
+            <div className="mt-4">
+              <p className="text-base font-semibold text-slate-900">
+                {resolvePersonName(biographyDialog.athlete)}
+              </p>
+              <p className="text-sm text-slate-500">
+                License: {biographyDialog.athlete?.licenseNumber || "-"}
+              </p>
+            </div>
+
+            {biographyDialog.loading ? (
+              <div className="mt-6 text-sm text-slate-500">
+                Loading history...
+              </div>
+            ) : biographyDialog.error ? (
+              <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                {biographyDialog.error}
+              </div>
+            ) : biographyDialog.data ? (
+              <div className="mt-6 space-y-6">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs uppercase text-slate-500">
+                      Official events
+                    </p>
+                    <p className="text-xl font-bold text-slate-900">
+                      {biographyDialog.data.summary?.officialEventCount || 0}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-blue-50 p-3">
+                    <p className="text-xs uppercase text-blue-700">Races</p>
+                    <p className="text-xl font-bold text-blue-800">
+                      {biographyDialog.data.summary?.raceCount || 0}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-indigo-50 p-3">
+                    <p className="text-xs uppercase text-indigo-700">
+                      Finished
+                    </p>
+                    <p className="text-xl font-bold text-indigo-800">
+                      {biographyDialog.data.summary?.completedRaceCount || 0}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-yellow-50 p-3">
+                    <p className="text-xs uppercase text-yellow-700">Gold</p>
+                    <p className="text-xl font-bold text-yellow-800">
+                      {biographyEffectivePodiums.gold || 0}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-100 p-3">
+                    <p className="text-xs uppercase text-slate-600">Silver</p>
+                    <p className="text-xl font-bold text-slate-700">
+                      {biographyEffectivePodiums.silver || 0}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-amber-50 p-3">
+                    <p className="text-xs uppercase text-amber-700">Bronze</p>
+                    <p className="text-xl font-bold text-amber-800">
+                      {biographyEffectivePodiums.bronze || 0}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white">
+                  <div className="border-b border-slate-200 px-4 py-3">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Official published results
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-600 uppercase tracking-wide">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Competition</th>
+                          <th className="px-3 py-2 text-left">Event</th>
+                          <th className="px-3 py-2 text-left">Rank</th>
+                          <th className="px-3 py-2 text-left">Points</th>
+                          <th className="px-3 py-2 text-left">Time</th>
+                          <th className="px-3 py-2 text-left">
+                            Historical club
+                          </th>
+                          <th className="px-3 py-2 text-left">Source</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {biographyOfficialRows.map((row, idx) => (
+                          <tr
+                            key={`${row.officialResultId || idx}`}
+                            className="border-t border-slate-100"
+                          >
+                            <td className="px-3 py-2">
+                              {row.competition?.names?.en ||
+                                row.competition?.code ||
+                                "-"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.eventLabel || "-"}
+                            </td>
+                            <td className="px-3 py-2 font-semibold">
+                              {row.rank || "-"}
+                            </td>
+                            <td className="px-3 py-2 font-semibold">
+                              {row.points || 0}
+                            </td>
+                            <td className="px-3 py-2">
+                              {formatElapsedTime(row.elapsedMs)}
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.historicalClubAtRaceTime?.club?.name ||
+                                row.historicalClubAtRaceTime?.club?.code ||
+                                "-"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-500">
+                              {formatHistorySourceLabel(
+                                row.historicalClubAtRaceTime?.source,
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {!biographyOfficialRows.length && (
+                          <tr>
+                            <td
+                              className="px-3 py-3 text-slate-400"
+                              colSpan={7}
+                            >
+                              No published official results yet.
+                              {(biographyDialog.data.rawRaceResults || [])
+                                .length
+                                ? " Publish official event results to lock championship history."
+                                : ""}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white">
+                  <div className="border-b border-slate-200 px-4 py-3">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Raw race timeline
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto max-h-[320px]">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-600 uppercase tracking-wide sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Date</th>
+                          <th className="px-3 py-2 text-left">Competition</th>
+                          <th className="px-3 py-2 text-left">Category</th>
+                          <th className="px-3 py-2 text-left">Status</th>
+                          <th className="px-3 py-2 text-left">Final pos</th>
+                          <th className="px-3 py-2 text-left">Time</th>
+                          <th className="px-3 py-2 text-left">
+                            Historical club
+                          </th>
+                          <th className="px-3 py-2 text-left">Source</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {biographyRawRows.map((row, idx) => (
+                          <tr
+                            key={`${row.raceId || idx}-${row.lane || idx}`}
+                            className="border-t border-slate-100"
+                          >
+                            <td className="px-3 py-2">
+                              {formatDisplayDate(row.startTime) || "-"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.competition?.names?.en ||
+                                row.competition?.code ||
+                                "-"}
+                              {isChampionshipCompetition(row.competition) &&
+                              row.journeyIndex
+                                ? ` (J${row.journeyIndex})`
+                                : ""}
+                            </td>
+                            <td className="px-3 py-2">
+                              {formatCategoryWithBoatClass(row)}
+                            </td>
+                            <td className="px-3 py-2 uppercase">
+                              <span
+                                className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold ${getResultStatusBadgeClass(
+                                  row.result?.status || row.status,
+                                )}`}
+                              >
+                                {row.result?.status || row.status || "-"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-semibold">
+                              {row.mergedEventPosition || "-"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {formatElapsedTime(row.result?.elapsedMs)}
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.historicalClubAtRaceTime?.club?.name ||
+                                row.historicalClubAtRaceTime?.club?.code ||
+                                "-"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-500">
+                              {formatHistorySourceLabel(
+                                row.historicalClubAtRaceTime?.source,
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {!biographyRawRows.length && (
+                          <tr>
+                            <td
+                              className="px-3 py-3 text-slate-400"
+                              colSpan={8}
+                            >
+                              No race history found.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

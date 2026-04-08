@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import {
   createAthlete,
   deleteAthlete,
+  getAthleteCompetitionHistory,
   getAthleteDocumentStatus,
   getAthleteStatistics,
   importAthletesFromCsv,
@@ -60,13 +61,19 @@ router.get(
   "/",
   protect,
   allowRoles("admin", "club_manager", "jury_president", "umpire"),
-  searchAthletes
+  searchAthletes,
 );
 router.get(
   "/stats",
   protect,
   allowRoles("admin", "club_manager", "jury_president", "umpire"),
-  getAthleteStatistics
+  getAthleteStatistics,
+);
+router.get(
+  "/:id/history",
+  protect,
+  allowRoles("admin", "club_manager", "jury_president", "umpire", "coach"),
+  getAthleteCompetitionHistory,
 );
 router.post("/", protect, allowRoles("admin", "club_manager"), createAthlete);
 router.post(
@@ -74,39 +81,39 @@ router.post(
   protect,
   allowRoles("admin"),
   csvUpload.single("file"),
-  importAthletesFromCsv
+  importAthletesFromCsv,
 );
 router.post(
   "/bulk-status-update",
   protect,
   allowRoles("admin"),
   csvUpload.single("file"),
-  bulkUpdateAthleteStatus
+  bulkUpdateAthleteStatus,
 );
 router.put("/:id", protect, allowRoles("admin", "club_manager"), updateAthlete);
 router.patch(
   "/:id/license-status",
   protect,
   allowRoles("admin"),
-  updateAthleteLicenseStatus
+  updateAthleteLicenseStatus,
 );
 router.patch(
   "/:id/memberships",
   protect,
   allowRoles("admin"),
-  updateAthleteMemberships
+  updateAthleteMemberships,
 );
 router.get(
   "/:id/documents",
   protect,
   allowRoles("admin", "club_manager", "jury_president", "umpire"),
-  listAthleteDocuments
+  listAthleteDocuments,
 );
 router.get(
   "/:id/documents/:docType",
   protect,
   allowRoles("admin", "club_manager", "jury_president", "umpire"),
-  getAthleteDocumentStatus
+  getAthleteDocumentStatus,
 );
 router.post(
   "/:id/documents/:docType",
@@ -114,50 +121,45 @@ router.post(
   allowRoles("admin", "club_manager"),
   prepareAthleteDocumentUpload,
   documentUpload.single("file"),
-  uploadAthleteDocument
+  uploadAthleteDocument,
 );
 router.post(
   "/:id/documents/:docType/approve",
   protect,
   allowRoles("admin"),
-  approveAthleteDocument
+  approveAthleteDocument,
 );
 router.post(
   "/:id/documents/:docType/reject",
   protect,
   allowRoles("admin"),
-  rejectAthleteDocument
+  rejectAthleteDocument,
 );
 router.patch(
   "/:id/documents/medical-certificate",
   protect,
   allowRoles("admin", "club_manager"),
-  updateMedicalCertificate
+  updateMedicalCertificate,
 );
 router.post(
   "/season/reset",
   protect,
   allowRoles("admin"),
-  resetAthleteLicenseStatuses
+  resetAthleteLicenseStatuses,
 );
 router.post(
   "/license-counter/sync",
   protect,
   allowRoles("admin"),
-  syncLicenseCounterHandler
+  syncLicenseCounterHandler,
 );
 router.delete(
   "/:id/documents/:docType",
   protect,
   allowRoles("admin"),
-  removeAthleteDocument
+  removeAthleteDocument,
 );
-router.post(
-  "/import-photos",
-  protect,
-  allowRoles("admin"),
-  triggerPhotoImport
-);
+router.post("/import-photos", protect, allowRoles("admin"), triggerPhotoImport);
 router.delete("/:id", protect, allowRoles("admin"), deleteAthlete);
 
 // Dual Membership Routes (Centre de Promotion athletes)
@@ -165,26 +167,26 @@ router.post(
   "/secondary-membership",
   protect,
   allowRoles("admin", "federation", "club_manager"),
-  addSecondaryMembership
+  addSecondaryMembership,
 );
 router.delete(
   "/secondary-membership",
   protect,
   allowRoles("admin", "federation", "club_manager"),
-  removeSecondaryMembership
+  removeSecondaryMembership,
 );
 router.get(
   "/centre/:centreId/athletes",
   protect,
   allowRoles("admin", "federation", "club_manager"),
-  getCentreAthletes
+  getCentreAthletes,
 );
 // For club managers to get their own centre's athletes (no centreId needed)
 router.get(
   "/centre/athletes",
   protect,
   allowRoles("admin", "federation", "club_manager"),
-  getCentreAthletes
+  getCentreAthletes,
 );
 
 export default router;

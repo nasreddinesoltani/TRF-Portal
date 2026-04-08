@@ -5,6 +5,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { parse } from "csv-parse/sync";
 import Athlete from "../Models/athleteModel.js";
+import CompetitionRace from "../Models/competitionRaceModel.js";
+import OfficialResult from "../Models/officialResultModel.js";
 import TransferRequest from "../Models/transferRequestModel.js";
 import AthleteDeletionRequest from "../Models/athleteDeletionRequestModel.js";
 import Club from "../Models/clubModel.js";
@@ -261,7 +263,7 @@ export const searchAthletes = asyncHandler(async (req, res) => {
       filters.status = { $in: LICENSE_ATTENTION_STATUSES };
     } else if (
       ["active", "pending_documents", "expired_medical", "suspended"].includes(
-        normalizedLicenseStatus
+        normalizedLicenseStatus,
       )
     ) {
       filters.status = normalizedLicenseStatus;
@@ -291,7 +293,7 @@ export const searchAthletes = asyncHandler(async (req, res) => {
       .toLowerCase();
     if (
       ["active", "inactive", "pending", "transferred"].includes(
-        normalizedMembershipStatus
+        normalizedMembershipStatus,
       )
     ) {
       membershipMatch.status = normalizedMembershipStatus;
@@ -315,7 +317,7 @@ export const searchAthletes = asyncHandler(async (req, res) => {
   await ensureNationalCategoriesForAthletes(
     athletes,
     seasonYear,
-    categoryCache
+    categoryCache,
   );
 
   athletes.forEach((athlete) => {
@@ -522,7 +524,7 @@ export const getAthleteStatistics = asyncHandler(async (req, res) => {
       }
       return accumulator;
     },
-    { total: 0, pendingDocuments: 0, expiredMedical: 0, suspended: 0 }
+    { total: 0, pendingDocuments: 0, expiredMedical: 0, suspended: 0 },
   );
 
   const uniqueClubs = uniqueClubAgg?.[0]?.count || 0;
@@ -718,7 +720,7 @@ export const createAthlete = asyncHandler(async (req, res) => {
       await ensureNationalCategoryForAthlete(
         athlete,
         seasonYear,
-        categoryCache
+        categoryCache,
       );
       await athlete.populate("memberships.club", "name");
 
@@ -736,7 +738,7 @@ export const createAthlete = asyncHandler(async (req, res) => {
         console.warn(
           `Duplicate license detected (sequence ${sequence}). Resync attempt ${
             attempt + 1
-          }/${MAX_LICENSE_ATTEMPTS}.`
+          }/${MAX_LICENSE_ATTEMPTS}.`,
         );
         await syncLicenseCounter();
         continue;
@@ -748,7 +750,7 @@ export const createAthlete = asyncHandler(async (req, res) => {
 
   console.error(
     "Unable to allocate a unique license number after multiple attempts.",
-    lastLicenseError
+    lastLicenseError,
   );
 
   return res.status(500).json({
@@ -938,7 +940,7 @@ export const updateAthlete = asyncHandler(async (req, res) => {
 
     // Find the athlete's current active/pending membership
     const currentActiveMembership = athlete.memberships?.find(
-      (m) => m.status === "active" || m.status === "pending"
+      (m) => m.status === "active" || m.status === "pending",
     );
     const currentClubId = currentActiveMembership
       ? normalizeClubIdForComparison(currentActiveMembership.club)
@@ -1093,6 +1095,533 @@ export const updateAthlete = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get athlete competition history (official + raw race timeline)
+// @route   GET /api/athletes/:id/history
+// @access  Authenticated (admin, club_manager, jury_president, umpire, coach)
+export const getAthleteCompetitionHistory = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { competitionId } = req.query;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid athlete identifier" });
+  }
+
+  if (competitionId && !mongoose.Types.ObjectId.isValid(competitionId)) {
+    return res.status(400).json({ message: "Invalid competition identifier" });
+  }
+
+  const athlete = await Athlete.findById(id)
+    .select(
+      "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender memberships",
+    )
+    .populate("memberships.club", "name code")
+    .lean();
+
+  if (!athlete) {
+    return res.status(404).json({ message: "Athlete not found" });
+  }
+
+  const athleteObjectId = new mongoose.Types.ObjectId(id);
+  const competitionFilter = competitionId
+    ? { competition: new mongoose.Types.ObjectId(competitionId) }
+    : {};
+
+  const [officialDocs, races] = await Promise.all([
+    OfficialResult.find({
+      ...competitionFilter,
+      "entries.athlete": athleteObjectId,
+    })
+      .populate("competition", "code names startDate endDate venue")
+      .populate("category", "abbreviation titles gender")
+      .populate("boatClass", "code names crewSize")
+      .lean(),
+    CompetitionRace.find({
+      ...competitionFilter,
+      $or: [
+        { "lanes.athlete": athleteObjectId },
+        { "lanes.crew": athleteObjectId },
+      ],
+    })
+      .populate("competition", "code names startDate endDate venue")
+      .populate("category", "abbreviation titles gender")
+      .populate("boatClass", "code names crewSize")
+      .populate("lanes.club", "name code")
+      .populate("lanes.athlete", "firstName lastName firstNameAr lastNameAr")
+      .populate("lanes.crew", "firstName lastName firstNameAr lastNameAr")
+      .sort({ startTime: 1, journeyIndex: 1, order: 1 })
+      .lean(),
+  ]);
+
+  const athleteIdStr = athleteObjectId.toString();
+  const isSameAthlete = (value) => {
+    if (!value) return false;
+    const val = value._id ? value._id : value;
+    return val?.toString?.() === athleteIdStr;
+  };
+
+  const normalizeClub = (clubValue) => {
+    if (!clubValue) {
+      return null;
+    }
+
+    if (typeof clubValue === "object") {
+      const clubId = clubValue._id?.toString?.() || clubValue.id?.toString?.();
+      if (!clubId) {
+        return null;
+      }
+      return {
+        _id: clubId,
+        name: clubValue.name || null,
+        code: clubValue.code || null,
+      };
+    }
+
+    return {
+      _id: clubValue.toString(),
+      name: null,
+      code: null,
+    };
+  };
+
+  const normalizedMemberships = (athlete.memberships || [])
+    .map((membership) => ({
+      ...membership,
+      club: normalizeClub(membership.club),
+      startDate: membership.startDate ? new Date(membership.startDate) : null,
+      endDate: membership.endDate ? new Date(membership.endDate) : null,
+      season: Number(membership.season) || null,
+      membershipType: membership.membershipType || "primary",
+      status: membership.status || "active",
+    }))
+    .filter((membership) => membership.club?._id);
+
+  const resolveHistoricalClubAtDate = (referenceDate, fallbackClub = null) => {
+    const laneClub = normalizeClub(fallbackClub);
+    if (laneClub) {
+      return {
+        club: laneClub,
+        source: "lane_assignment",
+      };
+    }
+
+    const safeDate = referenceDate ? new Date(referenceDate) : null;
+    const hasValidDate = safeDate && !Number.isNaN(safeDate.getTime());
+
+    if (hasValidDate) {
+      const candidatesByDate = normalizedMemberships.filter((membership) => {
+        const startsBefore =
+          !membership.startDate ||
+          membership.startDate.getTime() <= safeDate.getTime();
+        const endsAfter =
+          !membership.endDate ||
+          membership.endDate.getTime() >= safeDate.getTime();
+        return startsBefore && endsAfter;
+      });
+
+      if (candidatesByDate.length) {
+        candidatesByDate.sort((a, b) => {
+          const aPrimary = a.membershipType === "primary" ? 0 : 1;
+          const bPrimary = b.membershipType === "primary" ? 0 : 1;
+          if (aPrimary !== bPrimary) return aPrimary - bPrimary;
+
+          const aActive = a.status === "active" ? 0 : 1;
+          const bActive = b.status === "active" ? 0 : 1;
+          if (aActive !== bActive) return aActive - bActive;
+
+          const aStart = a.startDate ? a.startDate.getTime() : 0;
+          const bStart = b.startDate ? b.startDate.getTime() : 0;
+          return bStart - aStart;
+        });
+
+        return {
+          club: candidatesByDate[0].club,
+          source: "membership_by_date",
+        };
+      }
+
+      const raceSeason = safeDate.getFullYear();
+      const seasonMatch = normalizedMemberships.find(
+        (membership) => membership.season && membership.season === raceSeason,
+      );
+
+      if (seasonMatch) {
+        return {
+          club: seasonMatch.club,
+          source: "membership_by_season",
+        };
+      }
+    }
+
+    const fallbackMembership = normalizedMemberships.find(
+      (membership) => membership.status !== "transferred",
+    );
+    if (fallbackMembership) {
+      return {
+        club: fallbackMembership.club,
+        source: "membership_fallback",
+      };
+    }
+
+    return {
+      club: null,
+      source: "unresolved",
+    };
+  };
+
+  const raceById = new Map(races.map((race) => [race._id?.toString?.(), race]));
+
+  const getJourneyCategoryKey = (race) => {
+    const competitionPart =
+      race.competition?._id?.toString?.() ||
+      race.competition?.toString?.() ||
+      "unknown";
+    const categoryId = race?.category?._id || race?.category;
+    const boatClassId = race?.boatClass?._id || race?.boatClass;
+    const journeyPart = Number(race?.journeyIndex) || 1;
+    return `${competitionPart}::${categoryId?.toString?.() || "unknown"}::${
+      boatClassId?.toString?.() || "open"
+    }::J${journeyPart}`;
+  };
+
+  const statusPriority = { ok: 1, dnf: 2, dns: 3, abs: 4, dsq: 5 };
+  const resolveBestLaneRecord = (current, candidate) => {
+    if (!current) {
+      return candidate;
+    }
+
+    const currentTimed =
+      current.status === "ok" && Number.isFinite(current.elapsedMs);
+    const candidateTimed =
+      candidate.status === "ok" && Number.isFinite(candidate.elapsedMs);
+
+    if (candidateTimed && !currentTimed) {
+      return candidate;
+    }
+    if (candidateTimed && currentTimed) {
+      return candidate.elapsedMs < current.elapsedMs ? candidate : current;
+    }
+
+    const currentPos = Number.isInteger(current.finishPosition)
+      ? current.finishPosition
+      : Number.MAX_SAFE_INTEGER;
+    const candidatePos = Number.isInteger(candidate.finishPosition)
+      ? candidate.finishPosition
+      : Number.MAX_SAFE_INTEGER;
+
+    if (candidatePos < currentPos) {
+      return candidate;
+    }
+
+    const currentStatus = statusPriority[current.status] || 99;
+    const candidateStatus = statusPriority[candidate.status] || 99;
+    if (candidateStatus < currentStatus) {
+      return candidate;
+    }
+
+    return current;
+  };
+
+  const touchedGroupKeys = new Set(
+    races.map((race) => getJourneyCategoryKey(race)),
+  );
+
+  const touchedCompetitionIds = Array.from(
+    new Set(
+      races
+        .map(
+          (race) =>
+            race.competition?._id?.toString?.() ||
+            race.competition?.toString?.(),
+        )
+        .filter(Boolean),
+    ),
+  );
+
+  const allRelevantRaces = touchedCompetitionIds.length
+    ? await CompetitionRace.find({
+        competition: { $in: touchedCompetitionIds },
+        status: "completed",
+      })
+        .populate("competition", "code names startDate endDate venue")
+        .populate("category", "abbreviation titles gender")
+        .populate("boatClass", "code names crewSize")
+        .populate("lanes.club", "name code")
+        .populate("lanes.athlete", "firstName lastName firstNameAr lastNameAr")
+        .populate("lanes.crew", "firstName lastName firstNameAr lastNameAr")
+        .lean()
+    : [];
+
+  const racesByGroup = new Map();
+  for (const race of allRelevantRaces) {
+    const key = getJourneyCategoryKey(race);
+    if (!touchedGroupKeys.has(key)) {
+      continue;
+    }
+    if (!racesByGroup.has(key)) {
+      racesByGroup.set(key, []);
+    }
+    racesByGroup.get(key).push(race);
+  }
+
+  const athleteMergedOutcomeByGroup = new Map();
+  for (const [groupKey, groupRaces] of racesByGroup.entries()) {
+    const athleteMap = new Map();
+
+    for (const race of groupRaces) {
+      for (const lane of race.lanes || []) {
+        const candidates = [];
+
+        if (lane.athlete) {
+          const aid =
+            lane.athlete?._id?.toString?.() || lane.athlete?.toString?.();
+          if (aid) {
+            candidates.push({
+              athleteId: aid,
+              athlete: lane.athlete,
+              lane,
+              race,
+            });
+          }
+        }
+
+        for (const crewMember of lane.crew || []) {
+          const aid = crewMember?._id?.toString?.() || crewMember?.toString?.();
+          if (aid) {
+            candidates.push({
+              athleteId: aid,
+              athlete: crewMember,
+              lane,
+              race,
+            });
+          }
+        }
+
+        for (const c of candidates) {
+          const result = c.lane.result || {};
+          const record = {
+            athleteId: c.athleteId,
+            status: result.status || "ok",
+            elapsedMs:
+              Number.isFinite(result.elapsedMs) && result.elapsedMs >= 0
+                ? Number(result.elapsedMs)
+                : undefined,
+            finishPosition: Number.isInteger(result.finishPosition)
+              ? result.finishPosition
+              : undefined,
+            lane: c.lane.lane,
+            raceId: c.race._id,
+          };
+
+          athleteMap.set(
+            c.athleteId,
+            resolveBestLaneRecord(athleteMap.get(c.athleteId), record),
+          );
+        }
+      }
+    }
+
+    const consolidated = Array.from(athleteMap.values());
+    const timed = consolidated
+      .filter(
+        (entry) => entry.status === "ok" && Number.isFinite(entry.elapsedMs),
+      )
+      .sort((a, b) => a.elapsedMs - b.elapsedMs);
+
+    timed.forEach((entry, index) => {
+      entry.mergedPosition = index + 1;
+    });
+
+    const lastFinisherPosition = timed.length;
+    const untimed = consolidated
+      .filter(
+        (entry) => !(entry.status === "ok" && Number.isFinite(entry.elapsedMs)),
+      )
+      .sort((a, b) => {
+        const statusA = statusPriority[a.status] || 99;
+        const statusB = statusPriority[b.status] || 99;
+        if (statusA !== statusB) {
+          return statusA - statusB;
+        }
+
+        const posA = Number.isInteger(a.finishPosition)
+          ? a.finishPosition
+          : Number.MAX_SAFE_INTEGER;
+        const posB = Number.isInteger(b.finishPosition)
+          ? b.finishPosition
+          : Number.MAX_SAFE_INTEGER;
+        if (posA !== posB) {
+          return posA - posB;
+        }
+
+        return Number(a.lane || 999) - Number(b.lane || 999);
+      });
+
+    untimed.forEach((entry) => {
+      if (entry.status === "dnf") {
+        entry.mergedPosition = entry.finishPosition || lastFinisherPosition + 1;
+      } else {
+        entry.mergedPosition = null;
+      }
+    });
+
+    const athleteEntry = consolidated.find(
+      (entry) => entry.athleteId === athleteIdStr,
+    );
+    if (athleteEntry) {
+      athleteMergedOutcomeByGroup.set(groupKey, athleteEntry);
+    }
+  }
+
+  const officialResults = [];
+  for (const doc of officialDocs) {
+    const entry = (doc.entries || []).find((item) =>
+      isSameAthlete(item.athlete),
+    );
+    if (!entry) {
+      continue;
+    }
+
+    officialResults.push({
+      officialResultId: doc._id,
+      competition: doc.competition,
+      eventGroupId: doc.eventGroupId,
+      eventLabel: doc.eventLabel,
+      category: doc.category,
+      boatClass: doc.boatClass,
+      rank: entry.rank || null,
+      points: Number(entry.points || 0),
+      status: entry.status || "ok",
+      elapsedMs: entry.elapsedMs,
+      finishPosition: entry.finishPosition,
+      lane: entry.lane,
+      publishedAt: doc.publishedAt,
+      revision: doc.revision,
+      sourceRace: entry.sourceRace,
+      sourceRaceName: entry.sourceRaceName,
+      historicalClubAtRaceTime: resolveHistoricalClubAtDate(
+        raceById.get(entry.sourceRace?.toString?.())?.startTime ||
+          raceById.get(entry.sourceRace?.toString?.())?.competition
+            ?.startDate ||
+          doc.publishedAt,
+        entry.club,
+      ),
+    });
+  }
+
+  const rawRaceResults = [];
+  for (const race of races) {
+    for (const lane of race.lanes || []) {
+      const inSingle = isSameAthlete(lane.athlete);
+      const inCrew =
+        Array.isArray(lane.crew) && lane.crew.some((m) => isSameAthlete(m));
+      if (!inSingle && !inCrew) {
+        continue;
+      }
+
+      rawRaceResults.push({
+        competition: race.competition,
+        raceId: race._id,
+        raceName: race.name,
+        journeyIndex: race.journeyIndex,
+        order: race.order,
+        startTime: race.startTime,
+        status: race.status,
+        eventGroupId: race.eventGroupId || null,
+        effectiveEventGroupId: getJourneyCategoryKey(race),
+        category: race.category,
+        boatClass: race.boatClass,
+        mergedEventPosition:
+          athleteMergedOutcomeByGroup.get(getJourneyCategoryKey(race))
+            ?.mergedPosition || null,
+        lane: lane.lane,
+        club: lane.club || null,
+        historicalClubAtRaceTime: resolveHistoricalClubAtDate(
+          race.startTime || race.competition?.startDate || race.createdAt,
+          lane.club,
+        ),
+        entryType: inCrew ? "crew" : "single",
+        crewSize: Array.isArray(lane.crew)
+          ? lane.crew.length
+          : inSingle
+            ? 1
+            : 0,
+        result: {
+          status: lane.result?.status || "ok",
+          elapsedMs: lane.result?.elapsedMs,
+          finishPosition: lane.result?.finishPosition,
+          notes: lane.result?.notes,
+        },
+      });
+    }
+  }
+
+  const summary = {
+    raceFinishResults: rawRaceResults.filter(
+      (row) => (row.result?.status || "").toLowerCase() === "ok",
+    ).length,
+    officialEventCount: officialResults.length,
+    officialPointsTotal: officialResults.reduce(
+      (sum, row) => sum + Number(row.points || 0),
+      0,
+    ),
+    officialPodiums: {
+      gold: officialResults.filter((row) => row.rank === 1).length,
+      silver: officialResults.filter((row) => row.rank === 2).length,
+      bronze: officialResults.filter((row) => row.rank === 3).length,
+    },
+    raceCount: rawRaceResults.length,
+    completedRaceCount: rawRaceResults.filter(
+      (row) => (row.result?.status || "").toLowerCase() === "ok",
+    ).length,
+    racePodiums: (() => {
+      const isMedalCompetition = (competition) => {
+        const label =
+          competition?.names?.en ||
+          competition?.name ||
+          competition?.code ||
+          "";
+        return /championship|championnat/i.test(String(label));
+      };
+
+      const seenGroups = new Set();
+      const uniqueEventOutcomes = [];
+      for (const row of rawRaceResults) {
+        if (!row?.effectiveEventGroupId) {
+          continue;
+        }
+        if (!isMedalCompetition(row.competition)) {
+          continue;
+        }
+        if (seenGroups.has(row.effectiveEventGroupId)) {
+          continue;
+        }
+        seenGroups.add(row.effectiveEventGroupId);
+        uniqueEventOutcomes.push({
+          mergedPosition: Number(row.mergedEventPosition) || null,
+        });
+      }
+
+      return {
+        gold: uniqueEventOutcomes.filter((entry) => entry.mergedPosition === 1)
+          .length,
+        silver: uniqueEventOutcomes.filter(
+          (entry) => entry.mergedPosition === 2,
+        ).length,
+        bronze: uniqueEventOutcomes.filter(
+          (entry) => entry.mergedPosition === 3,
+        ).length,
+      };
+    })(),
+  };
+
+  return res.json({
+    athlete,
+    summary,
+    officialResults,
+    rawRaceResults,
+  });
+});
+
 export const updateAthleteLicenseStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { licenseStatus } = req.body;
@@ -1115,7 +1644,7 @@ export const updateAthleteLicenseStatus = asyncHandler(async (req, res) => {
   const athlete = await Athlete.findByIdAndUpdate(
     id,
     { licenseStatus: normalizedLicenseStatus },
-    { new: true, runValidators: false }
+    { new: true, runValidators: false },
   ).populate("memberships.club", "name");
 
   if (!athlete) {
@@ -1178,7 +1707,7 @@ export const getAthleteDocumentStatus = asyncHandler(async (req, res) => {
   const evaluation = evaluateDocumentStatuses(athlete);
   const definition = getDocumentDefinition(normalizedDocType);
   const document = serialiseDocument(
-    athlete.documents?.[normalizedDocType] || null
+    athlete.documents?.[normalizedDocType] || null,
   );
   const state =
     evaluation.documentStates?.[normalizedDocType] ??
@@ -1274,7 +1803,7 @@ export const uploadAthleteDocument = asyncHandler(async (req, res) => {
 
     const evaluation = await saveAthleteWithEvaluation(athlete);
     const documentPayload = serialiseDocument(
-      athlete.documents?.[normalizedDocType]
+      athlete.documents?.[normalizedDocType],
     );
 
     return res.json({
@@ -1542,7 +2071,7 @@ export const deleteAthlete = asyncHandler(async (req, res) => {
       resolvedBy,
       resolvedAt: new Date(),
       resolutionNotes: "Deletion completed by admin",
-    }
+    },
   );
 
   res.json({ message: "Athlete deleted successfully" });
@@ -1697,7 +2226,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
       await LicenseCounter.findOneAndUpdate(
         { key: "athleteLicense" },
         { $max: { sequenceValue: maxSeqAthlete.licenseSequence } },
-        { upsert: true }
+        { upsert: true },
       );
     }
 
@@ -1721,13 +2250,13 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
         row,
         "firstNameAr",
         "first_name_ar",
-        "prenomAr"
+        "prenomAr",
       );
       let lastNameAr = readStringValue(
         row,
         "lastNameAr",
         "last_name_ar",
-        "nomAr"
+        "nomAr",
       );
 
       // Also support a single "name" or "fullName" column
@@ -1736,13 +2265,13 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
         "name",
         "fullName",
         "full_name",
-        "nom_complet"
+        "nom_complet",
       );
       const fullNameAr = readStringValue(
         row,
         "nameAr",
         "fullNameAr",
-        "nom_complet_ar"
+        "nom_complet_ar",
       );
 
       // If full name provided, split into first/last (assumes "FirstName LastName" format)
@@ -1804,7 +2333,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
         row,
         "birthDate",
         "birth_date",
-        "dateNaissance"
+        "dateNaissance",
       );
       const genderRaw = readStringValue(row, "gender", "sexe");
       const clubCodeRaw = readStringValue(row, "clubCode", "club", "club_code");
@@ -1822,7 +2351,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
         summary.errors.push({
           row: rowNumber,
           message: `Missing required fields: ${missingFields.join(
-            ", "
+            ", ",
           )}. Available columns: ${Object.keys(row).join(", ")}`,
         });
         continue;
@@ -1868,7 +2397,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
       if (!club) {
         const codeRegex = new RegExp(
           `^${escapeRegex(normalizedClubCode)}$`,
-          "i"
+          "i",
         );
         club = await Club.findOne({ code: codeRegex });
 
@@ -1892,7 +2421,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
         row,
         "passportNumber",
         "passport",
-        "passeport"
+        "passeport",
       );
       const nationality =
         readStringValue(row, "nationality", "nationalite") || "Tunisia";
@@ -1915,7 +2444,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
           // Update existing athlete - add/update membership
           const existingMembership = existingAthlete.memberships?.find(
             (m) =>
-              m.club.toString() === club._id.toString() && m.season === season
+              m.club.toString() === club._id.toString() && m.season === season,
           );
 
           if (existingMembership) {
@@ -1926,7 +2455,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
                 "memberships.club": club._id,
                 "memberships.season": season,
               },
-              { $set: { "memberships.$.status": membershipStatus } }
+              { $set: { "memberships.$.status": membershipStatus } },
             );
           } else {
             // Add new membership
@@ -1942,7 +2471,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
                     startDate: new Date(),
                   },
                 },
-              }
+              },
             );
           }
           summary.updated += 1;
@@ -1963,7 +2492,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
             const counter = await LicenseCounter.findOneAndUpdate(
               { key: "athleteLicense" },
               { $inc: { sequenceValue: 1 } },
-              { new: true, upsert: true }
+              { new: true, upsert: true },
             );
 
             const licenseSequence = counter.sequenceValue;
@@ -2013,7 +2542,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
 
           if (!saved) {
             throw new Error(
-              "Failed to generate unique license after multiple attempts"
+              "Failed to generate unique license after multiple attempts",
             );
           }
         }
@@ -2120,7 +2649,7 @@ export const bulkUpdateAthleteStatus = asyncHandler(async (req, res) => {
 
       if (athlete.memberships && Array.isArray(athlete.memberships)) {
         const membershipIndex = athlete.memberships.findIndex(
-          (m) => m.season === targetSeason
+          (m) => m.season === targetSeason,
         );
         if (membershipIndex >= 0) {
           updateFields[`memberships.${membershipIndex}.status`] = "active";
@@ -2172,7 +2701,7 @@ export const addSecondaryMembership = asyncHandler(async (req, res) => {
 
   const athlete = await Athlete.findById(athleteId).populate(
     "memberships.club",
-    "name code type parentClub"
+    "name code type parentClub",
   );
   if (!athlete) {
     return res.status(404).json({ message: "Athlete not found" });
@@ -2180,7 +2709,7 @@ export const addSecondaryMembership = asyncHandler(async (req, res) => {
 
   const targetClub = await Club.findById(clubId).populate(
     "parentClub",
-    "name code type"
+    "name code type",
   );
   if (!targetClub) {
     return res.status(404).json({ message: "Target club not found" });
@@ -2190,7 +2719,7 @@ export const addSecondaryMembership = asyncHandler(async (req, res) => {
   const primaryMembership = athlete.memberships?.find(
     (m) =>
       m.status === "active" &&
-      (m.membershipType === "primary" || !m.membershipType)
+      (m.membershipType === "primary" || !m.membershipType),
   );
 
   if (!primaryMembership) {
@@ -2283,7 +2812,7 @@ export const addSecondaryMembership = asyncHandler(async (req, res) => {
   const updatedAthlete = await Athlete.findByIdAndUpdate(
     athleteId,
     { $push: { memberships: newMembership } },
-    { new: true, runValidators: false }
+    { new: true, runValidators: false },
   ).populate("memberships.club", "name code type");
 
   res.status(201).json({
@@ -2316,7 +2845,7 @@ export const removeSecondaryMembership = asyncHandler(async (req, res) => {
 
   const athlete = await Athlete.findById(athleteId).populate(
     "memberships.club",
-    "name code type"
+    "name code type",
   );
   if (!athlete) {
     return res.status(404).json({ message: "Athlete not found" });
@@ -2370,7 +2899,7 @@ export const removeSecondaryMembership = asyncHandler(async (req, res) => {
         "memberships.$.endDate": new Date(),
       },
     },
-    { new: true, runValidators: false }
+    { new: true, runValidators: false },
   ).populate("memberships.club", "name code type");
 
   res.json({
@@ -2430,7 +2959,7 @@ export const getCentreAthletes = asyncHandler(async (req, res) => {
   })
     .populate("memberships.club", "name code type")
     .select(
-      "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender memberships"
+      "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender memberships",
     )
     .lean();
 
@@ -2439,7 +2968,7 @@ export const getCentreAthletes = asyncHandler(async (req, res) => {
     const primaryMembership = athlete.memberships?.find(
       (m) =>
         m.status === "active" &&
-        (m.membershipType === "primary" || !m.membershipType)
+        (m.membershipType === "primary" || !m.membershipType),
     );
     if (!primaryMembership) return false;
 
@@ -2470,7 +2999,7 @@ export const updateAthleteMemberships = asyncHandler(async (req, res) => {
 
   const athlete = await Athlete.findById(id).populate(
     "memberships.club",
-    "name code type"
+    "name code type",
   );
 
   if (!athlete) {
@@ -2503,12 +3032,12 @@ export const updateAthleteMemberships = asyncHandler(async (req, res) => {
           },
         },
       },
-      { runValidators: false }
+      { runValidators: false },
     );
 
     const updatedAthlete = await Athlete.findById(id).populate(
       "memberships.club",
-      "name code type"
+      "name code type",
     );
     return res.json({
       message: "Membership removed successfully",
@@ -2533,12 +3062,12 @@ export const updateAthleteMemberships = asyncHandler(async (req, res) => {
           [`memberships.${membershipIndex}.endDate`]: now,
         },
       },
-      { runValidators: false }
+      { runValidators: false },
     );
 
     const updatedAthlete = await Athlete.findById(id).populate(
       "memberships.club",
-      "name code type"
+      "name code type",
     );
     return res.json({
       message: "Membership deactivated successfully",
@@ -2566,12 +3095,12 @@ export const updateAthleteMemberships = asyncHandler(async (req, res) => {
           [`memberships.${membershipIndex}.endDate`]: "",
         },
       },
-      { runValidators: false }
+      { runValidators: false },
     );
 
     const updatedAthlete = await Athlete.findById(id).populate(
       "memberships.club",
-      "name code type"
+      "name code type",
     );
     return res.json({
       message: "Membership activated successfully",
@@ -2609,12 +3138,12 @@ export const updateAthleteMemberships = asyncHandler(async (req, res) => {
           },
         },
       },
-      { runValidators: false }
+      { runValidators: false },
     );
 
     const updatedAthlete = await Athlete.findById(id).populate(
       "memberships.club",
-      "name code type"
+      "name code type",
     );
     return res.json({
       message: "Membership added successfully",
@@ -2668,7 +3197,7 @@ export const updateAthleteMemberships = asyncHandler(async (req, res) => {
 
     const updatedAthlete = await Athlete.findById(id).populate(
       "memberships.club",
-      "name code type"
+      "name code type",
     );
     return res.json({
       message: "Athlete transferred successfully",
@@ -2690,12 +3219,12 @@ export const updateAthleteMemberships = asyncHandler(async (req, res) => {
     await Athlete.findByIdAndUpdate(
       id,
       { $set: { memberships: validatedMemberships } },
-      { runValidators: false }
+      { runValidators: false },
     );
 
     const updatedAthlete = await Athlete.findById(id).populate(
       "memberships.club",
-      "name code type"
+      "name code type",
     );
     return res.json({
       message: "Memberships updated successfully",

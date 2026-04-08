@@ -9,6 +9,10 @@ import Category from "../Models/categoryModel.js";
 import BoatClass from "../Models/boatClassModel.js";
 import Athlete from "../Models/athleteModel.js";
 import CompetitionEntry from "../Models/competitionEntryModel.js";
+import RankingSystem, {
+  DEFAULT_POINT_TABLE,
+} from "../Models/rankingSystemModel.js";
+import OfficialResult from "../Models/officialResultModel.js";
 
 // Lane limits per discipline
 // Classic: 8 lanes (standard water lanes)
@@ -164,6 +168,16 @@ const sanitiseLanes = (lanes = [], discipline = "classic") => {
         .filter((id) => id !== null);
     }
 
+    const crewNumberValue = Number(laneCandidate.crewNumber);
+    if (
+      Array.isArray(lane.crew) &&
+      lane.crew.length > 1 &&
+      Number.isInteger(crewNumberValue) &&
+      crewNumberValue > 0
+    ) {
+      lane.crewNumber = crewNumberValue;
+    }
+
     const clubId = toObjectId(
       laneCandidate.club || laneCandidate.clubId || laneCandidate.club_id,
     );
@@ -232,6 +246,12 @@ const sanitiseRacePayload = (body, discipline = "classic") => {
       throw new Error("Invalid boat class identifier");
     }
     payload.boatClass = boatClassId;
+  }
+
+  if (body.eventGroupId !== undefined) {
+    payload.eventGroupId = body.eventGroupId
+      ? body.eventGroupId.toString().trim()
+      : undefined;
   }
 
   if (body.journeyIndex !== undefined) {
@@ -457,13 +477,15 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
         ? entry.crewNumber
         : crewNumberMap.get(representative._id.toString());
 
+    const isCrewEntry =
+      Array.isArray(entry.crewIds) && entry.crewIds.length > 1;
     return {
       athlete: athleteDoc,
       crew: crewDocs,
       clubId,
       seed: entry.seed,
       notes: entry.notes,
-      crewNumber,
+      crewNumber: isCrewEntry ? crewNumber : undefined,
     };
   });
 
@@ -651,7 +673,10 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
       club: entry.clubId || undefined,
       seed: entry.seed,
       notes: entry.notes,
-      crewNumber: entry.crewNumber,
+      crewNumber:
+        Array.isArray(entry.crew) && entry.crew.length > 1
+          ? entry.crewNumber
+          : undefined,
     }));
 
     const currentOrder = nextOrder + index;
@@ -667,6 +692,11 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
       competition: competition._id,
       category: categoryId,
       boatClass: boatClassId || undefined,
+      eventGroupId:
+        normaliseString(req.body?.eventGroupId) ||
+        `${categoryId.toString()}::${
+          boatClassId ? boatClassId.toString() : "open"
+        }::J${journeyValue}`,
       journeyIndex: journeyValue,
       sessionLabel: normaliseString(sessionLabel),
       name: `${prefixLabel} ${index + 1}`, // Keep name as "Heat 1", "Heat 2" etc. relative to this batch
@@ -950,15 +980,33 @@ const pickLaneAssignment = (lane, raceContext = null) => {
 };
 
 const assignLaneDetails = (lane, details) => {
-  lane.athlete = details.athlete || undefined;
+  lane.athlete = details.athlete ?? null;
   lane.crew = Array.isArray(details.crew) ? details.crew : [];
-  lane.crewNumber = details.crewNumber || undefined;
-  lane.club = details.club || undefined;
+  lane.crewNumber = details.crewNumber ?? undefined;
+  lane.club = details.club ?? null;
   lane.category = details.category || undefined;
   lane.boatClass = details.boatClass || undefined;
   lane.seed = details.seed || undefined;
   lane.notes = details.notes || undefined;
   lane.result = details.result || undefined;
+};
+
+const lanePayloadHasCompetitor = (payload) => {
+  if (!payload) {
+    return false;
+  }
+  if (payload.athlete) {
+    return true;
+  }
+  return Array.isArray(payload.crew) && payload.crew.length > 0;
+};
+
+const pruneUnassignedLanes = (raceDoc) => {
+  raceDoc.lanes = raceDoc.lanes.filter((lane) => {
+    const hasAthlete = Boolean(lane?.athlete);
+    const hasCrew = Array.isArray(lane?.crew) && lane.crew.length > 0;
+    return hasAthlete || hasCrew;
+  });
 };
 
 export const swapRaceLanes = asyncHandler(async (req, res) => {
@@ -1027,8 +1075,27 @@ export const swapRaceLanes = asyncHandler(async (req, res) => {
   const sourcePayload = pickLaneAssignment(sourceLane, sourceRace);
   const targetPayload = pickLaneAssignment(targetLane, targetRace);
 
-  assignLaneDetails(sourceLane, targetPayload);
-  assignLaneDetails(targetLane, sourcePayload);
+  const sourceHasCompetitor = lanePayloadHasCompetitor(sourcePayload);
+  const targetHasCompetitor = lanePayloadHasCompetitor(targetPayload);
+
+  if (sourceHasCompetitor && !targetHasCompetitor) {
+    // Move source competitor into empty target lane and clear source lane.
+    assignLaneDetails(targetLane, sourcePayload);
+    assignLaneDetails(sourceLane, pickLaneAssignment(null, sourceRace));
+  } else if (!sourceHasCompetitor && targetHasCompetitor) {
+    // Move target competitor into empty source lane and clear target lane.
+    assignLaneDetails(sourceLane, targetPayload);
+    assignLaneDetails(targetLane, pickLaneAssignment(null, targetRace));
+  } else {
+    // Regular occupied<->occupied swap (or both empty no-op).
+    assignLaneDetails(sourceLane, targetPayload);
+    assignLaneDetails(targetLane, sourcePayload);
+  }
+
+  pruneUnassignedLanes(sourceRace);
+  if (!isSameRace) {
+    pruneUnassignedLanes(targetRace);
+  }
 
   sourceRace.markModified("lanes");
   sourceRace.updatedBy = req.user?.id;
@@ -1177,6 +1244,607 @@ const bestTimeSorter = (a, b) => {
   }
   return a.lane - b.lane;
 };
+
+const STATUS_PRIORITY = {
+  ok: 1,
+  dnf: 2,
+  dns: 3,
+  abs: 4,
+  dsq: 5,
+};
+
+const getEffectiveEventGroupId = (race) => {
+  if (race?.eventGroupId) {
+    return race.eventGroupId;
+  }
+  const categoryId = race?.category?._id || race?.category;
+  const boatClassId = race?.boatClass?._id || race?.boatClass;
+  const journeyPart = race?.journeyIndex || 1;
+  return `${categoryId?.toString?.() || "unknown"}::${
+    boatClassId?.toString?.() || "open"
+  }::J${journeyPart}`;
+};
+
+const buildDefaultEventGroupId = (raceLike) => {
+  const categoryId = raceLike?.category?._id || raceLike?.category;
+  const boatClassId = raceLike?.boatClass?._id || raceLike?.boatClass;
+  const journeyPart = Number(raceLike?.journeyIndex) || 1;
+  return `${categoryId?.toString?.() || "unknown"}::${
+    boatClassId?.toString?.() || "open"
+  }::J${journeyPart}`;
+};
+
+const getEffectivePointTable = (rankingSystem) => {
+  if (
+    rankingSystem?.customPointTable &&
+    Array.isArray(rankingSystem.customPointTable) &&
+    rankingSystem.customPointTable.length > 0
+  ) {
+    return rankingSystem.customPointTable.reduce((acc, entry) => {
+      if (
+        Number.isInteger(entry?.position) &&
+        entry.position > 0 &&
+        Number.isFinite(entry?.points)
+      ) {
+        acc[entry.position] = Number(entry.points);
+      }
+      return acc;
+    }, {});
+  }
+  return DEFAULT_POINT_TABLE;
+};
+
+const scoreForPosition = (position, pointTable) => {
+  if (!Number.isInteger(position) || position < 1) {
+    return 0;
+  }
+  return Number(pointTable[position] || 0);
+};
+
+const resolveBestLaneRecord = (current, candidate) => {
+  if (!current) {
+    return candidate;
+  }
+
+  const currentTimed =
+    current.status === "ok" && Number.isFinite(current.elapsedMs);
+  const candidateTimed =
+    candidate.status === "ok" && Number.isFinite(candidate.elapsedMs);
+
+  if (candidateTimed && !currentTimed) {
+    return candidate;
+  }
+  if (candidateTimed && currentTimed) {
+    if (candidate.elapsedMs < current.elapsedMs) {
+      return candidate;
+    }
+    return current;
+  }
+
+  const currentPos = Number.isInteger(current.finishPosition)
+    ? current.finishPosition
+    : Number.MAX_SAFE_INTEGER;
+  const candidatePos = Number.isInteger(candidate.finishPosition)
+    ? candidate.finishPosition
+    : Number.MAX_SAFE_INTEGER;
+  if (candidatePos < currentPos) {
+    return candidate;
+  }
+
+  const currentStatus = STATUS_PRIORITY[current.status] || 99;
+  const candidateStatus = STATUS_PRIORITY[candidate.status] || 99;
+  if (candidateStatus < currentStatus) {
+    return candidate;
+  }
+
+  return current;
+};
+
+const buildConsolidatedEventEntries = (races, pointTable) => {
+  const athleteMap = new Map();
+
+  for (const race of races) {
+    for (const lane of race.lanes || []) {
+      const athleteId = lane?.athlete?._id || lane?.athlete;
+      if (!athleteId) {
+        continue;
+      }
+
+      const result = lane.result || {};
+      const status = result.status || "ok";
+
+      const candidate = {
+        athleteId: athleteId.toString(),
+        athlete: lane.athlete,
+        club: lane.club || null,
+        lane: lane.lane,
+        sourceRaceId: race._id,
+        sourceRaceName: race.name || `Race ${race.order || ""}`.trim(),
+        status,
+        elapsedMs:
+          Number.isFinite(result.elapsedMs) && result.elapsedMs >= 0
+            ? Number(result.elapsedMs)
+            : undefined,
+        finishPosition: Number.isInteger(result.finishPosition)
+          ? result.finishPosition
+          : undefined,
+      };
+
+      athleteMap.set(
+        candidate.athleteId,
+        resolveBestLaneRecord(athleteMap.get(candidate.athleteId), candidate),
+      );
+    }
+  }
+
+  const consolidated = Array.from(athleteMap.values());
+
+  const timed = consolidated
+    .filter(
+      (entry) => entry.status === "ok" && Number.isFinite(entry.elapsedMs),
+    )
+    .sort((a, b) => a.elapsedMs - b.elapsedMs);
+
+  timed.forEach((entry, index) => {
+    entry.rank = index + 1;
+    entry.points = scoreForPosition(entry.rank, pointTable);
+  });
+
+  const untimed = consolidated
+    .filter(
+      (entry) => !(entry.status === "ok" && Number.isFinite(entry.elapsedMs)),
+    )
+    .sort((a, b) => {
+      const statusA = STATUS_PRIORITY[a.status] || 99;
+      const statusB = STATUS_PRIORITY[b.status] || 99;
+      if (statusA !== statusB) {
+        return statusA - statusB;
+      }
+      const posA = Number.isInteger(a.finishPosition)
+        ? a.finishPosition
+        : Number.MAX_SAFE_INTEGER;
+      const posB = Number.isInteger(b.finishPosition)
+        ? b.finishPosition
+        : Number.MAX_SAFE_INTEGER;
+      if (posA !== posB) {
+        return posA - posB;
+      }
+      return (a.lane || 999) - (b.lane || 999);
+    })
+    .map((entry) => ({
+      ...entry,
+      rank: null,
+      points: 0,
+    }));
+
+  return [...timed, ...untimed];
+};
+
+const resolveRankingSystemForCompetition = async (
+  competition,
+  rankingSystemId,
+) => {
+  if (rankingSystemId) {
+    const selected = await RankingSystem.findById(rankingSystemId);
+    if (!selected) {
+      throw new Error("Ranking system not found");
+    }
+    return selected;
+  }
+
+  return RankingSystem.findOne({
+    isActive: true,
+    $or: [{ discipline: competition.discipline }, { discipline: null }],
+  }).sort({ sortOrder: 1, code: 1 });
+};
+
+const fetchRacesForEventGroup = async (competitionId, eventGroupId) => {
+  const allRaces = await CompetitionRace.find({ competition: competitionId })
+    .populate({ path: "category", select: "abbreviation titles" })
+    .populate({ path: "boatClass", select: "code names" })
+    .populate({
+      path: "lanes.athlete",
+      select: "firstName lastName firstNameAr lastNameAr licenseNumber",
+    })
+    .populate({ path: "lanes.club", select: "name nameAr code" });
+
+  return allRaces.filter(
+    (race) => getEffectiveEventGroupId(race) === eventGroupId,
+  );
+};
+
+const toOfficialEntryPayload = (entry) => {
+  const athleteName = `${entry.athlete?.firstName || ""} ${
+    entry.athlete?.lastName || ""
+  }`.trim();
+  const athleteNameAr = `${entry.athlete?.firstNameAr || ""} ${
+    entry.athlete?.lastNameAr || ""
+  }`.trim();
+
+  return {
+    athlete: entry.athlete?._id || entry.athlete,
+    club: entry.club?._id || entry.club || undefined,
+    athleteName,
+    athleteNameAr: athleteNameAr || undefined,
+    clubName: entry.club?.name || entry.club?.nameAr || entry.club?.code,
+    lane: entry.lane,
+    sourceRace: entry.sourceRaceId,
+    sourceRaceName: entry.sourceRaceName,
+    status: entry.status,
+    elapsedMs: entry.elapsedMs,
+    finishPosition: entry.finishPosition,
+    rank: entry.rank || undefined,
+    points: entry.points || 0,
+  };
+};
+
+export const listOfficialResultGroups = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const races = await CompetitionRace.find({ competition: competition._id })
+    .select(
+      "_id category boatClass journeyIndex name order startTime status eventGroupId",
+    )
+    .populate({ path: "category", select: "abbreviation titles" })
+    .populate({ path: "boatClass", select: "code names" })
+    .lean();
+
+  const published = await OfficialResult.find({ competition: competition._id })
+    .select("eventGroupId publishedAt revision locked rankingSystem")
+    .lean();
+  const publishedMap = new Map(
+    published.map((item) => [item.eventGroupId, item]),
+  );
+
+  const groups = new Map();
+
+  for (const race of races) {
+    const groupId = getEffectiveEventGroupId(race);
+    if (!groups.has(groupId)) {
+      groups.set(groupId, {
+        eventGroupId: groupId,
+        eventLabel: `${race.category?.abbreviation || ""} ${
+          race.boatClass?.code || ""
+        }`.trim(),
+        category: race.category || null,
+        boatClass: race.boatClass || null,
+        raceCount: 0,
+        completedRaceCount: 0,
+      });
+    }
+
+    const bucket = groups.get(groupId);
+    bucket.raceCount += 1;
+    if (race.status === "completed") {
+      bucket.completedRaceCount += 1;
+    }
+  }
+
+  const response = Array.from(groups.values())
+    .map((group) => {
+      const official = publishedMap.get(group.eventGroupId);
+      const canPublish =
+        group.raceCount > 0 && group.completedRaceCount === group.raceCount;
+      return {
+        ...group,
+        canPublish,
+        published: Boolean(official),
+        publishedAt: official?.publishedAt,
+        revision: official?.revision,
+        locked: official?.locked,
+        rankingSystem: official?.rankingSystem || null,
+      };
+    })
+    .sort((a, b) => a.eventLabel.localeCompare(b.eventLabel));
+
+  return res.json(response);
+});
+
+const publishOfficialEventGroupInternal = async ({
+  competition,
+  eventGroupId,
+  rankingSystemId,
+  force,
+  userId,
+}) => {
+  const normalizedGroupId = eventGroupId.toString().trim();
+
+  const rankingSystem = await resolveRankingSystemForCompetition(
+    competition,
+    rankingSystemId,
+  );
+  const pointTable = getEffectivePointTable(rankingSystem);
+
+  const races = await fetchRacesForEventGroup(
+    competition._id,
+    normalizedGroupId,
+  );
+  const completedRaces = races.filter((race) => race.status === "completed");
+  if (!completedRaces.length) {
+    const error = new Error(
+      "Cannot publish without completed races in this event group",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const consolidatedEntries = buildConsolidatedEventEntries(
+    completedRaces,
+    pointTable,
+  );
+
+  const existing = await OfficialResult.findOne({
+    competition: competition._id,
+    eventGroupId: normalizedGroupId,
+  });
+
+  if (existing?.locked && !force) {
+    const error = new Error(
+      "Official result is locked. Republish with force=true to create a new revision.",
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const firstRace = completedRaces[0];
+  const officialPayload = {
+    competition: competition._id,
+    eventGroupId: normalizedGroupId,
+    eventLabel: `${firstRace?.category?.abbreviation || ""} ${
+      firstRace?.boatClass?.code || ""
+    }`.trim(),
+    category: firstRace?.category?._id || firstRace?.category,
+    boatClass: firstRace?.boatClass?._id || firstRace?.boatClass,
+    raceIds: completedRaces.map((race) => race._id),
+    rankingSystem: rankingSystem
+      ? {
+          id: rankingSystem._id,
+          code: rankingSystem.code,
+          nameEn: rankingSystem.names?.en,
+        }
+      : undefined,
+    pointTable,
+    entries: consolidatedEntries.map(toOfficialEntryPayload),
+    totalParticipants: consolidatedEntries.length,
+    publishedAt: new Date(),
+    publishedBy: userId,
+    revision: existing ? Number(existing.revision || 1) + 1 : 1,
+    locked: true,
+  };
+
+  const official = await OfficialResult.findOneAndUpdate(
+    {
+      competition: competition._id,
+      eventGroupId: normalizedGroupId,
+    },
+    { $set: officialPayload },
+    { new: true, upsert: true },
+  ).lean();
+
+  return { official, existed: Boolean(existing) };
+};
+
+export const autoAssignEventGroups = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const rewriteAll = req.body?.rewriteAll === true;
+
+  const races = await CompetitionRace.find({ competition: competition._id })
+    .select("_id category boatClass journeyIndex eventGroupId")
+    .lean();
+
+  const updates = [];
+  for (const race of races) {
+    const current = race.eventGroupId?.trim();
+    const next = buildDefaultEventGroupId(race);
+    if (rewriteAll || !current) {
+      updates.push({
+        updateOne: {
+          filter: { _id: race._id },
+          update: {
+            $set: {
+              eventGroupId: next,
+              updatedBy: req.user?.id,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  if (updates.length) {
+    await CompetitionRace.bulkWrite(updates);
+  }
+
+  return res.json({
+    success: true,
+    updatedCount: updates.length,
+    rewriteAll,
+  });
+});
+
+export const getProvisionalEventResults = asyncHandler(async (req, res) => {
+  const { competitionId, eventGroupId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const rankingSystem = await resolveRankingSystemForCompetition(
+    competition,
+    req.query?.rankingSystemId,
+  );
+  const pointTable = getEffectivePointTable(rankingSystem);
+
+  const races = await fetchRacesForEventGroup(competition._id, eventGroupId);
+  const completedRaces = races.filter((race) => race.status === "completed");
+
+  if (!completedRaces.length) {
+    return res.status(404).json({
+      message: "No completed races found for this event group",
+    });
+  }
+
+  const entries = buildConsolidatedEventEntries(completedRaces, pointTable);
+  const firstRace = completedRaces[0];
+
+  return res.json({
+    eventGroupId,
+    eventLabel: `${firstRace?.category?.abbreviation || ""} ${
+      firstRace?.boatClass?.code || ""
+    }`.trim(),
+    category: firstRace?.category || null,
+    boatClass: firstRace?.boatClass || null,
+    raceIds: completedRaces.map((race) => race._id),
+    rankingSystem: rankingSystem
+      ? {
+          _id: rankingSystem._id,
+          code: rankingSystem.code,
+          names: rankingSystem.names,
+        }
+      : null,
+    entries,
+    provisional: true,
+  });
+});
+
+export const getOfficialEventResults = asyncHandler(async (req, res) => {
+  const { competitionId, eventGroupId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const official = await OfficialResult.findOne({
+    competition: competition._id,
+    eventGroupId,
+  }).lean();
+
+  if (!official) {
+    return res
+      .status(404)
+      .json({ message: "No official result published yet" });
+  }
+
+  return res.json(official);
+});
+
+export const publishOfficialEventResults = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const { eventGroupId, rankingSystemId, force } = req.body || {};
+
+  if (!eventGroupId || !eventGroupId.toString().trim()) {
+    return res.status(400).json({ message: "eventGroupId is required" });
+  }
+
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const { official, existed } = await publishOfficialEventGroupInternal({
+    competition,
+    eventGroupId,
+    rankingSystemId,
+    force,
+    userId: req.user?.id,
+  });
+
+  return res.status(existed ? 200 : 201).json(official);
+});
+
+export const publishAllReadyOfficialResults = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const { rankingSystemId, force = false } = req.body || {};
+
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const races = await CompetitionRace.find({ competition: competition._id })
+    .select("category boatClass journeyIndex eventGroupId status")
+    .lean();
+
+  const grouped = new Map();
+  for (const race of races) {
+    const groupId = getEffectiveEventGroupId(race);
+    if (!grouped.has(groupId)) {
+      grouped.set(groupId, { total: 0, completed: 0 });
+    }
+    const bucket = grouped.get(groupId);
+    bucket.total += 1;
+    if (race.status === "completed") {
+      bucket.completed += 1;
+    }
+  }
+
+  const readyGroupIds = Array.from(grouped.entries())
+    .filter(
+      ([, counts]) => counts.total > 0 && counts.total === counts.completed,
+    )
+    .map(([groupId]) => groupId);
+
+  const results = [];
+  for (const groupId of readyGroupIds) {
+    try {
+      const { official, existed } = await publishOfficialEventGroupInternal({
+        competition,
+        eventGroupId: groupId,
+        rankingSystemId,
+        force,
+        userId: req.user?.id,
+      });
+      results.push({
+        eventGroupId: groupId,
+        success: true,
+        revision: official.revision,
+        action: existed ? "updated" : "created",
+      });
+    } catch (error) {
+      results.push({
+        eventGroupId: groupId,
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  return res.json({
+    success: true,
+    totalGroups: grouped.size,
+    readyGroups: readyGroupIds.length,
+    publishedGroups: results.filter((item) => item.success).length,
+    results,
+  });
+});
+
+export const unpublishOfficialEventResults = asyncHandler(async (req, res) => {
+  const { competitionId, eventGroupId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const deleted = await OfficialResult.findOneAndDelete({
+    competition: competition._id,
+    eventGroupId,
+  }).lean();
+
+  if (!deleted) {
+    return res.status(404).json({ message: "Official result not found" });
+  }
+
+  return res.json({ success: true, eventGroupId });
+});
 
 export const computeCompetitionRankings = asyncHandler(async (req, res) => {
   const { competitionId } = req.params;

@@ -845,23 +845,37 @@ const CompetitionManagement = () => {
   );
 
   const filteredCompetitions = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-    if (!term) {
-      return competitions;
-    }
-    return competitions.filter((item) => {
-      const values = [
-        item.code,
-        item?.names?.en,
-        item?.names?.fr,
-        item?.names?.ar,
-        item?.venue?.name,
-        item?.venue?.city,
-      ]
-        .filter(Boolean)
-        .map((value) => value.toString().toLowerCase());
-      return values.some((value) => value.includes(term));
+    let result = [...competitions];
+
+    // Order by newest first (descending by startDate, then createdAt)
+    result.sort((a, b) => {
+      const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+      const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+      if (dateA !== dateB) return dateB - dateA;
+
+      const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return createdB - createdA;
     });
+
+    const term = searchTerm.trim().toLowerCase();
+    if (term) {
+      result = result.filter((item) => {
+        const values = [
+          item.code,
+          item?.names?.en,
+          item?.names?.fr,
+          item?.names?.ar,
+          item?.venue?.name,
+          item?.venue?.city,
+        ]
+          .filter(Boolean)
+          .map((value) => value.toString().toLowerCase());
+        return values.some((value) => value.includes(term));
+      });
+    }
+
+    return result;
   }, [competitions, searchTerm]);
 
   const selectedCompetition = useMemo(() => {

@@ -168,7 +168,7 @@ const serializeEntry = (entry) => {
     category: serializeCategory(entry.category),
     boatClass: serializeBoatClass(entry.boatClass),
     journeyIndex: entry.journeyIndex || null,
-    crewNumber: entry.crewNumber || 1,
+    crewNumber: entry.crewNumber ?? null,
     seed: entry.seed || null,
     submittedBy: serializeUser(entry.submittedBy),
     reviewedBy: serializeUser(entry.reviewedBy),
@@ -230,37 +230,73 @@ const ensureMembershipForClub = (athlete, clubId, competitionSeason) => {
     return false;
   }
   const clubIdString = clubId.toString();
-  return Array.isArray(athlete.memberships)
-    ? athlete.memberships.some((membership) => {
-        if (!membership) {
-          return false;
-        }
-        const membershipClubId = membership.club?.toString?.();
-        if (!membershipClubId || membershipClubId !== clubIdString) {
-          return false;
-        }
-        if (membership.status !== "active") {
-          return false;
-        }
-        if (competitionSeason && membership.season) {
-          return membership.season === competitionSeason;
-        }
+  if (!Array.isArray(athlete.memberships)) {
+    return false;
+  }
+
+  const activeClubMemberships = athlete.memberships.filter((membership) => {
+    if (!membership) {
+      return false;
+    }
+    const membershipClubId = membership.club?.toString?.();
+    if (!membershipClubId || membershipClubId !== clubIdString) {
+      return false;
+    }
+    return membership.status === "active";
+  });
+
+  if (!activeClubMemberships.length) {
+    return false;
+  }
+
+  // Prefer exact season matching when available.
+  if (competitionSeason !== undefined && competitionSeason !== null) {
+    const seasonValue = Number(competitionSeason);
+    const hasSeasonMatch = activeClubMemberships.some((membership) => {
+      if (membership.season === undefined || membership.season === null) {
         return true;
-      })
-    : false;
+      }
+      return Number(membership.season) === seasonValue;
+    });
+
+    if (hasSeasonMatch) {
+      return true;
+    }
+  }
+
+  // Fallback for legacy/stale season tagging: still allow active same-club membership.
+  return true;
 };
 
 const findSeasonAssignment = (athlete, season) => {
-  if (!Array.isArray(athlete.categoryAssignments) || !season) {
+  if (
+    !Array.isArray(athlete.categoryAssignments) ||
+    !athlete.categoryAssignments.length
+  ) {
     return null;
   }
-  return athlete.categoryAssignments.find(
+
+  const exact = athlete.categoryAssignments.find(
     (assignment) =>
       assignment &&
       assignment.type === "national" &&
-      assignment.season === season &&
+      Number(assignment.season) === Number(season) &&
       assignment.category,
   );
+
+  if (exact) {
+    return exact;
+  }
+
+  // Fallback to latest known national assignment when exact season assignment is missing.
+  const fallback = athlete.categoryAssignments
+    .filter(
+      (assignment) =>
+        assignment && assignment.type === "national" && assignment.category,
+    )
+    .sort((a, b) => Number(b.season || 0) - Number(a.season || 0))[0];
+
+  return fallback || null;
 };
 
 const athleteFitsCategory = (assignment, categoryDoc, allowUpCategory) => {
@@ -280,10 +316,12 @@ const athleteFitsCategory = (assignment, categoryDoc, allowUpCategory) => {
     return false;
   }
 
+  const assignmentGender = normalizeAssignmentGender(assignment.gender);
+  const categoryGender = normalizeAssignmentGender(categoryDoc.gender);
   if (
-    assignment.gender &&
-    categoryDoc.gender &&
-    assignment.gender !== categoryDoc.gender
+    assignmentGender &&
+    categoryGender &&
+    assignmentGender !== categoryGender
   ) {
     return false;
   }
@@ -299,6 +337,132 @@ const athleteFitsCategory = (assignment, categoryDoc, allowUpCategory) => {
   const meetsMax =
     typeof categoryDoc.maxAge === "number"
       ? assignment.ageOnCutoff <= categoryDoc.maxAge
+      : true;
+
+  return meetsMin && meetsMax;
+};
+
+const normalizeAssignmentGender = (gender) => {
+  if (!gender) {
+    return null;
+  }
+  const value = String(gender).toLowerCase();
+  if (value === "female" || value === "women") {
+    return "women";
+  }
+  if (value === "male" || value === "men") {
+    return "men";
+  }
+  return value;
+};
+
+const computeAgeOnCutoff = (birthDate, season) => {
+  if (!birthDate) {
+    return null;
+  }
+  const birth = new Date(birthDate);
+  if (Number.isNaN(birth.getTime())) {
+    return null;
+  }
+
+  const seasonYear = Number(season);
+  const cutoffYear = Number.isFinite(seasonYear)
+    ? seasonYear
+    : new Date().getFullYear();
+  const cutoff = new Date(cutoffYear, 11, 31);
+
+  let age = cutoff.getFullYear() - birth.getFullYear();
+  const beforeBirthday =
+    cutoff.getMonth() < birth.getMonth() ||
+    (cutoff.getMonth() === birth.getMonth() &&
+      cutoff.getDate() < birth.getDate());
+  if (beforeBirthday) {
+    age -= 1;
+  }
+  return age >= 0 ? age : null;
+};
+
+const buildFallbackAssignment = (athlete, categoryDoc, season) => {
+  if (!athlete || !categoryDoc) {
+    return null;
+  }
+
+  const athleteGender = normalizeAssignmentGender(athlete.gender);
+  const categoryGender = normalizeAssignmentGender(categoryDoc.gender);
+
+  if (athleteGender && categoryGender && athleteGender !== categoryGender) {
+    return null;
+  }
+
+  const ageOnCutoff = computeAgeOnCutoff(athlete.birthDate, season);
+  if (typeof ageOnCutoff !== "number") {
+    return null;
+  }
+
+  const meetsMin =
+    typeof categoryDoc.minAge === "number"
+      ? ageOnCutoff >= categoryDoc.minAge
+      : true;
+  const meetsMax =
+    typeof categoryDoc.maxAge === "number"
+      ? ageOnCutoff <= categoryDoc.maxAge
+      : true;
+
+  if (!meetsMin || !meetsMax) {
+    return null;
+  }
+
+  return {
+    season,
+    type: "national",
+    category: categoryDoc._id,
+    abbreviation: categoryDoc.abbreviation || null,
+    titles: categoryDoc.titles || {},
+    ageOnCutoff,
+    gender: categoryGender || athleteGender || null,
+  };
+};
+
+const athleteMatchesRequestedCategory = (
+  athlete,
+  assignment,
+  requestedCategoryDoc,
+  season,
+) => {
+  if (!requestedCategoryDoc) {
+    return true;
+  }
+
+  const assignmentCategoryId = assignment?.category?.toString?.();
+  if (
+    assignmentCategoryId &&
+    assignmentCategoryId === requestedCategoryDoc._id?.toString?.()
+  ) {
+    return true;
+  }
+
+  const athleteGender = normalizeAssignmentGender(athlete?.gender);
+  const categoryGender = normalizeAssignmentGender(requestedCategoryDoc.gender);
+  if (athleteGender && categoryGender && athleteGender !== categoryGender) {
+    return false;
+  }
+
+  const ageFromAssignment =
+    typeof assignment?.ageOnCutoff === "number" ? assignment.ageOnCutoff : null;
+  const ageOnCutoff =
+    ageFromAssignment ?? computeAgeOnCutoff(athlete?.birthDate, season);
+
+  if (typeof ageOnCutoff !== "number") {
+    return false;
+  }
+
+  const meetsMin =
+    typeof requestedCategoryDoc.minAge === "number"
+      ? ageOnCutoff >= requestedCategoryDoc.minAge
+      : true;
+  const meetsMax =
+    typeof requestedCategoryDoc.maxAge === "number"
+      ? ageOnCutoff <= requestedCategoryDoc.maxAge
       : true;
 
   return meetsMin && meetsMax;
@@ -463,7 +627,7 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
 
 export const listEligibleAthletes = asyncHandler(async (req, res) => {
   const { competitionId } = req.params;
-  const { q = "", limit = 50 } = req.query;
+  const { q = "", limit = 50, debugAthlete = "" } = req.query;
 
   const competition = await fetchCompetition(competitionId);
   if (!competition) {
@@ -490,7 +654,9 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
   const searchTerm = q.toString().trim();
   const numericLimit = (() => {
     const parsed = Number(limit);
-    return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 100) : 50;
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.min(parsed, 10000)
+      : 5000;
   })();
 
   const allowedCategorySet =
@@ -549,37 +715,17 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
       $elemMatch: {
         club: clubContext.clubId,
         status: "active",
-        ...(competition.season
-          ? {
-              $or: [
-                { season: { $exists: false } },
-                { season: competition.season },
-              ],
-            }
-          : {}),
+        season: competition.season,
       },
     },
   };
 
   // Filter by para status if a category is selected
   if (selectedCategoryDoc) {
-    // If selected category is para, only show para athletes
-    // If selected category is not para, only show non-para athletes
-    athleteQuery.isPara =
-      selectedCategoryDoc.isPara === true ? true : { $ne: true };
+    athleteQuery.isPara = selectedCategoryDoc.isPara === true ? true : { $ne: true };
   }
 
-  if (searchFilters.length) {
-    athleteQuery.$or = searchFilters;
-  }
-
-  const athletes = await Athlete.find(athleteQuery)
-    .select(
-      "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isPara",
-    )
-    .limit(numericLimit)
-    .sort({ lastName: 1, firstName: 1 })
-    .lean();
+  const athletes = await Athlete.find(athleteQuery).select("firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isPara").limit(numericLimit).sort({ lastName: 1, firstName: 1 }).lean();
 
   const requestedCategories = new Set();
   if (categoryId) {
@@ -605,7 +751,14 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
 
   const eligibleAthletes = athletes
     .map((athlete) => {
-      const assignment = findSeasonAssignment(athlete, competition.season);
+      let assignment = findSeasonAssignment(athlete, competition.season);
+      if (!assignment && selectedCategoryDoc) {
+        assignment = buildFallbackAssignment(
+          athlete,
+          selectedCategoryDoc,
+          competition.season,
+        );
+      }
       if (!assignment) {
         return null;
       }
@@ -614,19 +767,21 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
         allowedCategorySet &&
         !allowedCategorySet.has(assignment.category?.toString?.())
       ) {
-        return null;
+        // If a specific category is requested and allowed, keep evaluating
+        // via category-fit checks instead of dropping early.
+        if (!categoryId || !allowedCategorySet.has(categoryId.toString())) {
+          return null;
+        }
       }
 
-      if (
-        categoryId &&
-        assignment.category?.toString?.() !== categoryId.toString()
-      ) {
+      if (categoryId) {
         const requestedCategoryDoc = categoryMap.get(categoryId.toString());
         if (
-          !athleteFitsCategory(
+          !athleteMatchesRequestedCategory(
+            athlete,
             assignment,
             requestedCategoryDoc,
-            competition.allowUpCategory,
+            competition.season,
           )
         ) {
           return null;
@@ -669,6 +824,165 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
     })
     .filter(Boolean);
 
+  let debug = null;
+  const debugNeedle = String(debugAthlete || "").trim();
+  if (debugNeedle) {
+    let debugAthleteDoc = null;
+    const debugAsObjectId = toObjectId(debugNeedle);
+
+    if (debugAsObjectId) {
+      debugAthleteDoc = await Athlete.findById(debugAsObjectId)
+        .select(
+          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships licenseStatus isPara",
+        )
+        .populate({
+          path: "memberships.club",
+          select: "name nameAr code type",
+        })
+        .lean();
+    }
+
+    if (!debugAthleteDoc) {
+      debugAthleteDoc = await Athlete.findOne({
+        licenseNumber: debugNeedle,
+      })
+        .select(
+          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships licenseStatus isPara",
+        )
+        .populate({
+          path: "memberships.club",
+          select: "name nameAr code type",
+        })
+        .lean();
+    }
+
+    if (!debugAthleteDoc) {
+      const regex = new RegExp(debugNeedle, "i");
+      debugAthleteDoc = await Athlete.findOne({
+        $or: [
+          { firstName: regex },
+          { lastName: regex },
+          { firstNameAr: regex },
+          { lastNameAr: regex },
+        ],
+      })
+        .select(
+          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships licenseStatus isPara",
+        )
+        .populate({
+          path: "memberships.club",
+          select: "name nameAr code type",
+        })
+        .lean();
+    }
+
+    if (!debugAthleteDoc) {
+      debug = {
+        query: debugNeedle,
+        found: false,
+        reason: "Athlete not found by id/license/name",
+      };
+    } else {
+      const assignment = findSeasonAssignment(
+        debugAthleteDoc,
+        competition.season,
+      );
+      const membershipOk = ensureMembershipForClub(
+        debugAthleteDoc,
+        clubContext.clubId,
+        competition.season,
+      );
+
+      const paraOk = selectedCategoryDoc
+        ? selectedCategoryDoc.isPara === true
+          ? debugAthleteDoc.isPara === true
+          : debugAthleteDoc.isPara !== true
+        : true;
+
+      const searchOk = !searchTerm
+        ? true
+        : [
+            debugAthleteDoc.firstName,
+            debugAthleteDoc.lastName,
+            debugAthleteDoc.firstNameAr,
+            debugAthleteDoc.lastNameAr,
+            debugAthleteDoc.licenseNumber,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase());
+
+      const assignmentCategoryId = assignment?.category?.toString?.() || null;
+      const allowedCategoryOk = allowedCategorySet
+        ? Boolean(
+            assignmentCategoryId &&
+            allowedCategorySet.has(String(assignmentCategoryId)),
+          )
+        : true;
+
+      const requestedCategoryOk = categoryId
+        ? assignmentCategoryId === categoryId.toString() ||
+          athleteFitsCategory(
+            assignment,
+            selectedCategoryDoc || categoryMap.get(categoryId.toString()),
+            competition.allowUpCategory,
+          )
+        : true;
+
+      const licenseOk = debugAthleteDoc.licenseStatus === "active";
+      const appearsInList = eligibleAthletes.some(
+        (entry) =>
+          entry?.athlete?.id &&
+          entry.athlete.id.toString() === debugAthleteDoc._id.toString(),
+      );
+
+      const reasons = [];
+      if (!licenseOk) reasons.push("license_not_active");
+      if (!assignment) reasons.push("missing_season_category_assignment");
+      if (!allowedCategoryOk)
+        reasons.push("assignment_not_in_allowed_categories");
+      if (!requestedCategoryOk)
+        reasons.push("not_eligible_for_requested_category");
+      if (!membershipOk) reasons.push("no_active_membership_for_club_season");
+      if (!paraOk) reasons.push("para_status_mismatch");
+      if (!searchOk) reasons.push("does_not_match_search_query");
+
+      debug = {
+        query: debugNeedle,
+        found: true,
+        appearsInList,
+        athlete: {
+          id: debugAthleteDoc._id?.toString?.(),
+          firstName: debugAthleteDoc.firstName,
+          lastName: debugAthleteDoc.lastName,
+          licenseNumber: debugAthleteDoc.licenseNumber,
+          licenseStatus: debugAthleteDoc.licenseStatus,
+          isPara: debugAthleteDoc.isPara === true,
+        },
+        checks: {
+          licenseOk,
+          membershipOk,
+          paraOk,
+          searchOk,
+          assignmentFound: Boolean(assignment),
+          allowedCategoryOk,
+          requestedCategoryOk,
+        },
+        assignment: assignment
+          ? {
+              season: assignment.season,
+              categoryId: assignmentCategoryId,
+              abbreviation: assignment.abbreviation,
+              ageOnCutoff: assignment.ageOnCutoff,
+              gender: assignment.gender,
+            }
+          : null,
+        reasons,
+      };
+    }
+  }
+
   return res.json({
     competition: {
       id: competition._id.toString(),
@@ -676,6 +990,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
     },
     club: serializeClub(clubContext.clubDoc),
     athletes: eligibleAthletes,
+    debug,
   });
 });
 
@@ -830,7 +1145,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
     club: clubContext.clubId,
     category: { $in: Array.from(allCategoryIds) },
     status: { $ne: "withdrawn" },
-  }).select("category boatClass crewNumber");
+  }).select("category boatClass crewNumber crew athlete");
 
   // Map: "catId_boatClassId" -> Set(crewNumbers)
   const usedNumbersMap = new Map();
@@ -840,6 +1155,9 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
   };
 
   for (const entry of existingActiveEntries) {
+    if (!Array.isArray(entry.crew) || entry.crew.length <= 1) {
+      continue;
+    }
     const key = getCounterKey(entry.category, entry.boatClass);
     if (!usedNumbersMap.has(key)) {
       usedNumbersMap.set(key, new Set());
@@ -993,7 +1311,14 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         });
       }
 
-      const assignment = findSeasonAssignment(athlete, competition.season);
+      let assignment = findSeasonAssignment(athlete, competition.season);
+      if (!assignment && categoryDoc) {
+        assignment = buildFallbackAssignment(
+          athlete,
+          categoryDoc,
+          competition.season,
+        );
+      }
       if (!assignment) {
         return res.status(400).json({
           message: `${athlete.firstName} ${athlete.lastName} does not have a category assignment for the competition season`,
@@ -1014,20 +1339,24 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       }
     }
 
-    // Determine next available crew number
-    const counterKey = getCounterKey(entry.categoryId, entry.boatClassId);
-    if (!usedNumbersMap.has(counterKey)) {
-      usedNumbersMap.set(counterKey, new Set());
-    }
-    const usedSet = usedNumbersMap.get(counterKey);
-
-    let nextNumber = 1;
-    while (usedSet.has(nextNumber)) {
-      nextNumber++;
-    }
-    usedSet.add(nextNumber);
-
     const isSingle = entry.crewIds.length === 1;
+    const isCrewBoat = !isSingle;
+    let nextNumber;
+
+    if (isCrewBoat) {
+      // Determine next available crew number for this crew event only.
+      const counterKey = getCounterKey(entry.categoryId, entry.boatClassId);
+      if (!usedNumbersMap.has(counterKey)) {
+        usedNumbersMap.set(counterKey, new Set());
+      }
+      const usedSet = usedNumbersMap.get(counterKey);
+
+      nextNumber = 1;
+      while (usedSet.has(nextNumber)) {
+        nextNumber++;
+      }
+      usedSet.add(nextNumber);
+    }
 
     const creation = new CompetitionEntry({
       competition: competition._id,
@@ -1037,7 +1366,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       category: entry.categoryId,
       boatClass: entry.boatClassId || undefined,
       journeyIndex: entry.journeyIndex || undefined,
-      crewNumber: nextNumber,
+      crewNumber: isCrewBoat ? nextNumber : undefined,
       seed: entry.seed || null,
       status: "pending",
       notes: entry.notes,

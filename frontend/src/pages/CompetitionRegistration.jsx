@@ -97,6 +97,44 @@ const normaliseBoatClass = (boatClass) => {
   };
 };
 
+const getAthleteDisplayName = (athlete) => {
+  if (!athlete) {
+    return "Unknown athlete";
+  }
+
+  const cleanName = (value) => {
+    const text = (value || "").toString().trim();
+    if (!text) {
+      return "";
+    }
+    const lowered = text.toLowerCase();
+    if (lowered === "null" || lowered === "undefined") {
+      return "";
+    }
+    return text;
+  };
+
+  const latinName = [athlete.firstName, athlete.lastName]
+    .map(cleanName)
+    .filter(Boolean)
+    .join(" ");
+
+  if (latinName) {
+    return latinName;
+  }
+
+  const arabicName = [athlete.firstNameAr, athlete.lastNameAr]
+    .map(cleanName)
+    .filter(Boolean)
+    .join(" ");
+
+  if (arabicName) {
+    return arabicName;
+  }
+
+  return athlete.licenseNumber || "Unknown athlete";
+};
+
 const CompetitionRegistration = () => {
   const { token, user } = useAuth();
   const navigate = useNavigate();
@@ -312,7 +350,7 @@ const CompetitionRegistration = () => {
     setLoadingEligible(true);
     try {
       const params = new URLSearchParams();
-      params.set("limit", "100");
+      params.set("limit", debouncedSearch ? "5000" : "5000");
       params.set("category", selectedCategoryId);
       if (debouncedSearch) {
         params.set("q", debouncedSearch);
@@ -400,7 +438,7 @@ const CompetitionRegistration = () => {
       if (previous && availableCategories.some((cat) => cat.id === previous)) {
         return previous;
       }
-      return availableCategories[0].id;
+      return "";
     });
   }, [availableCategories]);
 
@@ -895,7 +933,7 @@ const CompetitionRegistration = () => {
 
           const photoUrl = getAthletePhotoUrl(athlete);
           const initials = getAthleteInitials(athlete);
-          const displayName = `${athlete.firstName} ${athlete.lastName}`;
+          const displayName = getAthleteDisplayName(athlete);
 
           return (
             <div className="flex items-center gap-3 py-1">
@@ -927,13 +965,11 @@ const CompetitionRegistration = () => {
         field: "athleteName", // Virtual field for export
         valueAccessor: (field, data) => {
           if (data?.crew && data.crew.length > 1) {
-            return data.crew
-              .map((a) => `${a.firstName} ${a.lastName}`)
-              .join(", ");
+            return data.crew.map((a) => getAthleteDisplayName(a)).join(", ");
           }
           const athlete = data?.athlete;
           return athlete
-            ? `${athlete.firstName} ${athlete.lastName} (${athlete.licenseNumber})`
+            ? `${getAthleteDisplayName(athlete)} (${athlete.licenseNumber || "No license"})`
             : "";
         },
       },
@@ -1077,7 +1113,7 @@ const CompetitionRegistration = () => {
             ? new Date(competition.registrationWindow.closeAt)
             : null;
           const now = new Date();
-          const isBeforeDeadline = closeAt && now <= closeAt;
+          const isBeforeDeadline = !closeAt || now <= closeAt;
 
           if (
             (summaryCanWithdraw || summaryCanManageEntries) &&
@@ -1124,7 +1160,7 @@ const CompetitionRegistration = () => {
 
     const photoUrl = getAthletePhotoUrl(athlete);
     const initials = getAthleteInitials(athlete);
-    const displayName = `${athlete.firstName} ${athlete.lastName}`;
+    const displayName = getAthleteDisplayName(athlete);
 
     return (
       <div className="flex items-center gap-3 py-1">
@@ -1281,8 +1317,11 @@ const CompetitionRegistration = () => {
                       }
                       disabled={availableCategories.length === 0}
                     >
+                      <option value="">Select a category</option>
                       {availableCategories.length === 0 ? (
-                        <option value="">No categories available</option>
+                        <option value="" disabled>
+                          No categories available
+                        </option>
                       ) : null}
                       {availableCategories.map((categoryOption) => (
                         <option

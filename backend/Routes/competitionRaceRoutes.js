@@ -11,6 +11,13 @@ import {
   computeCompetitionRankings,
   autoGenerateRaces,
   combineRaces,
+  listOfficialResultGroups,
+  getProvisionalEventResults,
+  getOfficialEventResults,
+  publishOfficialEventResults,
+  unpublishOfficialEventResults,
+  autoAssignEventGroups,
+  publishAllReadyOfficialResults,
 } from "../Controllers/competitionRaceController.js";
 import { protect, allowRoles } from "../Middleware/authMiddleware.js";
 
@@ -35,6 +42,31 @@ router
 router
   .route("/combine")
   .post(allowRoles("admin", "jury_president"), combineRaces);
+
+router
+  .route("/official-results/groups")
+  .get(allowRoles("admin", "jury_president"), listOfficialResultGroups);
+
+router
+  .route("/official-results/provisional/:eventGroupId")
+  .get(allowRoles("admin", "jury_president"), getProvisionalEventResults);
+
+router
+  .route("/official-results/:eventGroupId")
+  .get(allowRoles("admin", "jury_president"), getOfficialEventResults)
+  .delete(allowRoles("admin", "jury_president"), unpublishOfficialEventResults);
+
+router
+  .route("/official-results/publish")
+  .post(allowRoles("admin", "jury_president"), publishOfficialEventResults);
+
+router
+  .route("/official-results/publish-all")
+  .post(allowRoles("admin", "jury_president"), publishAllReadyOfficialResults);
+
+router
+  .route("/official-results/auto-group")
+  .post(allowRoles("admin", "jury_president"), autoAssignEventGroups);
 
 router
   .route("/auto-generate")

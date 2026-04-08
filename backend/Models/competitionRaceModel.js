@@ -106,6 +106,11 @@ const raceSchema = new mongoose.Schema(
       ref: "BoatClass",
       index: true,
     },
+    eventGroupId: {
+      type: String,
+      trim: true,
+      index: true,
+    },
     journeyIndex: {
       type: Number,
       min: 1,
@@ -183,6 +188,11 @@ const raceSchema = new mongoose.Schema(
 raceSchema.index(
   { competition: 1, category: 1, journeyIndex: 1, order: 1 },
   { name: "competition_category_schedule" },
+);
+
+raceSchema.index(
+  { competition: 1, eventGroupId: 1 },
+  { name: "competition_event_group_lookup" },
 );
 
 raceSchema.index({ competition: 1, "lanes.athlete": 1 });

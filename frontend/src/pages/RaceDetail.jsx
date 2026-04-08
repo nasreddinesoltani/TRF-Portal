@@ -79,10 +79,28 @@ const loadFont = async (url) => {
 const toDocumentId = (value) => {
   if (!value) return null;
   if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
   if (typeof value === "object") {
     const candidate = value._id || value.id;
     if (!candidate) return null;
-    return typeof candidate === "string" ? candidate : candidate.toString();
+    if (typeof candidate === "string") return candidate;
+    if (typeof candidate === "number") return String(candidate);
+    if (typeof candidate?.$oid === "string") return candidate.$oid;
+    if (typeof candidate?.toHexString === "function") {
+      try {
+        return candidate.toHexString();
+      } catch {
+        return null;
+      }
+    }
+    if (typeof candidate?.toString === "function") {
+      try {
+        const converted = candidate.toString();
+        return typeof converted === "string" ? converted : null;
+      } catch {
+        return null;
+      }
+    }
   }
   return null;
 };
@@ -711,9 +729,23 @@ const RaceDetail = () => {
     // Find winning time for delta calculation
     const winnerElapsed = isResults
       ? exportLanes.find(
-          (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
+          (l) => (l.result?.status || "ok") === "ok" && l.result?.elapsedMs,
         )?.result?.elapsedMs
       : null;
+
+    const explicitFinisherPositions = isResults
+      ? exportLanes
+          .filter((l) => (l.result?.status || "ok") === "ok")
+          .map((l) => l.result?.finishPosition)
+          .filter((p) => Number.isInteger(p) && p > 0)
+      : [];
+    const lastFinisherPosition = explicitFinisherPositions.length
+      ? Math.max(...explicitFinisherPositions)
+      : exportLanes.filter(
+          (l) =>
+            (l.result?.status || "ok") === "ok" &&
+            Number.isFinite(l.result?.elapsedMs),
+        ).length;
 
     const formatNameForPdf = (a) => {
       if (!a) return "Unknown";
@@ -752,8 +784,12 @@ const RaceDetail = () => {
           .join(" / ");
       }
 
-      const pos = lane.result?.finishPosition || "-";
       const status = lane.result?.status || "ok";
+      const effectivePos =
+        status === "dnf"
+          ? lane.result?.finishPosition || lastFinisherPosition + 1
+          : lane.result?.finishPosition;
+      const pos = effectivePos || "-";
       const timeStr =
         status !== "ok"
           ? status.toUpperCase()
@@ -1041,7 +1077,13 @@ const RaceDetail = () => {
   }
 
   const raceCode = generateRaceCode(category, boatClass);
-  const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
+  const assignedLanes = (race?.lanes || []).filter((lane) => {
+    const hasAthlete = Boolean(lane?.athlete);
+    const hasCrew = Array.isArray(lane?.crew) && lane.crew.length > 0;
+    return hasAthlete || hasCrew;
+  });
+
+  const sortedLanes = [...assignedLanes].sort((a, b) => {
     if (race?.status === "completed") {
       const statusA = a.result?.status || "ok";
       const statusB = b.result?.status || "ok";
@@ -1059,8 +1101,21 @@ const RaceDetail = () => {
     return a.lane - b.lane;
   });
 
-  const winningTime = sortedLanes.find((l) => l.result?.finishPosition === 1)
-    ?.result?.elapsedMs;
+  const winningTime = sortedLanes.find(
+    (l) => (l.result?.status || "ok") === "ok" && l.result?.elapsedMs,
+  )?.result?.elapsedMs;
+
+  const explicitFinisherPositions = sortedLanes
+    .filter((l) => (l.result?.status || "ok") === "ok")
+    .map((l) => l.result?.finishPosition)
+    .filter((p) => Number.isInteger(p) && p > 0);
+  const lastFinisherPosition = explicitFinisherPositions.length
+    ? Math.max(...explicitFinisherPositions)
+    : sortedLanes.filter(
+        (l) =>
+          (l.result?.status || "ok") === "ok" &&
+          Number.isFinite(l.result?.elapsedMs),
+      ).length;
 
   return (
     <div className="min-h-screen bg-slate-50/50 pb-20">
@@ -1377,7 +1432,7 @@ const RaceDetail = () => {
                   </h3>
                   <div className="flex items-center gap-4 text-xs font-medium text-slate-500">
                     <div className="flex items-center gap-1">
-                      <User className="h-3 w-3" /> {race?.lanes?.length || 0}{" "}
+                      <User className="h-3 w-3" /> {sortedLanes.length || 0}{" "}
                       Boats
                     </div>
                   </div>
@@ -1386,28 +1441,14 @@ const RaceDetail = () => {
                 <div className="space-y-3">
                   {sortedLanes.map((lane, index) => {
                     const status = lane.result?.status || "ok";
-                    const isWinner = lane.result?.finishPosition === 1;
+                    const effectivePos =
+                      status === "dnf"
+                        ? lane.result?.finishPosition ||
+                          lastFinisherPosition + 1
+                        : lane.result?.finishPosition;
+                    const isWinner = effectivePos === 1;
 
                     // Fallback position for DNF if not explicitly stored
-                    let effectivePos = lane.result?.finishPosition;
-                    if (
-                      !effectivePos &&
-                      status === "dnf" &&
-                      activeRankingSystem?.dnfGetsPointsIfFewFinishers !== false
-                    ) {
-                      const lastFinisher = Math.max(
-                        0,
-                        ...(race?.lanes || [])
-                          .filter(
-                            (l) =>
-                              l.result?.status === "ok" &&
-                              l.result?.finishPosition,
-                          )
-                          .map((l) => l.result.finishPosition),
-                      );
-                      effectivePos = lastFinisher + 1;
-                    }
-
                     const points = calculatePoints(
                       effectivePos,
                       activeRankingSystem,
@@ -1424,7 +1465,7 @@ const RaceDetail = () => {
                             className={`flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black ${isWinner ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : "bg-slate-100 text-slate-400"}`}
                           >
                             {race?.status === "completed"
-                              ? lane.result?.finishPosition || "-"
+                              ? effectivePos || "-"
                               : lane.lane}
                           </span>
                           <span className="mt-1 text-[10px] font-bold uppercase text-slate-400">

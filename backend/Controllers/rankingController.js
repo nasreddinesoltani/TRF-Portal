@@ -14,6 +14,65 @@ import {
   getPresetsForDiscipline,
 } from "../Services/rankingPresets.js";
 
+const buildRankingDebugBreakdown = (ranking) => {
+  const debug = {};
+
+  for (const [groupKey, entries] of Object.entries(ranking?.rankings || {})) {
+    debug[groupKey] = (entries || []).map((entry) => {
+      const displayName =
+        entry?.entity?.name ||
+        entry?.entity?.fullName ||
+        [entry?.entity?.firstName, entry?.entity?.lastName]
+          .filter(Boolean)
+          .join(" ") ||
+        "Unknown";
+
+      const raceResults = Array.isArray(entry?.raceResults)
+        ? [...entry.raceResults]
+            .sort((a, b) => {
+              const journeyA = Number(a?.journeyIndex) || 0;
+              const journeyB = Number(b?.journeyIndex) || 0;
+              if (journeyA !== journeyB) return journeyA - journeyB;
+
+              const raceA = Number(a?.raceNumber) || 0;
+              const raceB = Number(b?.raceNumber) || 0;
+              if (raceA !== raceB) return raceA - raceB;
+
+              return String(a?.raceId || "").localeCompare(
+                String(b?.raceId || ""),
+              );
+            })
+            .map((race) => ({
+              raceId: race.raceId,
+              raceNumber: race.raceNumber,
+              raceName: race.raceName,
+              journeyIndex: race.journeyIndex,
+              status: race.status,
+              position: race.position,
+              points: race.points,
+              appliedDnfRule: Boolean(race.appliedDnfRule),
+              time: race.time,
+              category: race.category,
+              boatClass: race.boatClass,
+            }))
+        : [];
+
+      return {
+        rank: entry?.rank,
+        entityId: entry?.entityId,
+        entityType: entry?.entityType,
+        name: displayName,
+        totalPoints: Number(entry?.totalPoints || 0),
+        medals: entry?.medals || null,
+        raceCount: raceResults.length,
+        raceResults,
+      };
+    });
+  }
+
+  return debug;
+};
+
 /**
  * Get all ranking systems
  * GET /api/rankings/systems
@@ -44,7 +103,7 @@ export const getRankingSystems = async (req, res) => {
 export const getRankingSystemById = async (req, res) => {
   try {
     const system = await RankingSystem.findById(req.params.id).populate(
-      "allowedBoatClasses"
+      "allowedBoatClasses",
     );
 
     if (!system) {
@@ -167,7 +226,7 @@ export const syncPresets = async (req, res) => {
       if (existing) {
         await RankingSystem.findOneAndUpdate(
           { code: preset.code },
-          { $set: preset }
+          { $set: preset },
         );
         results.push({ code: preset.code, action: "updated" });
       } else {
@@ -197,7 +256,7 @@ export const syncPresets = async (req, res) => {
 export const getCompetitionRanking = async (req, res) => {
   try {
     const { competitionId } = req.params;
-    const { systemId, summary, includeMasters } = req.query;
+    const { systemId, summary, includeMasters, debug } = req.query;
 
     // Build options from query params
     const options = {};
@@ -210,14 +269,21 @@ export const getCompetitionRanking = async (req, res) => {
       ranking = await getRankingSummary(
         competitionId,
         systemId || null,
-        options
+        options,
       );
     } else {
       ranking = await buildCompetitionRanking(
         competitionId,
         systemId || null,
-        options
+        options,
       );
+    }
+
+    if (debug === "true") {
+      ranking = {
+        ...ranking,
+        debugBreakdown: buildRankingDebugBreakdown(ranking),
+      };
     }
 
     res.json(ranking);
@@ -243,7 +309,7 @@ export const getCompetitionGroupRanking = async (req, res) => {
 
     const fullRanking = await buildCompetitionRanking(
       competitionId,
-      systemId || null
+      systemId || null,
     );
 
     const groupRanking = fullRanking.rankings[groupKey];

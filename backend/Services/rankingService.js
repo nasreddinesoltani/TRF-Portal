@@ -51,7 +51,7 @@ export function getPointsForPosition(position, rankingSystem = null) {
 export function calculateLanePoints(
   laneResult,
   raceContext,
-  rankingSystem = null
+  rankingSystem = null,
 ) {
   const maxScoring = rankingSystem?.maxScoringPosition || 8;
   const dnfGetsPoints = rankingSystem?.dnfGetsPointsIfFewFinishers !== false;
@@ -68,7 +68,7 @@ export function calculateLanePoints(
       result.effectivePosition = laneResult.finishPosition;
       result.points = getPointsForPosition(
         laneResult.finishPosition,
-        rankingSystem
+        rankingSystem,
       );
       break;
 
@@ -76,14 +76,14 @@ export function calculateLanePoints(
       // DNF gets points for the position AFTER the last "ok" finisher
       // Rule: DNF rank = lastFinisherPosition + 1
       // Note: If no one finished (lastFinisherPosition is 0), DNF gets rank 1
-      // but user usually wants points only if someone finished. 
+      // but user usually wants points only if someone finished.
       // However, the requested rule is simply "position after last completed".
-      
+
       if (dnfGetsPoints) {
         result.effectivePosition = (raceContext.lastFinisherPosition || 0) + 1;
         result.points = getPointsForPosition(
           result.effectivePosition,
-          rankingSystem
+          rankingSystem,
         );
         result.appliedDnfRule = true;
       }
@@ -116,7 +116,7 @@ export function analyzeRaceContext(race) {
       totalOkFinishers++;
       lastFinisherPosition = Math.max(
         lastFinisherPosition,
-        lane.result.finishPosition
+        lane.result.finishPosition,
       );
     } else if (lane.result?.status === "dnf") {
       dnfCount++;
@@ -170,7 +170,7 @@ export function calculateCombinedTimeRanking(races) {
 
   // Sort by total time
   const sorted = Array.from(crewTimes.values()).sort(
-    (a, b) => a.totalTime - b.totalTime
+    (a, b) => a.totalTime - b.totalTime,
   );
 
   // Assign combined positions
@@ -193,7 +193,7 @@ export function calculateCombinedTimeRanking(races) {
 export async function buildCompetitionRanking(
   competitionId,
   rankingSystemId = null,
-  options = {}
+  options = {},
 ) {
   // Load competition with stages
   const competition = await Competition.findById(competitionId)
@@ -254,8 +254,8 @@ export async function buildCompetitionRanking(
     const allowedIds = config.allowedBoatClasses.map((bc) => bc.toString());
     filteredRaces = filteredRaces.filter((r) =>
       allowedIds.includes(
-        r.boatClass?._id?.toString() || r.boatClass?.toString()
-      )
+        r.boatClass?._id?.toString() || r.boatClass?.toString(),
+      ),
     );
   }
 
@@ -279,7 +279,7 @@ export async function buildCompetitionRanking(
       // 2. "MAS" or "VET" in abbreviation
       // 3. "MASTER" or "VETERAN" in titles
       const isMaster =
-        (r.category?.minAge >= 27) ||
+        r.category?.minAge >= 27 ||
         abbreviation.includes("MAS") ||
         abbreviation.includes("VET") ||
         enTitle.includes("MASTER") ||
@@ -362,7 +362,7 @@ function groupRaces(races, groupBy) {
           race.category?._id?.toString() ||
           "unknown";
         break;
-      
+
       case "global":
         // All categories and genders combined
         groupKey = "all";
@@ -394,6 +394,150 @@ function groupRaces(races, groupBy) {
   return groups;
 }
 
+function getEffectiveEventGroupKey(race) {
+  if (race?.eventGroupId && typeof race.eventGroupId === "string") {
+    return race.eventGroupId;
+  }
+
+  const categoryId =
+    race?.category?._id?.toString?.() ||
+    race?.category?.toString?.() ||
+    "unknown";
+  const boatClassId =
+    race?.boatClass?._id?.toString?.() ||
+    race?.boatClass?.toString?.() ||
+    "open";
+  const journeyPart = Number(race?.journeyIndex) || 1;
+  return `${categoryId}::${boatClassId}::J${journeyPart}`;
+}
+
+function getLaneCompetitorKeys(lane, race, entityType) {
+  if (entityType === "athlete") {
+    const athletes =
+      lane?.crew?.length > 0 ? lane.crew : lane?.athlete ? [lane.athlete] : [];
+
+    return athletes
+      .map((athlete) => {
+        const athleteId = athlete?._id?.toString?.() || athlete?.toString?.();
+        if (!athleteId) {
+          return null;
+        }
+        return {
+          key: `athlete:${athleteId}`,
+          entityId: athleteId,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  const clubId = lane?.club?._id?.toString?.() || lane?.club?.toString?.();
+  if (!clubId) {
+    return [];
+  }
+
+  const crewIds = (lane?.crew || [])
+    .map((athlete) => athlete?._id?.toString?.() || athlete?.toString?.())
+    .filter(Boolean)
+    .sort();
+
+  if (crewIds.length > 0) {
+    return [
+      {
+        key: `club:${clubId}:crew:${crewIds.join("+")}`,
+        clubId,
+      },
+    ];
+  }
+
+  const athleteId =
+    lane?.athlete?._id?.toString?.() || lane?.athlete?.toString?.();
+  if (athleteId) {
+    return [
+      {
+        key: `club:${clubId}:athlete:${athleteId}`,
+        clubId,
+      },
+    ];
+  }
+
+  return [
+    {
+      key: `club:${clubId}:fallback:${race?._id?.toString?.() || "race"}:${lane?.lane || 0}`,
+      clubId,
+    },
+  ];
+}
+
+function resolveBetterMergedCandidate(current, candidate) {
+  if (!current) return candidate;
+
+  const currentTimed =
+    current.status === "ok" && Number.isFinite(current.elapsedMs);
+  const candidateTimed =
+    candidate.status === "ok" && Number.isFinite(candidate.elapsedMs);
+
+  if (candidateTimed && !currentTimed) return candidate;
+  if (candidateTimed && currentTimed) {
+    return candidate.elapsedMs < current.elapsedMs ? candidate : current;
+  }
+
+  const currentPos = Number.isInteger(current.finishPosition)
+    ? current.finishPosition
+    : Number.MAX_SAFE_INTEGER;
+  const candidatePos = Number.isInteger(candidate.finishPosition)
+    ? candidate.finishPosition
+    : Number.MAX_SAFE_INTEGER;
+  if (candidatePos < currentPos) return candidate;
+
+  const statusPriority = { ok: 1, dnf: 2, dns: 3, abs: 4, dsq: 5 };
+  const currentStatus = statusPriority[current.status] || 99;
+  const candidateStatus = statusPriority[candidate.status] || 99;
+  if (candidateStatus < currentStatus) return candidate;
+
+  return current;
+}
+
+function buildMergedEventCandidates(races, entityType) {
+  const candidateMap = new Map();
+
+  for (const race of races) {
+    for (const lane of race.lanes || []) {
+      const competitorKeys = getLaneCompetitorKeys(lane, race, entityType);
+      if (!competitorKeys.length) continue;
+
+      const result = lane.result || {};
+      const status = result.status || "ok";
+
+      const candidate = {
+        sourceRace: race,
+        lane,
+        status,
+        elapsedMs:
+          Number.isFinite(result.elapsedMs) && result.elapsedMs >= 0
+            ? Number(result.elapsedMs)
+            : undefined,
+        finishPosition: Number.isInteger(result.finishPosition)
+          ? result.finishPosition
+          : undefined,
+      };
+
+      for (const competitor of competitorKeys) {
+        const existing = candidateMap.get(competitor.key);
+        candidateMap.set(
+          competitor.key,
+          resolveBetterMergedCandidate(existing, {
+            ...candidate,
+            entityId: competitor.entityId,
+            clubId: competitor.clubId,
+          }),
+        );
+      }
+    }
+  }
+
+  return Array.from(candidateMap.values());
+}
+
 /**
  * Calculate ranking for a group of races
  * @param {object} group - Group with races and metadata
@@ -407,23 +551,67 @@ function calculateGroupRanking(group, config) {
   // Map to track points - key depends on entityType
   const pointsMap = new Map();
 
+  const racesByEvent = new Map();
   for (const race of races) {
-    const raceContext = analyzeRaceContext(race);
-    const boatClass = race.boatClass;
+    const eventKey = getEffectiveEventGroupKey(race);
+    if (!racesByEvent.has(eventKey)) {
+      racesByEvent.set(eventKey, []);
+    }
+    racesByEvent.get(eventKey).push(race);
+  }
 
-    for (const lane of race.lanes || []) {
-      const pointResult = calculateLanePoints(
-        lane.result || {},
-        raceContext,
-        config
+  for (const eventRaces of racesByEvent.values()) {
+    const mergedCandidates = buildMergedEventCandidates(eventRaces, entityType);
+    const timedFinishers = mergedCandidates
+      .filter((c) => c.status === "ok" && Number.isFinite(c.elapsedMs))
+      .sort((a, b) => a.elapsedMs - b.elapsedMs);
+
+    timedFinishers.forEach((candidate, index) => {
+      candidate.effectivePosition = index + 1;
+      candidate.points = getPointsForPosition(
+        candidate.effectivePosition,
+        config,
       );
+      candidate.appliedDnfRule = false;
+    });
 
-      const clubId = lane.club?._id?.toString() || lane.club?.toString();
-      if (!clubId) continue;
+    const lastFinisherPosition = timedFinishers.length;
 
-      // Get all athletes in this entry (single athlete or crew)
+    for (const candidate of mergedCandidates) {
+      if (candidate.points === undefined) {
+        if (candidate.status === "ok") {
+          candidate.effectivePosition = candidate.finishPosition || null;
+          candidate.points = getPointsForPosition(
+            candidate.effectivePosition,
+            config,
+          );
+          candidate.appliedDnfRule = false;
+        } else if (candidate.status === "dnf") {
+          // DNF always scores after the last normal finisher for the merged event.
+          // Ignore stored finishPosition to avoid accidental high-point scoring.
+          candidate.effectivePosition = lastFinisherPosition + 1;
+          candidate.points = getPointsForPosition(
+            candidate.effectivePosition,
+            config,
+          );
+          candidate.appliedDnfRule = true;
+        } else {
+          candidate.effectivePosition = null;
+          candidate.points = 0;
+          candidate.appliedDnfRule = false;
+        }
+      }
+
+      const race = candidate.sourceRace;
+      const lane = candidate.lane;
+      const boatClass = race.boatClass;
+      const clubId = lane?.club?._id?.toString() || lane?.club?.toString();
       const athletes =
-        lane.crew?.length > 0 ? lane.crew : lane.athlete ? [lane.athlete] : [];
+        lane?.crew?.length > 0
+          ? lane.crew
+          : lane?.athlete
+            ? [lane.athlete]
+            : [];
 
       const raceResult = {
         raceId: race._id,
@@ -432,66 +620,72 @@ function calculateGroupRanking(group, config) {
         boatClass: boatClass?.code,
         boatClassName: boatClass?.names?.en || boatClass?.code,
         category: race.category?.abbreviation,
-        position: pointResult.effectivePosition,
-        points: pointResult.points,
-        time: lane.result?.elapsedMs,
-        status: lane.result?.status,
-        appliedDnfRule: pointResult.appliedDnfRule,
+        position: candidate.effectivePosition,
+        points: candidate.points,
+        time: candidate.elapsedMs,
+        status: candidate.status,
+        appliedDnfRule: candidate.appliedDnfRule,
       };
 
       if (entityType === "athlete") {
-        // ATHLETE RANKING: Each athlete gets points individually
-        // Only makes sense for skiff races (which should be filtered beforehand)
-        for (const athlete of athletes) {
-          const athleteId = athlete?._id?.toString() || athlete?.toString();
-          if (!athleteId) continue;
+        const athlete =
+          lane?.athlete ||
+          lane?.crew?.find((a) => {
+            const athleteId = a?._id?.toString() || a?.toString();
+            return athleteId === candidate.entityId;
+          });
 
-          if (!pointsMap.has(athleteId)) {
-            pointsMap.set(athleteId, {
-              entityId: athleteId,
-              entityType: "athlete",
-              entity: {
-                _id: athlete._id,
-                firstName: athlete.firstName,
-                lastName: athlete.lastName,
-                fullName:
-                  athlete.fullName ||
-                  `${athlete.firstName || ""} ${athlete.lastName || ""}`.trim(),
-                licenseNumber: athlete.licenseNumber,
-              },
-              club: lane.club,
-              clubId: clubId,
-              totalPoints: 0,
-              raceResults: [],
-              positionCounts: {},
-              journeyPoints: {}, // Points per journey (journeyIndex -> points)
-              totalTime: 0,
-              statusCounts: { dns: 0, dnf: 0, dsq: 0, abs: 0 },
-            });
-          }
+        if (!athlete || !candidate.entityId) {
+          continue;
+        }
 
-          const entry = pointsMap.get(athleteId);
-          entry.totalPoints += pointResult.points;
-          entry.totalTime += lane.result?.elapsedMs || 0;
-          entry.raceResults.push({ ...raceResult });
+        if (!pointsMap.has(candidate.entityId)) {
+          pointsMap.set(candidate.entityId, {
+            entityId: candidate.entityId,
+            entityType: "athlete",
+            entity: {
+              _id: athlete._id,
+              firstName: athlete.firstName,
+              lastName: athlete.lastName,
+              fullName:
+                athlete.fullName ||
+                `${athlete.firstName || ""} ${athlete.lastName || ""}`.trim(),
+              licenseNumber: athlete.licenseNumber,
+            },
+            club: lane.club,
+            clubId: clubId,
+            totalPoints: 0,
+            raceResults: [],
+            positionCounts: {},
+            journeyPoints: {},
+            totalTime: 0,
+            statusCounts: { dns: 0, dnf: 0, dsq: 0, abs: 0 },
+          });
+        }
 
-          // Track points per journey
-          const journeyIdx = race.journeyIndex ?? 0;
-          entry.journeyPoints[journeyIdx] =
-            (entry.journeyPoints[journeyIdx] || 0) + pointResult.points;
+        const entry = pointsMap.get(candidate.entityId);
+        entry.totalPoints += candidate.points;
+        entry.totalTime += candidate.elapsedMs || 0;
+        entry.raceResults.push({ ...raceResult });
 
-          if (pointResult.effectivePosition) {
-            entry.positionCounts[pointResult.effectivePosition] =
-              (entry.positionCounts[pointResult.effectivePosition] || 0) + 1;
-          }
+        const journeyIdx = race.journeyIndex ?? 0;
+        entry.journeyPoints[journeyIdx] =
+          (entry.journeyPoints[journeyIdx] || 0) + candidate.points;
 
-          const status = lane.result?.status;
-          if (status && entry.statusCounts[status] !== undefined) {
-            entry.statusCounts[status]++;
-          }
+        if (candidate.effectivePosition) {
+          entry.positionCounts[candidate.effectivePosition] =
+            (entry.positionCounts[candidate.effectivePosition] || 0) + 1;
+        }
+
+        const status = candidate.status;
+        if (status && entry.statusCounts[status] !== undefined) {
+          entry.statusCounts[status]++;
         }
       } else {
-        // CLUB RANKING: Club collects all points from their athletes
+        if (!clubId) {
+          continue;
+        }
+
         if (!pointsMap.has(clubId)) {
           pointsMap.set(clubId, {
             entityId: clubId,
@@ -506,8 +700,8 @@ function calculateGroupRanking(group, config) {
         }
 
         const entry = pointsMap.get(clubId);
-        entry.totalPoints += pointResult.points;
-        entry.totalTime += lane.result?.elapsedMs || 0;
+        entry.totalPoints += candidate.points;
+        entry.totalTime += candidate.elapsedMs || 0;
         entry.raceResults.push({
           ...raceResult,
           athletes: athletes.map((a) => ({
@@ -519,12 +713,12 @@ function calculateGroupRanking(group, config) {
           })),
         });
 
-        if (pointResult.effectivePosition) {
-          entry.positionCounts[pointResult.effectivePosition] =
-            (entry.positionCounts[pointResult.effectivePosition] || 0) + 1;
+        if (candidate.effectivePosition) {
+          entry.positionCounts[candidate.effectivePosition] =
+            (entry.positionCounts[candidate.effectivePosition] || 0) + 1;
         }
 
-        const status = lane.result?.status;
+        const status = candidate.status;
         if (status && entry.statusCounts[status] !== undefined) {
           entry.statusCounts[status]++;
         }
@@ -677,12 +871,12 @@ function applyTieBreaker(a, b, method) {
 export async function getRankingSummary(
   competitionId,
   rankingSystemId = null,
-  options = {}
+  options = {},
 ) {
   const fullRanking = await buildCompetitionRanking(
     competitionId,
     rankingSystemId,
-    options
+    options,
   );
 
   // Simplify for display

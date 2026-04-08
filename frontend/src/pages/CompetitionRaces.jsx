@@ -526,6 +526,9 @@ const toDocumentId = (value) => {
   if (typeof value === "string") {
     return value;
   }
+  if (typeof value === "number") {
+    return String(value);
+  }
   if (typeof value === "object") {
     const candidate = value._id || value.id;
     if (!candidate) {
@@ -534,11 +537,54 @@ const toDocumentId = (value) => {
     if (typeof candidate === "string") {
       return candidate;
     }
-    if (candidate.toString) {
-      return candidate.toString();
+    if (typeof candidate === "number") {
+      return String(candidate);
+    }
+    if (typeof candidate?.$oid === "string") {
+      return candidate.$oid;
+    }
+    if (typeof candidate?.toHexString === "function") {
+      try {
+        return candidate.toHexString();
+      } catch {
+        return null;
+      }
+    }
+    if (typeof candidate?.toString === "function") {
+      try {
+        const converted = candidate.toString();
+        return typeof converted === "string" ? converted : null;
+      } catch {
+        return null;
+      }
     }
   }
   return null;
+};
+
+const normalizeStringId = (value) => {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  const docId = toDocumentId(value);
+  if (docId) {
+    return docId;
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  try {
+    const converted = String(value);
+    return converted === "[object Object]" ? "" : converted;
+  } catch {
+    return "";
+  }
 };
 
 const normalizeGender = (g) => {
@@ -944,6 +990,7 @@ const EntriesTable = ({
   onWithdraw,
   onDelete,
   isAdmin,
+  showCrewNumber,
 }) => {
   const sortedEntries = useMemo(
     () =>
@@ -973,7 +1020,9 @@ const EntriesTable = ({
         <thead className="bg-gradient-to-r from-slate-50 to-slate-100 text-xs uppercase text-slate-500">
           <tr>
             <th className="px-3 py-3 w-20">Seed</th>
-            <th className="px-3 py-3 w-40">Crew #</th>
+            <th className="px-3 py-3 w-40">
+              {showCrewNumber ? "Crew #" : "Club"}
+            </th>
             <th className="px-3 py-3">Athlete</th>
             <th className="px-3 py-3 w-24">Status</th>
             <th className="px-3 py-3 text-right">Actions</th>
@@ -1017,23 +1066,25 @@ const EntriesTable = ({
                         {entry.clubCode}
                       </span>
                     ) : null}
-                    <Input
-                      type="number"
-                      min="1"
-                      value={entry.crewNumber || ""}
-                      placeholder="-"
-                      onChange={(event) =>
-                        onEntryChange(
-                          entry.uid || entry.id,
-                          "crewNumber",
-                          event.target.value
-                            ? parseInt(event.target.value, 10)
-                            : undefined,
-                        )
-                      }
-                      className="h-7 !w-14 text-center text-xs flex-none"
-                      disabled={isWithdrawn}
-                    />
+                    {showCrewNumber ? (
+                      <Input
+                        type="number"
+                        min="1"
+                        value={entry.crewNumber || ""}
+                        placeholder="-"
+                        onChange={(event) =>
+                          onEntryChange(
+                            entry.uid || entry.id,
+                            "crewNumber",
+                            event.target.value
+                              ? parseInt(event.target.value, 10)
+                              : undefined,
+                          )
+                        }
+                        className="h-7 !w-14 text-center text-xs flex-none"
+                        disabled={isWithdrawn}
+                      />
+                    ) : null}
                   </div>
                 </td>
                 <td className="px-3 py-2">
@@ -1175,12 +1226,38 @@ const describeLane = (lane, athleteLookup, clubLookup) => {
   const clubPart = clubName ? ` (${clubName})` : "";
   const extrasPart = extras ? ` - ${extras}` : "";
 
+  const isCrewLane = Array.isArray(lane?.crew) && lane.crew.length > 1;
   const prefix =
-    clubCode && lane.crewNumber ? `${clubCode} ${lane.crewNumber} - ` : "";
+    clubCode && isCrewLane && lane.crewNumber
+      ? `${clubCode} ${lane.crewNumber} - `
+      : "";
 
   return `${lane?.lane}. ${prefix}${athleteName}${
     !prefix && clubPart ? clubPart : ""
   }${extrasPart}`;
+};
+
+const formatEventTitleWithBoatClass = (
+  category,
+  boatClass,
+  language = "en",
+) => {
+  const categoryTitle =
+    category?.titles?.[language] ||
+    category?.titles?.en ||
+    category?.abbreviation ||
+    "";
+  const boatClassTitle =
+    (language === "ar"
+      ? boatClass?.names?.ar || boatClass?.code
+      : boatClass?.names?.en || boatClass?.code) || "";
+  return [categoryTitle, boatClassTitle].filter(Boolean).join(" ").trim();
+};
+
+const isAssignedLane = (lane) => {
+  if (!lane) return false;
+  if (lane.athlete) return true;
+  return Array.isArray(lane.crew) && lane.crew.length > 0;
 };
 
 const RaceInfoView = ({
@@ -1511,8 +1588,21 @@ const RaceInfoView = ({
 
                 // Find the winning time (first place)
                 const winningTime = sortedLanes.find(
-                  (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
+                  (l) =>
+                    (l.result?.status || "ok") === "ok" && l.result?.elapsedMs,
                 )?.result?.elapsedMs;
+
+                const explicitFinisherPositions = sortedLanes
+                  .filter((l) => (l.result?.status || "ok") === "ok")
+                  .map((l) => l.result?.finishPosition)
+                  .filter((p) => Number.isInteger(p) && p > 0);
+                const lastFinisherPosition = explicitFinisherPositions.length
+                  ? Math.max(...explicitFinisherPositions)
+                  : sortedLanes.filter(
+                      (l) =>
+                        (l.result?.status || "ok") === "ok" &&
+                        Number.isFinite(l.result?.elapsedMs),
+                    ).length;
 
                 return sortedLanes.map((lane) => {
                   // Use populated club data directly from lane (backend populates this)
@@ -1544,9 +1634,12 @@ const RaceInfoView = ({
                       .join(", ");
                   }
 
-                  const position = lane.result?.finishPosition;
                   const elapsedMs = lane.result?.elapsedMs;
                   const status = lane.result?.status || "ok";
+                  const position =
+                    status === "dnf"
+                      ? lane.result?.finishPosition || lastFinisherPosition + 1
+                      : lane.result?.finishPosition;
 
                   // Calculate time and delta (World Rowing style)
                   const timeStr = elapsedMs
@@ -1613,7 +1706,7 @@ const RaceInfoView = ({
                         )}
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-700">
-                        {status === "ok"
+                        {status === "ok" || status === "dnf"
                           ? calculatePoints(position, activeRankingSystem)
                           : 0}
                       </td>
@@ -1989,12 +2082,51 @@ const CompetitionRaces = () => {
     raceId: "",
     order: "",
     startTime: "",
+    eventGroupId: "",
   });
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [pendingManualCrew, setPendingManualCrew] = useState([]);
+  const [officialResultGroups, setOfficialResultGroups] = useState([]);
+  const [loadingOfficialResultGroups, setLoadingOfficialResultGroups] =
+    useState(false);
+  const [selectedOfficialGroupId, setSelectedOfficialGroupId] = useState("");
+  const [provisionalOfficialResult, setProvisionalOfficialResult] =
+    useState(null);
+  const [showOfficialPreviewTable, setShowOfficialPreviewTable] =
+    useState(false);
+  const [publishedOfficialResult, setPublishedOfficialResult] = useState(null);
+  const [loadingOfficialPreview, setLoadingOfficialPreview] = useState(false);
+  const [publishingOfficialResult, setPublishingOfficialResult] =
+    useState(false);
+  const [unpublishingOfficialResult, setUnpublishingOfficialResult] =
+    useState(false);
+  const [autoGroupingOfficialResults, setAutoGroupingOfficialResults] =
+    useState(false);
+  const [publishingAllOfficialResults, setPublishingAllOfficialResults] =
+    useState(false);
 
   const canManageRaceSchedule =
     user?.role === "admin" || user?.role === "jury_president";
+
+  const selectedOfficialGroup = useMemo(
+    () =>
+      officialResultGroups.find(
+        (group) =>
+          normalizeStringId(group.eventGroupId) === selectedOfficialGroupId,
+      ) || null,
+    [officialResultGroups, selectedOfficialGroupId],
+  );
+
+  const officialWorkflowStats = useMemo(() => {
+    const total = officialResultGroups.length;
+    const ready = officialResultGroups.filter(
+      (group) => group.canPublish,
+    ).length;
+    const published = officialResultGroups.filter(
+      (group) => group.published,
+    ).length;
+    return { total, ready, published };
+  }, [officialResultGroups]);
 
   const requiredCrewSize = useMemo(() => {
     if (!autoGenState.boatClass) return 1;
@@ -2094,9 +2226,11 @@ const CompetitionRaces = () => {
 
     // Sort combinations
     combinations.sort((a, b) => {
-      const catCompare = a.catAbbr.localeCompare(b.catAbbr);
+      const catCompare = String(a.catAbbr || "").localeCompare(
+        String(b.catAbbr || ""),
+      );
       if (catCompare !== 0) return catCompare;
-      return a.bcCode.localeCompare(b.bcCode);
+      return String(a.bcCode || "").localeCompare(String(b.bcCode || ""));
     });
 
     // Assign numbers
@@ -2668,7 +2802,12 @@ const CompetitionRaces = () => {
     (event) => {
       const raceId = event.target.value;
       if (!raceId) {
-        setScheduleState({ raceId: "", order: "", startTime: "" });
+        setScheduleState({
+          raceId: "",
+          order: "",
+          startTime: "",
+          eventGroupId: "",
+        });
         return;
       }
       const race = races.find((item) => item._id === raceId);
@@ -2676,6 +2815,7 @@ const CompetitionRaces = () => {
         raceId,
         order: race?.order != null ? String(race.order) : "",
         startTime: formatDateTimeLocalValue(race?.startTime),
+        eventGroupId: race?.eventGroupId || "",
       });
     },
     [formatDateTimeLocalValue, races],
@@ -2723,6 +2863,7 @@ const CompetitionRaces = () => {
           body: JSON.stringify({
             order: orderValue,
             startTime: scheduleState.startTime,
+            eventGroupId: scheduleState.eventGroupId?.trim() || undefined,
           }),
         },
       );
@@ -2747,6 +2888,361 @@ const CompetitionRaces = () => {
     scheduleState,
     token,
   ]);
+
+  const loadOfficialResultGroups = useCallback(async () => {
+    if (!token || !competitionDocumentId) {
+      return;
+    }
+
+    setLoadingOfficialResultGroups(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/groups`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const payload = await response.json().catch(() => []);
+      if (!response.ok) {
+        throw new Error(
+          payload.message || "Failed to load official result groups",
+        );
+      }
+
+      const groups = (Array.isArray(payload) ? payload : [])
+        .map((group) => ({
+          ...group,
+          eventGroupId: normalizeStringId(group?.eventGroupId),
+        }))
+        .filter((group) => group.eventGroupId);
+      setOfficialResultGroups(groups);
+
+      const stillExists = groups.some(
+        (group) =>
+          normalizeStringId(group.eventGroupId) === selectedOfficialGroupId,
+      );
+      if (!stillExists) {
+        setSelectedOfficialGroupId(normalizeStringId(groups[0]?.eventGroupId));
+      }
+    } catch (error) {
+      console.error("Failed to load official result groups", error);
+      toast.error(error.message || "Failed to load official result groups");
+    } finally {
+      setLoadingOfficialResultGroups(false);
+    }
+  }, [competitionDocumentId, selectedOfficialGroupId, token]);
+
+  const loadOfficialPreview = useCallback(async () => {
+    if (!token || !competitionDocumentId || !selectedOfficialGroupId) {
+      setProvisionalOfficialResult(null);
+      setPublishedOfficialResult(null);
+      return;
+    }
+
+    setLoadingOfficialPreview(true);
+    try {
+      const params = new URLSearchParams();
+      const activeRankingSystemId = toDocumentId(activeRankingSystem);
+      if (activeRankingSystemId) {
+        params.set("rankingSystemId", activeRankingSystemId);
+      }
+      const provisionalPath =
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/provisional/${encodeURIComponent(
+          selectedOfficialGroupId,
+        )}` + (params.toString() ? `?${params.toString()}` : "");
+
+      const [provisionalResponse, officialResponse] = await Promise.all([
+        fetch(provisionalPath, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+        fetch(
+          `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/${encodeURIComponent(
+            selectedOfficialGroupId,
+          )}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        ),
+      ]);
+
+      const provisionalPayload = await provisionalResponse
+        .json()
+        .catch(() => null);
+      const officialPayload = await officialResponse.json().catch(() => null);
+
+      if (provisionalResponse.status === 404) {
+        setProvisionalOfficialResult(null);
+        setPublishedOfficialResult(
+          officialResponse.ok ? officialPayload : null,
+        );
+        return;
+      }
+
+      if (!provisionalResponse.ok) {
+        throw new Error(
+          provisionalPayload?.message ||
+            "Failed to load provisional official result",
+        );
+      }
+
+      setProvisionalOfficialResult(provisionalPayload || null);
+      setPublishedOfficialResult(officialResponse.ok ? officialPayload : null);
+    } catch (error) {
+      console.error("Failed to load official preview", error);
+      setProvisionalOfficialResult(null);
+      setPublishedOfficialResult(null);
+      toast.error(error.message || "Failed to load official preview");
+    } finally {
+      setLoadingOfficialPreview(false);
+    }
+  }, [
+    activeRankingSystem,
+    competitionDocumentId,
+    selectedOfficialGroupId,
+    token,
+  ]);
+
+  const publishOfficialResult = useCallback(async () => {
+    if (!token || !competitionDocumentId || !selectedOfficialGroupId) {
+      return;
+    }
+
+    if (!selectedOfficialGroup?.canPublish) {
+      toast.error("This event group is not ready. Complete all races first.");
+      return;
+    }
+
+    const isRepublish = Boolean(publishedOfficialResult);
+    const proceed = window.confirm(
+      isRepublish
+        ? "This will republish and create a new official revision. Continue?"
+        : "Publish official results for this event group now?",
+    );
+    if (!proceed) {
+      return;
+    }
+
+    setPublishingOfficialResult(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/publish`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            eventGroupId: selectedOfficialGroupId,
+            rankingSystemId: toDocumentId(activeRankingSystem) || undefined,
+            force: isRepublish,
+          }),
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Failed to publish official result");
+      }
+
+      toast.success("Official results published");
+      await loadOfficialResultGroups();
+      await loadOfficialPreview();
+    } catch (error) {
+      console.error("Failed to publish official results", error);
+      toast.error(error.message || "Failed to publish official results");
+    } finally {
+      setPublishingOfficialResult(false);
+    }
+  }, [
+    activeRankingSystem,
+    competitionDocumentId,
+    loadOfficialPreview,
+    loadOfficialResultGroups,
+    publishedOfficialResult,
+    selectedOfficialGroup,
+    selectedOfficialGroupId,
+    token,
+  ]);
+
+  const unpublishOfficialResult = useCallback(async () => {
+    if (!token || !competitionDocumentId || !selectedOfficialGroupId) {
+      return;
+    }
+
+    setUnpublishingOfficialResult(true);
+    try {
+      const proceed = window.confirm(
+        "Unpublish official results for this event group? This removes the locked snapshot.",
+      );
+      if (!proceed) {
+        return;
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/${encodeURIComponent(
+          selectedOfficialGroupId,
+        )}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload.message || "Failed to unpublish official result",
+        );
+      }
+
+      toast.success("Official result unpublished");
+      await loadOfficialResultGroups();
+      await loadOfficialPreview();
+    } catch (error) {
+      console.error("Failed to unpublish official result", error);
+      toast.error(error.message || "Failed to unpublish official result");
+    } finally {
+      setUnpublishingOfficialResult(false);
+    }
+  }, [
+    competitionDocumentId,
+    loadOfficialPreview,
+    loadOfficialResultGroups,
+    selectedOfficialGroupId,
+    token,
+  ]);
+
+  const autoAssignOfficialGroups = useCallback(async () => {
+    if (!token || !competitionDocumentId) {
+      return;
+    }
+
+    const proceed = window.confirm(
+      "Auto-assign event groups based on category + boat class + journey for races that have empty group IDs?",
+    );
+    if (!proceed) {
+      return;
+    }
+
+    setAutoGroupingOfficialResults(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/auto-group`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ rewriteAll: false }),
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload.message || "Failed to auto-assign event groups",
+        );
+      }
+
+      toast.success(
+        `Updated ${payload.updatedCount || 0} races with event groups`,
+      );
+      await loadRaces();
+      await loadOfficialResultGroups();
+      await loadOfficialPreview();
+    } catch (error) {
+      console.error("Failed to auto-assign event groups", error);
+      toast.error(error.message || "Failed to auto-assign event groups");
+    } finally {
+      setAutoGroupingOfficialResults(false);
+    }
+  }, [
+    competitionDocumentId,
+    loadOfficialPreview,
+    loadOfficialResultGroups,
+    loadRaces,
+    token,
+  ]);
+
+  const publishAllReadyOfficial = useCallback(async () => {
+    if (!token || !competitionDocumentId) {
+      return;
+    }
+    if (officialWorkflowStats.ready === 0) {
+      toast.error("No ready event groups to publish.");
+      return;
+    }
+
+    const proceed = window.confirm(
+      `Publish all ready groups now? Ready groups: ${officialWorkflowStats.ready}`,
+    );
+    if (!proceed) {
+      return;
+    }
+
+    setPublishingAllOfficialResults(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/publish-all`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            rankingSystemId: activeRankingSystem?._id || undefined,
+            force: false,
+          }),
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Failed to publish ready groups");
+      }
+
+      toast.success(
+        `Published ${payload.publishedGroups || 0} / ${payload.readyGroups || 0} ready groups`,
+      );
+      await loadOfficialResultGroups();
+      await loadOfficialPreview();
+    } catch (error) {
+      console.error("Failed to publish all ready groups", error);
+      toast.error(error.message || "Failed to publish all ready groups");
+    } finally {
+      setPublishingAllOfficialResults(false);
+    }
+  }, [
+    activeRankingSystem,
+    competitionDocumentId,
+    loadOfficialPreview,
+    loadOfficialResultGroups,
+    officialWorkflowStats.ready,
+    token,
+  ]);
+
+  useEffect(() => {
+    if (!token || !competitionDocumentId || !initialDataLoadedRef.current) {
+      return;
+    }
+    loadOfficialResultGroups();
+  }, [competitionDocumentId, loadOfficialResultGroups, races, token]);
+
+  useEffect(() => {
+    loadOfficialPreview();
+  }, [loadOfficialPreview]);
 
   const handleAddEntry = useCallback(
     async (athlete) => {
@@ -3259,12 +3755,6 @@ const CompetitionRaces = () => {
               newEntry.crewNumber = assignedCrewNumber;
               const firstId = toDocumentId(finalCrew[0]);
               if (firstId) newEntry.athleteId = firstId;
-            } else if (
-              assignedCrewNumber !== undefined &&
-              assignedCrewNumber !== null
-            ) {
-              // Single-athlete entry but assign crew number for the club
-              newEntry.crewNumber = assignedCrewNumber;
             }
 
             return [...previous, newEntry];
@@ -3866,7 +4356,7 @@ const CompetitionRaces = () => {
       entries: relevantEntries.map((entry) => ({
         athleteId: entry.athleteId,
         crew: entry.crew ? entry.crew.map((c) => c.id || c._id) : [],
-        crewNumber: entry.crewNumber,
+        crewNumber: requiredCrewSize > 1 ? entry.crewNumber : undefined,
         clubId: entry.clubId || undefined,
         seed: entry.seed,
         notes: entry.notes ? entry.notes.toString().trim() : undefined,
@@ -3970,6 +4460,7 @@ const CompetitionRaces = () => {
     autoGenState,
     competitionDocumentId,
     entries,
+    requiredCrewSize,
     loadRaces,
     loadRegistrationSummary,
     token,
@@ -5018,8 +5509,8 @@ const CompetitionRaces = () => {
           const b = boatClasses.find(
             (x) => toDocumentId(x) === toDocumentId(r.boatClass),
           );
-          const evtEn = `${c?.titles?.en || ""}`.trim();
-          const evtAr = `${c?.titles?.ar || ""}`.trim();
+          const evtEn = formatEventTitleWithBoatClass(c, b, "en");
+          const evtAr = formatEventTitleWithBoatClass(c, b, "ar");
           if (evtEn) distinctEnTitles.add(evtEn);
           if (evtAr) distinctArTitles.add(evtAr);
           if (c || b) distinctCodes.add(generateRaceCode(c, b));
@@ -5119,7 +5610,9 @@ const CompetitionRaces = () => {
         doc.text("(Event)", leftMargin, yPos);
         doc.setFontSize(11);
         doc.setFont(fontName, "bold");
-        fullEventName = fullEventName || `${category?.titles?.en || ""}`.trim();
+        fullEventName =
+          fullEventName ||
+          formatEventTitleWithBoatClass(category, boatClass, "en");
         doc.text(fullEventName, center, yPos, { align: "center" });
         doc.setFontSize(9);
         doc.setFont(fontName, "normal");
@@ -5134,8 +5627,9 @@ const CompetitionRaces = () => {
           competition?.defaultDistance ??
           competition?.distance ??
           null;
-        const catTitleAr = category?.titles?.ar || "";
-        fullEventNameAr = fullEventNameAr || `${catTitleAr}`.trim();
+        fullEventNameAr =
+          fullEventNameAr ||
+          formatEventTitleWithBoatClass(category, boatClass, "ar");
 
         if (fullEventNameAr && arabicFontName) {
           yPos += 6;
@@ -5174,15 +5668,17 @@ const CompetitionRaces = () => {
         });
         yPos += 4;
 
+        const exportableLanes = (race?.lanes || []).filter(isAssignedLane);
+
         // --- Calculate legend for bottom margin ---
         const uniqueClubs = Array.from(
           new Set(
-            (race.lanes || []).map((l) => toDocumentId(l.club)).filter(Boolean),
+            exportableLanes.map((l) => toDocumentId(l.club)).filter(Boolean),
           ),
         )
           .map(
             (id) =>
-              (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
+              exportableLanes.find((l) => toDocumentId(l.club) === id)?.club,
           )
           .filter(Boolean)
           .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
@@ -5203,7 +5699,7 @@ const CompetitionRaces = () => {
         };
 
         // Sort lanes by result (matching RaceDetail)
-        const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
+        const sortedLanes = [...exportableLanes].sort((a, b) => {
           const statusA = a.result?.status || "ok";
           const statusB = b.result?.status || "ok";
           const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
@@ -5217,8 +5713,20 @@ const CompetitionRaces = () => {
         });
 
         const winningTime = sortedLanes.find(
-          (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
+          (l) => (l.result?.status || "ok") === "ok" && l.result?.elapsedMs,
         )?.result?.elapsedMs;
+
+        const explicitFinisherPositions = sortedLanes
+          .filter((l) => (l.result?.status || "ok") === "ok")
+          .map((l) => l.result?.finishPosition)
+          .filter((p) => Number.isInteger(p) && p > 0);
+        const lastFinisherPosition = explicitFinisherPositions.length
+          ? Math.max(...explicitFinisherPositions)
+          : sortedLanes.filter(
+              (l) =>
+                (l.result?.status || "ok") === "ok" &&
+                Number.isFinite(l.result?.elapsedMs),
+            ).length;
 
         // Build table data (matching RaceDetail)
         const deltaMap = new Map();
@@ -5227,13 +5735,22 @@ const CompetitionRaces = () => {
             lane.club?.code ||
             lane.club?.name?.slice(0, 3).toUpperCase() ||
             "-";
+          const isCrewLane = Array.isArray(lane.crew) && lane.crew.length > 1;
+          const clubDisplay =
+            isCrewLane && lane.crewNumber != null
+              ? `${clubCode} ${lane.crewNumber}`
+              : clubCode;
 
           let athleteName = "Unassigned";
           const athleteId = toDocumentId(lane.athlete);
           const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
 
-          const pos = lane.result?.finishPosition || "-";
           const status = lane.result?.status || "ok";
+          const effectivePos =
+            status === "dnf"
+              ? lane.result?.finishPosition || lastFinisherPosition + 1
+              : lane.result?.finishPosition;
+          const pos = effectivePos || "-";
           let timeStr =
             status !== "ok"
               ? status.toUpperCase()
@@ -5273,41 +5790,12 @@ const CompetitionRaces = () => {
               .join("\n");
           }
 
-          const oRace =
-            rawRacesWithResults.find((r) => r._id === lane._originalRaceId) ||
-            race;
-
-          const lCatId =
-            toDocumentId(oRace.category) || toDocumentId(lane?.category);
-
-          const lBcId =
-            toDocumentId(oRace.boatClass) || toDocumentId(lane?.boatClass);
-
-          const lCat = categories.find((c) => toDocumentId(c) === lCatId);
-
-          const lBc = boatClasses.find((c) => toDocumentId(c) === lBcId);
-
-          const lEvent = generateRaceCode(lCat, lBc)
-            .replace(
-              /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
-              "$1 $2",
-            )
-            .replace(/X/g, "x");
-
-          return [
-            pos,
-            rowIdx + 1,
-            clubCode,
-            athleteName,
-            timeStr,
-            points,
-            lEvent,
-          ];
+          return [pos, rowIdx + 1, clubDisplay, athleteName, timeStr, points];
         });
 
         autoTable(doc, {
           startY: yPos,
-          head: [["Rank", "Lane", "Club", "Name", "Time", "Points", "Event"]],
+          head: [["Rank", "Lane", "Club", "Name", "Time", "Points"]],
           body: tableBody,
           theme: "plain",
           headStyles: {
@@ -5328,7 +5816,7 @@ const CompetitionRaces = () => {
             0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
             1: { cellWidth: 12 },
             2: { cellWidth: 25, fontStyle: "bold" },
-            3: { fontStyle: "bold" },
+            3: { cellWidth: 88, fontStyle: "bold" },
             4: {
               cellWidth: 22,
               halign: "right",
@@ -5513,43 +6001,96 @@ const CompetitionRaces = () => {
   const exportAllResultsPDF = useCallback(async () => {
     // Filter races that have results (completed or have times)
     const rawRacesWithResults = sortedRaces.filter((race) => {
-      const hasResults = race.lanes?.some(
-        (lane) =>
-          lane.result?.finishPosition ||
-          lane.result?.elapsedMs ||
-          lane.result?.status === "ok",
-      );
+      const hasResults = (race.lanes || [])
+        .filter(isAssignedLane)
+        .some(
+          (lane) =>
+            lane.result?.finishPosition ||
+            lane.result?.elapsedMs ||
+            lane.result?.status === "ok",
+        );
       return race.status === "completed" || hasResults;
     });
-    // --- GROUP BY START TIME LOGIC ---
-    const resultsTimeMap = new Map();
+
+    // --- GROUP BY CATEGORY + BOAT CLASS (EVENT) ---
+    const resultsEventMap = new Map();
     rawRacesWithResults.forEach((race) => {
-      const timeKey = race.startTime
-        ? new Date(race.startTime).getTime().toString()
-        : `no-time-${race._id || Math.random()}`;
-      if (!resultsTimeMap.has(timeKey)) {
-        resultsTimeMap.set(timeKey, {
+      const categoryId = toDocumentId(race.category) || "unknown";
+      const boatClassId = toDocumentId(race.boatClass) || "open";
+      const eventKey = `${categoryId}::${boatClassId}`;
+
+      if (!resultsEventMap.has(eventKey)) {
+        resultsEventMap.set(eventKey, {
+          _id: `event-${eventKey}`,
           ...race,
-          lanes: [...(race.lanes || [])].map((l) => ({
+          _eventKey: eventKey,
+          lanes: (race.lanes || []).filter(isAssignedLane).map((l) => ({
             ...l,
             _originalRaceId: race._id,
           })),
         });
       } else {
-        const existing = resultsTimeMap.get(timeKey);
+        const existing = resultsEventMap.get(eventKey);
         existing.lanes.push(
-          ...(race.lanes || []).map((l) => ({
+          ...(race.lanes || []).filter(isAssignedLane).map((l) => ({
             ...l,
             _originalRaceId: race._id,
           })),
         );
+
+        // Keep the earliest race order/time as representative for the group.
         if (race.order && (!existing.order || race.order < existing.order)) {
           existing.order = race.order;
         }
+        if (
+          race.startTime &&
+          (!existing.startTime ||
+            new Date(race.startTime).getTime() <
+              new Date(existing.startTime).getTime())
+        ) {
+          existing.startTime = race.startTime;
+        }
+        if (
+          race.distanceOverride != null &&
+          (existing.distanceOverride == null ||
+            Number(race.distanceOverride) > Number(existing.distanceOverride))
+        ) {
+          existing.distanceOverride = race.distanceOverride;
+        }
       }
     });
-    const racesWithResults = Array.from(resultsTimeMap.values()).sort(
-      (a, b) => (a.order || 0) - (b.order || 0),
+
+    const racesWithResults = Array.from(resultsEventMap.values()).sort(
+      (a, b) => {
+        const aOrder = Number(a.order);
+        const bOrder = Number(b.order);
+        const hasAOrder = Number.isFinite(aOrder) && aOrder > 0;
+        const hasBOrder = Number.isFinite(bOrder) && bOrder > 0;
+
+        if (hasAOrder && hasBOrder && aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+        if (hasAOrder !== hasBOrder) {
+          return hasAOrder ? -1 : 1;
+        }
+
+        const aCat = categories.find(
+          (item) => toDocumentId(item) === toDocumentId(a.category),
+        );
+        const bCat = categories.find(
+          (item) => toDocumentId(item) === toDocumentId(b.category),
+        );
+        const aBc = boatClasses.find(
+          (item) => toDocumentId(item) === toDocumentId(a.boatClass),
+        );
+        const bBc = boatClasses.find(
+          (item) => toDocumentId(item) === toDocumentId(b.boatClass),
+        );
+
+        const aCode = generateRaceCode(aCat, aBc);
+        const bCode = generateRaceCode(bCat, bBc);
+        return aCode.localeCompare(bCode);
+      },
     );
 
     if (racesWithResults.length === 0) {
@@ -5558,7 +6099,7 @@ const CompetitionRaces = () => {
     }
 
     toast.info(
-      `Generating Results PDF for ${racesWithResults.length} race(s)...`,
+      `Generating Results PDF for ${racesWithResults.length} event category(ies)...`,
     );
 
     try {
@@ -5697,8 +6238,8 @@ const CompetitionRaces = () => {
           const b = boatClasses.find(
             (x) => toDocumentId(x) === toDocumentId(r.boatClass),
           );
-          const evtEn = `${c?.titles?.en || ""}`.trim();
-          const evtAr = `${c?.titles?.ar || ""}`.trim();
+          const evtEn = formatEventTitleWithBoatClass(c, b, "en");
+          const evtAr = formatEventTitleWithBoatClass(c, b, "ar");
           if (evtEn) distinctEnTitles.add(evtEn);
           if (evtAr) distinctArTitles.add(evtAr);
           if (c || b) distinctCodes.add(generateRaceCode(c, b));
@@ -5793,7 +6334,9 @@ const CompetitionRaces = () => {
         doc.text("(Event)", leftMargin, yPos);
         doc.setFontSize(11);
         doc.setFont(fontName, "bold");
-        fullEventName = fullEventName || `${category?.titles?.en || ""}`.trim();
+        fullEventName =
+          fullEventName ||
+          formatEventTitleWithBoatClass(category, boatClass, "en");
         doc.text(fullEventName, center, yPos, { align: "center" });
         doc.setFontSize(9);
         doc.setFont(fontName, "normal");
@@ -5808,8 +6351,9 @@ const CompetitionRaces = () => {
           competition?.defaultDistance ??
           competition?.distance ??
           null;
-        const catTitleAr = category?.titles?.ar || "";
-        fullEventNameAr = fullEventNameAr || `${catTitleAr}`.trim();
+        fullEventNameAr =
+          fullEventNameAr ||
+          formatEventTitleWithBoatClass(category, boatClass, "ar");
 
         if (fullEventNameAr && arabicFontName) {
           yPos += 6;
@@ -5848,16 +6392,13 @@ const CompetitionRaces = () => {
         });
         yPos += 4;
 
+        const allLanes = (race?.lanes || []).filter(isAssignedLane);
+
         // --- Calculate legend for bottom margin ---
         const uniqueClubs = Array.from(
-          new Set(
-            (race.lanes || []).map((l) => toDocumentId(l.club)).filter(Boolean),
-          ),
+          new Set(allLanes.map((l) => toDocumentId(l.club)).filter(Boolean)),
         )
-          .map(
-            (id) =>
-              (race.lanes || []).find((l) => toDocumentId(l.club) === id)?.club,
-          )
+          .map((id) => allLanes.find((l) => toDocumentId(l.club) === id)?.club)
           .filter(Boolean)
           .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
 
@@ -5868,24 +6409,54 @@ const CompetitionRaces = () => {
             : 0;
         const bottomMargin = 35 + legendBoxHeight + 14;
 
-        // Sort lanes by result (matching RaceDetail)
-        const sortedLanes = [...(race?.lanes || [])].sort((a, b) => {
+        // Recompute consolidated event ranking for merged categories:
+        // one global 1st/2nd/3rd across all source races in the event group.
+        const rankedOkLanes = allLanes
+          .filter((lane) => {
+            const status = lane.result?.status || "ok";
+            return status === "ok" && Number.isFinite(lane.result?.elapsedMs);
+          })
+          .sort((a, b) => {
+            const timeA = Number(a.result?.elapsedMs);
+            const timeB = Number(b.result?.elapsedMs);
+            if (timeA !== timeB) {
+              return timeA - timeB;
+            }
+            return (a.lane || 0) - (b.lane || 0);
+          });
+
+        const consolidatedPositionByLane = new Map();
+        rankedOkLanes.forEach((lane, index) => {
+          consolidatedPositionByLane.set(lane, index + 1);
+        });
+
+        const statusPriority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+        const sortedLanes = allLanes.sort((a, b) => {
+          const posA = consolidatedPositionByLane.get(a);
+          const posB = consolidatedPositionByLane.get(b);
+          const hasPosA = Number.isInteger(posA);
+          const hasPosB = Number.isInteger(posB);
+
+          if (hasPosA && hasPosB && posA !== posB) {
+            return posA - posB;
+          }
+          if (hasPosA !== hasPosB) {
+            return hasPosA ? -1 : 1;
+          }
+
           const statusA = a.result?.status || "ok";
           const statusB = b.result?.status || "ok";
-          const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
-          const pA = priority[statusA] ?? 10;
-          const pB = priority[statusB] ?? 10;
-          if (pA !== pB) return pA - pB;
-          const posA = a.result?.finishPosition || 999;
-          const posB = b.result?.finishPosition || 999;
-          if (posA !== posB) return posA - posB;
+          const priorityA = statusPriority[statusA] ?? 10;
+          const priorityB = statusPriority[statusB] ?? 10;
+          if (priorityA !== priorityB) {
+            return priorityA - priorityB;
+          }
+
           return (a.lane || 0) - (b.lane || 0);
         });
 
-        // Find winning time for delta calculation
-        const winningTime = sortedLanes.find(
-          (l) => l.result?.finishPosition === 1 && l.result?.elapsedMs,
-        )?.result?.elapsedMs;
+        const winningTime = rankedOkLanes[0]?.result?.elapsedMs;
+        const dnfEffectivePosition = rankedOkLanes.length + 1;
 
         // Build table data (matching RaceDetail)
         const deltaMap = new Map();
@@ -5894,13 +6465,21 @@ const CompetitionRaces = () => {
             lane.club?.code ||
             lane.club?.name?.slice(0, 3).toUpperCase() ||
             "-";
+          const isCrewLane = Array.isArray(lane.crew) && lane.crew.length > 1;
+          const clubDisplay =
+            isCrewLane && lane.crewNumber != null
+              ? `${clubCode} ${lane.crewNumber}`
+              : clubCode;
 
           let athleteName = "Unassigned";
           const athleteId = toDocumentId(lane.athlete);
           const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
 
-          const pos = lane.result?.finishPosition || "-";
           const status = lane.result?.status || "ok";
+          const consolidatedPos = consolidatedPositionByLane.get(lane);
+          const effectivePos =
+            status === "dnf" ? dnfEffectivePosition : consolidatedPos;
+          const pos = Number.isInteger(effectivePos) ? effectivePos : "-";
           let timeStr =
             status !== "ok"
               ? status.toUpperCase()
@@ -5917,8 +6496,11 @@ const CompetitionRaces = () => {
             if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
           }
           let points = 0;
-          if ((status === "ok" || status === "dnf") && pos > 0 && pos <= 8) {
-            points = calculatePoints(pos, activeRankingSystem);
+          if (
+            (status === "ok" || status === "dnf") &&
+            Number.isInteger(effectivePos)
+          ) {
+            points = calculatePoints(effectivePos, activeRankingSystem);
           }
 
           if (athlete) {
@@ -5940,41 +6522,12 @@ const CompetitionRaces = () => {
               .join("\n");
           }
 
-          const oRace =
-            rawRacesWithResults.find((r) => r._id === lane._originalRaceId) ||
-            race;
-
-          const lCatId =
-            toDocumentId(oRace.category) || toDocumentId(lane?.category);
-
-          const lBcId =
-            toDocumentId(oRace.boatClass) || toDocumentId(lane?.boatClass);
-
-          const lCat = categories.find((c) => toDocumentId(c) === lCatId);
-
-          const lBc = boatClasses.find((c) => toDocumentId(c) === lBcId);
-
-          const lEvent = generateRaceCode(lCat, lBc)
-            .replace(
-              /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
-              "$1 $2",
-            )
-            .replace(/X/g, "x");
-
-          return [
-            pos,
-            rowIdx + 1,
-            clubCode,
-            athleteName,
-            timeStr,
-            points,
-            lEvent,
-          ];
+          return [pos, rowIdx + 1, clubDisplay, athleteName, timeStr, points];
         });
 
         autoTable(doc, {
           startY: yPos,
-          head: [["Rank", "Lane", "Club", "Name", "Time", "Points", "Event"]],
+          head: [["Rank", "Lane", "Club", "Name", "Time", "Points"]],
           body: tableBody,
           theme: "plain",
           headStyles: {
@@ -5995,7 +6548,7 @@ const CompetitionRaces = () => {
             0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
             1: { cellWidth: 12 },
             2: { cellWidth: 25, fontStyle: "bold" },
-            3: { fontStyle: "bold" },
+            3: { cellWidth: 88, fontStyle: "bold" },
             4: {
               cellWidth: 22,
               halign: "right",
@@ -6157,7 +6710,9 @@ const CompetitionRaces = () => {
       }
 
       doc.save(`Results_${competition?.code || "Competition"}_All.pdf`);
-      toast.success(`Exported results for ${racesWithResults.length} race(s)`);
+      toast.success(
+        `Exported results for ${racesWithResults.length} event category(ies)`,
+      );
     } catch (err) {
       console.error("exportAllResultsPDF error:", err);
       toast.error(
@@ -7095,6 +7650,7 @@ const CompetitionRaces = () => {
                     isAdmin={
                       user?.role === "admin" || user?.role === "jury_president"
                     }
+                    showCrewNumber={requiredCrewSize > 1}
                   />
                 </div>
 
@@ -7153,6 +7709,248 @@ const CompetitionRaces = () => {
                     {submittingAutoGen ? "Generating..." : "Generate Races"}
                   </Button>
                 </div>
+
+                {canManageRaceSchedule && (
+                  <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                    <h3 className="text-xs font-semibold text-slate-900">
+                      Official results workflow
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Step 1: group races. Step 2: review provisional. Step 3:
+                      publish locked official results.
+                    </p>
+
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                      <span className="rounded bg-slate-100 px-2 py-1 text-slate-700">
+                        Groups: {officialWorkflowStats.total}
+                      </span>
+                      <span className="rounded bg-amber-100 px-2 py-1 text-amber-800">
+                        Ready: {officialWorkflowStats.ready}
+                      </span>
+                      <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-800">
+                        Published: {officialWorkflowStats.published}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 grid-cols-1 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="officialGroupSelect">Event group</Label>
+                        <Select
+                          id="officialGroupSelect"
+                          value={selectedOfficialGroupId}
+                          onChange={(event) =>
+                            setSelectedOfficialGroupId(
+                              normalizeStringId(event.target.value),
+                            )
+                          }
+                          disabled={loadingOfficialResultGroups}
+                        >
+                          <option value="">Select event group</option>
+                          {officialResultGroups.map((group) => (
+                            <option
+                              key={group.eventGroupId}
+                              value={group.eventGroupId}
+                            >
+                              {group.eventLabel || group.eventGroupId} (
+                              {group.completedRaceCount}/{group.raceCount} done)
+                              {group.published ? " - published" : ""}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 items-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={autoAssignOfficialGroups}
+                          disabled={autoGroupingOfficialResults}
+                        >
+                          {autoGroupingOfficialResults
+                            ? "Auto-grouping..."
+                            : "Auto-group races"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={loadOfficialResultGroups}
+                          disabled={loadingOfficialResultGroups}
+                        >
+                          {loadingOfficialResultGroups
+                            ? "Refreshing..."
+                            : "Refresh groups"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={loadOfficialPreview}
+                          disabled={
+                            !selectedOfficialGroupId || loadingOfficialPreview
+                          }
+                          className="md:col-span-2"
+                        >
+                          {loadingOfficialPreview
+                            ? "Loading..."
+                            : "Load preview"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {selectedOfficialGroup && (
+                      <div className="mt-2 text-[11px] text-slate-700">
+                        {selectedOfficialGroup.canPublish ? (
+                          <span className="font-medium text-emerald-700">
+                            Ready to publish: all races in this group are
+                            completed.
+                          </span>
+                        ) : (
+                          <span className="font-medium text-amber-700">
+                            Not ready: complete all races in this group first (
+                            {selectedOfficialGroup.completedRaceCount}/
+                            {selectedOfficialGroup.raceCount}).
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 items-center">
+                      <Button
+                        type="button"
+                        onClick={publishOfficialResult}
+                        disabled={
+                          !selectedOfficialGroupId ||
+                          !selectedOfficialGroup?.canPublish ||
+                          publishingOfficialResult ||
+                          loadingOfficialPreview
+                        }
+                      >
+                        {publishingOfficialResult
+                          ? "Publishing..."
+                          : "Publish official"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={publishAllReadyOfficial}
+                        disabled={
+                          publishingAllOfficialResults ||
+                          officialWorkflowStats.ready === 0
+                        }
+                      >
+                        {publishingAllOfficialResults
+                          ? "Publishing all..."
+                          : "Publish all ready"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={unpublishOfficialResult}
+                        disabled={
+                          !selectedOfficialGroupId ||
+                          !publishedOfficialResult ||
+                          unpublishingOfficialResult
+                        }
+                      >
+                        {unpublishingOfficialResult
+                          ? "Unpublishing..."
+                          : "Unpublish"}
+                      </Button>
+                      {publishedOfficialResult ? (
+                        <span className="text-xs text-emerald-700 font-medium md:justify-self-end">
+                          Published revision {publishedOfficialResult.revision}
+                        </span>
+                      ) : (
+                        <span className="hidden md:block" />
+                      )}
+                    </div>
+
+                    {provisionalOfficialResult?.entries?.length > 0 && (
+                      <div className="mt-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setShowOfficialPreviewTable((previous) => !previous)
+                          }
+                        >
+                          {showOfficialPreviewTable
+                            ? "Hide provisional table"
+                            : "Show provisional table"}
+                        </Button>
+                      </div>
+                    )}
+
+                    {provisionalOfficialResult?.entries?.length > 0 &&
+                      showOfficialPreviewTable && (
+                        <div className="mt-3 overflow-x-auto rounded border border-emerald-100 bg-white">
+                          <table className="min-w-full text-xs">
+                            <thead className="bg-emerald-50 text-slate-700">
+                              <tr>
+                                <th className="px-2 py-2 text-left">Rank</th>
+                                <th className="px-2 py-2 text-left">Athlete</th>
+                                <th className="px-2 py-2 text-left">Club</th>
+                                <th className="px-2 py-2 text-left">Time</th>
+                                <th className="px-2 py-2 text-left">Status</th>
+                                <th className="px-2 py-2 text-left">Points</th>
+                                <th className="px-2 py-2 text-left">
+                                  Source race
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {provisionalOfficialResult.entries.map(
+                                (entry, index) => {
+                                  const athleteName =
+                                    entry.athleteName ||
+                                    `${entry.athlete?.firstName || ""} ${
+                                      entry.athlete?.lastName || ""
+                                    }`.trim() ||
+                                    "-";
+                                  const clubName =
+                                    entry.clubName ||
+                                    entry.club?.name ||
+                                    entry.club?.code ||
+                                    "-";
+
+                                  return (
+                                    <tr
+                                      key={`${entry.athleteId || entry.athlete?._id || index}`}
+                                      className="border-t border-slate-100"
+                                    >
+                                      <td className="px-2 py-1.5 font-medium">
+                                        {entry.rank || "-"}
+                                      </td>
+                                      <td className="px-2 py-1.5">
+                                        {athleteName}
+                                      </td>
+                                      <td className="px-2 py-1.5">
+                                        {clubName}
+                                      </td>
+                                      <td className="px-2 py-1.5">
+                                        {Number.isFinite(entry.elapsedMs)
+                                          ? formatElapsedTime(entry.elapsedMs)
+                                          : "-"}
+                                      </td>
+                                      <td className="px-2 py-1.5 uppercase">
+                                        {entry.status || "ok"}
+                                      </td>
+                                      <td className="px-2 py-1.5 font-semibold">
+                                        {entry.points || 0}
+                                      </td>
+                                      <td className="px-2 py-1.5 text-slate-500">
+                                        {entry.sourceRaceName || "-"}
+                                      </td>
+                                    </tr>
+                                  );
+                                },
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                  </div>
+                )}
               </section>
             </div>
 
@@ -7390,6 +8188,24 @@ const CompetitionRaces = () => {
                             disabled={!scheduleState.raceId}
                           />
                         </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="scheduleEventGroupId">
+                          Event group ID
+                        </Label>
+                        <Input
+                          id="scheduleEventGroupId"
+                          name="eventGroupId"
+                          value={scheduleState.eventGroupId}
+                          onChange={handleScheduleFieldChange}
+                          disabled={!scheduleState.raceId}
+                          placeholder="ex: M36-43_1x_final"
+                        />
+                        <p className="text-[11px] text-slate-500">
+                          Use the same group ID for split races that should
+                          produce one official result.
+                        </p>
                       </div>
                     </div>
 
