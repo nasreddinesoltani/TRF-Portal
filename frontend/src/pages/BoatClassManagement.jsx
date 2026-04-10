@@ -13,7 +13,7 @@ const API_BASE_URL = "";
 
 const DISCIPLINE_OPTIONS = [
   { value: "all", label: "All disciplines" },
-  { value: "classic", label: "Classic / flatwater" },
+  { value: "classic", label: "Classic" },
   { value: "coastal", label: "Coastal" },
   { value: "beach", label: "Beach sprint" },
   { value: "indoor", label: "Indoor" },

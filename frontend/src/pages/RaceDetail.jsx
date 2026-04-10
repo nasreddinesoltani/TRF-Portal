@@ -105,6 +105,33 @@ const toDocumentId = (value) => {
   return null;
 };
 
+const isMasterCategory = (category) => {
+  const haystack = [
+    category?.abbreviation,
+    category?.titles?.en,
+    category?.titles?.fr,
+    category?.titles?.ar,
+    category?.name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /master|masters|veteran|veterans|ماستر/.test(haystack);
+};
+
+const formatRaceCodeForHeader = (raceCode, category) => {
+  const normalized = String(raceCode || "").replace(/X/g, "x");
+  if (!isMasterCategory(category)) {
+    return normalized;
+  }
+
+  return normalized.replace(
+    /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
+    "$1 $2",
+  );
+};
+
 const formatAthleteName = (athlete) => {
   if (!athlete) return "Unknown athlete";
   // Try English name first
@@ -481,7 +508,8 @@ const RaceDetail = () => {
       const evtAr = `${c?.titles?.ar || ""}`.trim();
       if (evtEn) distinctEnTitles.add(evtEn);
       if (evtAr) distinctArTitles.add(evtAr);
-      if (c || b) distinctCodes.add(generateRaceCode(c, b));
+      if (c || b)
+        distinctCodes.add(formatRaceCodeForHeader(generateRaceCode(c, b), c));
       if (r.order) distinctOrders.add(r.order);
     });
 
@@ -495,11 +523,9 @@ const RaceDetail = () => {
       Array.from(distinctArTitles).join(" / ");
     const rightHeaderCode = Array.from(distinctCodes).join(" / ");
     const sequenceOrderStr = String(race?.order || 1);
-    const formattedHeaderCode = (
-      rightHeaderCode || generateRaceCode(category, boatClass)
-    )
-      .replace(/([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g, "$1 $2")
-      .replace(/X/g, "x");
+    const formattedHeaderCode =
+      rightHeaderCode ||
+      formatRaceCodeForHeader(generateRaceCode(category, boatClass), category);
 
     const explicitNonFinalPhases = Array.from(
       new Set(

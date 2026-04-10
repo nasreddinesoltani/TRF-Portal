@@ -36,7 +36,7 @@ const POINT_MODE_OPTIONS = [
 
 const DISCIPLINE_OPTIONS = [
   { value: "", label: "All Disciplines" },
-  { value: "classic", label: "Classic / Flatwater" },
+  { value: "classic", label: "Classic" },
   { value: "coastal", label: "Coastal" },
   { value: "beach", label: "Beach Sprint" },
   { value: "indoor", label: "Indoor" },

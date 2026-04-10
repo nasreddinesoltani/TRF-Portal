@@ -18,6 +18,32 @@ const formatCrewRole = (index, size) => {
   return `(${index + 1}) `;
 };
 
+const isMasterCategory = (category) => {
+  const haystack = [
+    category?.abbreviation,
+    category?.titles?.en,
+    category?.titles?.fr,
+    category?.name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /master|masters|veteran|veterans/.test(haystack);
+};
+
+const formatRaceCodeForEventColumn = (raceCode, category) => {
+  const normalized = String(raceCode || "").replace(/X/g, "x");
+  if (!isMasterCategory(category)) {
+    return normalized;
+  }
+
+  return normalized.replace(
+    /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
+    "$1 $2",
+  );
+};
+
 const getLaneMeta = (lane, referenceRace, originalRaceLookup, toDocumentId) => {
   const originalRace =
     originalRaceLookup?.get(String(lane?._originalRaceId)) || referenceRace;
@@ -152,9 +178,10 @@ export const buildStartListTableBody = ({
       (b) => toDocumentId(b) === laneMeta.boatClassId,
     );
 
-    const lEvent = generateRaceCode(lCat, lBc)
-      .replace(/([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g, "$1 $2")
-      .replace(/X/g, "x");
+    const lEvent = formatRaceCodeForEventColumn(
+      generateRaceCode(lCat, lBc),
+      lCat,
+    );
 
     return [rowIdx + 1, clubCode, athleteName, license, dob, lEvent];
   });

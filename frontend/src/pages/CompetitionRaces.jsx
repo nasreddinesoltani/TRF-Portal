@@ -490,6 +490,10 @@ const loadImage = (url) => {
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
         ctx.drawImage(img, 0, 0);
         resolve(canvas.toDataURL("image/png"));
       } catch (err) {
@@ -501,6 +505,9 @@ const loadImage = (url) => {
     img.src = url; // Set src AFTER handlers to avoid missing cached-image events
   });
 };
+
+const getImageFormat = (dataUrl) =>
+  String(dataUrl || "").startsWith("data:image/png") ? "PNG" : "JPEG";
 
 const loadFont = async (url) => {
   try {
@@ -1252,6 +1259,179 @@ const formatEventTitleWithBoatClass = (
       ? boatClass?.names?.ar || boatClass?.code
       : boatClass?.names?.en || boatClass?.code) || "";
   return [categoryTitle, boatClassTitle].filter(Boolean).join(" ").trim();
+};
+
+const isMasterCategory = (category) => {
+  const haystack = [
+    category?.abbreviation,
+    category?.titles?.en,
+    category?.titles?.fr,
+    category?.titles?.ar,
+    category?.name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /master|masters|veteran|veterans|ماستر/.test(haystack);
+};
+
+const formatRaceCodeForHeader = (raceCode, category) => {
+  const normalized = String(raceCode || "").replace(/X/g, "x");
+  if (!isMasterCategory(category)) {
+    return normalized;
+  }
+
+  return normalized.replace(
+    /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
+    "$1 $2",
+  );
+};
+
+const formatAsOfLabel = (value = new Date()) =>
+  `As of: ${value.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+
+const buildCompetitionPdfFileName = (prefix, competition, races) => {
+  const normalizeToken = (value) =>
+    String(value || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+  const rawCode = normalizeToken(competition?.code || "COMPETITION");
+  const codeParts = rawCode.split("-").filter(Boolean);
+  const codeYear = codeParts.find((part) => /^\d{4}$/.test(part));
+  const codeWithoutYear = codeParts.filter((part) => !/^\d{4}$/.test(part));
+
+  const title =
+    competition?.names?.en || competition?.name || competition?.code || "";
+  const titleWords = normalizeToken(title).split("-").filter(Boolean);
+  const codeWordSet = new Set(codeWithoutYear);
+  const stopWords = new Set(["TUNISIA", "TRF", "CLASSIC"]);
+
+  const titleExtras = titleWords.filter(
+    (word) =>
+      !/^\d{4}$/.test(word) && !codeWordSet.has(word) && !stopWords.has(word),
+  );
+
+  const year =
+    codeYear ||
+    String(
+      competition?.startDate
+        ? new Date(competition.startDate).getFullYear()
+        : new Date().getFullYear(),
+    );
+
+  const journeyValues = Array.from(
+    new Set(
+      (races || [])
+        .map((race) => Number(race?.journeyIndex))
+        .filter((value) => Number.isFinite(value) && value > 0),
+    ),
+  ).sort((a, b) => a - b);
+
+  const journeySegment = journeyValues.length
+    ? `Journey-${journeyValues.join("-")}`
+    : "Journey-1";
+
+  const baseParts = [
+    ...codeWithoutYear,
+    ...titleExtras,
+    year,
+    journeySegment,
+  ].filter(Boolean);
+
+  return `${prefix}_${baseParts.join("-")}.pdf`;
+};
+
+const buildStartListPdfFileName = (competition, races) =>
+  buildCompetitionPdfFileName("StartList", competition, races);
+
+const buildResultsPdfFileName = (competition, races) =>
+  buildCompetitionPdfFileName("Results", competition, races);
+
+const fitSingleLineFontSize = ({
+  doc,
+  text,
+  maxWidth,
+  initialSize,
+  minSize,
+  font,
+  style,
+}) => {
+  let size = initialSize;
+  doc.setFont(font, style);
+  while (size > minSize) {
+    doc.setFontSize(size);
+    if (doc.getTextWidth(text) <= maxWidth) {
+      break;
+    }
+    size -= 0.5;
+  }
+  return Math.max(size, minSize);
+};
+
+const drawAdaptiveCenteredTitle = ({
+  doc,
+  text,
+  center,
+  y,
+  maxWidth,
+  font,
+  style = "bold",
+  initialSize = 11,
+  minSize = 8,
+  maxLines = 2,
+  lineGap = 4,
+}) => {
+  const safeText = String(text || "").trim();
+  if (!safeText) {
+    return { lineCount: 0, yEnd: y };
+  }
+
+  let size = initialSize;
+  let lines = [safeText];
+
+  while (size >= minSize) {
+    doc.setFont(font, style);
+    doc.setFontSize(size);
+    lines = doc.splitTextToSize(safeText, maxWidth);
+    if (lines.length <= maxLines) {
+      break;
+    }
+    size -= 0.5;
+  }
+
+  if (lines.length > maxLines) {
+    lines = lines.slice(0, maxLines);
+    doc.setFont(font, style);
+    doc.setFontSize(Math.max(size, minSize));
+    let lastLine = String(lines[maxLines - 1] || "").trim();
+    while (
+      lastLine.length > 0 &&
+      doc.getTextWidth(`${lastLine}...`) > maxWidth
+    ) {
+      lastLine = lastLine.slice(0, -1).trimEnd();
+    }
+    lines[maxLines - 1] = `${lastLine}...`;
+  }
+
+  doc.setFont(font, style);
+  doc.setFontSize(Math.max(size, minSize));
+  lines.forEach((line, index) => {
+    doc.text(line, center, y + index * lineGap, { align: "center" });
+  });
+
+  return {
+    lineCount: lines.length,
+    yEnd: y + (lines.length - 1) * lineGap,
+  };
 };
 
 const isAssignedLane = (lane) => {
@@ -3478,8 +3658,18 @@ const CompetitionRaces = () => {
 
         const finalizeAndSet = (finalCrew) => {
           setEntries((previous) => {
-            if (previous.some((entry) => entry.athleteId === athleteId)) {
-              toast.warn("Athlete already in start list");
+            const isAlreadyInList = previous.some((entry) => {
+              if (entry.athleteId === athleteId) return true;
+              if (Array.isArray(entry.crew) && entry.crew.length > 0) {
+                return entry.crew.some((m) => toDocumentId(m) === athleteId);
+              }
+              if (entry.athlete && toDocumentId(entry.athlete) === athleteId)
+                return true;
+              return false;
+            });
+
+            if (isAlreadyInList) {
+              toast.warn("Athlete is already in the start list");
               return previous;
             }
             const seed = previous.length + 1;
@@ -4026,9 +4216,14 @@ const CompetitionRaces = () => {
       const catData = registrationStats.byCategory.find((c) => c.id === catId);
       if (catData && Array.isArray(catData.entries)) {
         const dbEntries = catData.entries.map((e, idx) => {
-          const athleteId = toDocumentId(e.athlete);
-          const clubObj = e.club || null;
           const entryId = toDocumentId(e.id || e._id);
+          const athleteId =
+            toDocumentId(e.athlete) ||
+            (Array.isArray(e.crew) && e.crew.length > 0
+              ? toDocumentId(e.crew[0])
+              : null) ||
+            entryId;
+          const clubObj = e.club || null;
 
           // Apply overrides if any
           const overrides = dbEntryOverrides[entryId] || {};
@@ -4837,6 +5032,7 @@ const CompetitionRaces = () => {
           month: "short",
           year: "numeric",
         });
+        const asOfLabel = formatAsOfLabel();
 
         // Load images for header/footer (parallel)
         const [
@@ -4857,6 +5053,7 @@ const CompetitionRaces = () => {
           orientation: "portrait",
           unit: "mm",
           format: "a4",
+          compress: true,
         });
 
         // Register Arabic font if loaded successfully
@@ -4967,11 +5164,15 @@ const CompetitionRaces = () => {
             const b = boatClasses.find(
               (x) => toDocumentId(x) === toDocumentId(r.boatClass),
             );
-            const evtEn = `${c?.titles?.en || ""}`.trim();
-            const evtAr = `${c?.titles?.ar || ""}`.trim();
+            const evtEn = formatEventTitleWithBoatClass(c, b, "en");
+            const evtAr = formatEventTitleWithBoatClass(c, b, "ar");
             if (evtEn) distinctEnTitles.add(evtEn);
             if (evtAr) distinctArTitles.add(evtAr);
-            if (c || b) distinctCodes.add(generateRaceCode(c, b));
+            if (c || b) {
+              distinctCodes.add(
+                formatRaceCodeForHeader(generateRaceCode(c, b), c),
+              );
+            }
             if (r.order) distinctOrders.add(r.order);
           });
 
@@ -5046,12 +5247,11 @@ const CompetitionRaces = () => {
           doc.text(String(orderStr), leftMargin, yPos);
           doc.text("Start List", center, yPos, { align: "center" });
           doc.text(
-            (rightHeaderCode || generateRaceCode(category, boatClass))
-              .replace(
-                /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
-                "$1 $2",
-              )
-              .replace(/X/g, "x"),
+            rightHeaderCode ||
+              formatRaceCodeForHeader(
+                generateRaceCode(category, boatClass),
+                category,
+              ),
             rightMargin,
             yPos,
             {
@@ -5059,19 +5259,32 @@ const CompetitionRaces = () => {
             },
           );
 
-          // --- Line 2: (Event) | Category + Boat Class | Phase ---
+          // --- Line 2: (Event) | Category + Boat Class ---
           yPos += 5;
-          doc.setFontSize(9);
+          const eventLabel = "(Event)";
+          doc.setFontSize(8);
           doc.setFont(fontName, "normal");
-          doc.text("(Event)", leftMargin, yPos);
-          doc.setFontSize(11);
-          doc.setFont(fontName, "bold");
+          doc.text(eventLabel, leftMargin, yPos);
+          const eventLabelWidth = doc.getTextWidth(eventLabel);
+          const eventStartX = leftMargin + eventLabelWidth + 3;
+          const eventLineMaxWidth = rightMargin - eventStartX;
+          const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
           fullEventName =
-            fullEventName || `${category?.titles?.en || ""}`.trim();
-          doc.text(fullEventName, center, yPos, { align: "center" });
-          doc.setFontSize(9);
-          doc.setFont(fontName, "normal");
-          doc.text(phaseStr, rightMargin, yPos, { align: "right" });
+            fullEventName ||
+            formatEventTitleWithBoatClass(category, boatClass, "en");
+          const eventTitleLayout = drawAdaptiveCenteredTitle({
+            doc,
+            text: fullEventName,
+            center: eventLineCenter,
+            y: yPos,
+            maxWidth: eventLineMaxWidth,
+            font: fontName,
+            style: "bold",
+            initialSize: 10.5,
+            minSize: 8,
+            maxLines: 1,
+            lineGap: 4,
+          });
 
           // --- Line 3: Arabic text (center) | Distance (right) ---
           const raceDistance =
@@ -5082,12 +5295,24 @@ const CompetitionRaces = () => {
             competition?.defaultDistance ??
             competition?.distance ??
             null;
-          const catTitleAr = category?.titles?.ar || "";
-          fullEventNameAr = fullEventNameAr || `${catTitleAr}`.trim();
+          fullEventNameAr =
+            fullEventNameAr ||
+            formatEventTitleWithBoatClass(category, boatClass, "ar");
+
+          yPos = eventTitleLayout.yEnd;
 
           if (fullEventNameAr && arabicFontName) {
-            yPos += 6;
-            doc.setFontSize(13);
+            yPos += 5;
+            const arabicSize = fitSingleLineFontSize({
+              doc,
+              text: fullEventNameAr,
+              maxWidth: 110,
+              initialSize: 12,
+              minSize: 8.5,
+              font: arabicFontName,
+              style: "normal",
+            });
+            doc.setFontSize(arabicSize);
             doc.setFont(arabicFontName, "normal");
             doc.text(fullEventNameAr, center, yPos, { align: "center" });
             doc.setFont(fontName, "normal");
@@ -5105,10 +5330,10 @@ const CompetitionRaces = () => {
             });
           }
 
-          // --- Line 4: Start Time | Race # ---
-          yPos += 4;
+          // --- Line 4: Start Time | Journey/Phase | Race # ---
+          yPos += 6;
           doc.setFontSize(9);
-          doc.setFont(fontName, "normal");
+          doc.setFont(fontName, "bold");
           const startTime = race.startTime
             ? new Date(race.startTime).toLocaleTimeString([], {
                 hour: "2-digit",
@@ -5116,11 +5341,14 @@ const CompetitionRaces = () => {
               })
             : "00:00";
           doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
+          doc.setFontSize(10);
           doc.setFont(fontName, "bold");
+          doc.text(phaseStr, center, yPos, { align: "center" });
+          doc.setFontSize(9);
           doc.text(`Race ${raceIndex + 1}`, rightMargin, yPos, {
             align: "right",
           });
-          yPos += 4;
+          yPos += 2;
 
           // --- Calculate legend for bottom margin ---
           const uniqueClubs = Array.from(
@@ -5191,6 +5419,9 @@ const CompetitionRaces = () => {
               0: { cellWidth: 15, halign: "center" },
               1: { fontStyle: "bold" },
               2: { fontStyle: "bold" },
+              3: { fontStyle: "bold" },
+              4: { fontStyle: "bold" },
+              5: { fontStyle: "bold" },
             },
             margin: {
               left: leftMargin,
@@ -5240,7 +5471,14 @@ const CompetitionRaces = () => {
           if (headerData) {
             const imgProps = doc.getImageProperties(headerData);
             const h = pageWidth / (imgProps.width / imgProps.height);
-            doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
+            doc.addImage(
+              headerData,
+              getImageFormat(headerData),
+              0,
+              3,
+              pageWidth,
+              h,
+            );
             doc.setDrawColor(128, 0, 0);
             doc.setLineWidth(0.8);
             doc.line(leftMargin, h + 5, rightMargin, h + 5);
@@ -5302,7 +5540,7 @@ const CompetitionRaces = () => {
             const h = pageWidth / (imgProps.width / imgProps.height);
             doc.addImage(
               footerData,
-              "PNG",
+              getImageFormat(footerData),
               0,
               pageHeight - h - 3,
               pageWidth,
@@ -5317,7 +5555,9 @@ const CompetitionRaces = () => {
               pageHeight - h - 5,
             );
             doc.setFontSize(8);
+            doc.setFont(fontName, "normal");
             doc.setTextColor(100);
+            doc.text(asOfLabel, leftMargin, pageHeight - h - 8);
             doc.text(
               `Page ${i} of ${pageCount}`,
               rightMargin,
@@ -5342,10 +5582,18 @@ const CompetitionRaces = () => {
               rightMargin,
               pageHeight - h - 5,
             );
-            doc.addImage(sponsorData, "PNG", x, pageHeight - h - 3, w, h);
+            doc.addImage(
+              sponsorData,
+              getImageFormat(sponsorData),
+              x,
+              pageHeight - h - 3,
+              w,
+              h,
+            );
             doc.setFontSize(8);
             doc.setFont(fontName, "normal");
             doc.setTextColor(100, 100, 100);
+            doc.text(asOfLabel, leftMargin, pageHeight - h - 8);
             doc.text(
               `Page ${i} of ${pageCount}`,
               rightMargin,
@@ -5361,13 +5609,14 @@ const CompetitionRaces = () => {
             doc.setFontSize(8);
             doc.setFont(fontName, "normal");
             doc.setTextColor(100, 100, 100);
+            doc.text(asOfLabel, leftMargin, pageHeight - 8);
             doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - 8, {
               align: "right",
             });
           }
         }
 
-        doc.save(`StartList_${competition?.code || "Competition"}.pdf`);
+        doc.save(buildStartListPdfFileName(competition, targetRaces));
         toast.success("Start List PDF exported successfully");
       } catch (err) {
         console.error("exportStartListPDF error:", err);
@@ -5401,6 +5650,7 @@ const CompetitionRaces = () => {
           month: "short",
           year: "numeric",
         });
+        const asOfLabel = formatAsOfLabel();
 
         const [
           headerData,
@@ -5420,6 +5670,7 @@ const CompetitionRaces = () => {
           orientation: "portrait",
           unit: "mm",
           format: "a4",
+          compress: true,
         });
 
         let arabicFontName = null;
@@ -5513,7 +5764,11 @@ const CompetitionRaces = () => {
           const evtAr = formatEventTitleWithBoatClass(c, b, "ar");
           if (evtEn) distinctEnTitles.add(evtEn);
           if (evtAr) distinctArTitles.add(evtAr);
-          if (c || b) distinctCodes.add(generateRaceCode(c, b));
+          if (c || b) {
+            distinctCodes.add(
+              formatRaceCodeForHeader(generateRaceCode(c, b), c),
+            );
+          }
           if (r.order) distinctOrders.add(r.order);
         });
 
@@ -5590,12 +5845,11 @@ const CompetitionRaces = () => {
         doc.text(String(orderStr), leftMargin, yPos);
         doc.text("Results", center, yPos, { align: "center" });
         doc.text(
-          (rightHeaderCode || generateRaceCode(category, boatClass))
-            .replace(
-              /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
-              "$1 $2",
-            )
-            .replace(/X/g, "x"),
+          rightHeaderCode ||
+            formatRaceCodeForHeader(
+              generateRaceCode(category, boatClass),
+              category,
+            ),
           rightMargin,
           yPos,
           {
@@ -5603,20 +5857,32 @@ const CompetitionRaces = () => {
           },
         );
 
-        // --- Line 2: (Event) | Category + Boat Class | Phase ---
+        // --- Line 2: (Event) | Category + Boat Class ---
         yPos += 5;
-        doc.setFontSize(9);
+        const eventLabel = "(Event)";
+        doc.setFontSize(8);
         doc.setFont(fontName, "normal");
-        doc.text("(Event)", leftMargin, yPos);
-        doc.setFontSize(11);
-        doc.setFont(fontName, "bold");
+        doc.text(eventLabel, leftMargin, yPos);
+        const eventLabelWidth = doc.getTextWidth(eventLabel);
+        const eventStartX = leftMargin + eventLabelWidth + 3;
+        const eventLineMaxWidth = rightMargin - eventStartX;
+        const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
         fullEventName =
           fullEventName ||
           formatEventTitleWithBoatClass(category, boatClass, "en");
-        doc.text(fullEventName, center, yPos, { align: "center" });
-        doc.setFontSize(9);
-        doc.setFont(fontName, "normal");
-        doc.text(phaseStr, rightMargin, yPos, { align: "right" });
+        const eventTitleLayout = drawAdaptiveCenteredTitle({
+          doc,
+          text: fullEventName,
+          center: eventLineCenter,
+          y: yPos,
+          maxWidth: eventLineMaxWidth,
+          font: fontName,
+          style: "bold",
+          initialSize: 10.5,
+          minSize: 8,
+          maxLines: 1,
+          lineGap: 4,
+        });
 
         // --- Line 3: Arabic text (center) | Distance (right) ---
         const raceDistance =
@@ -5631,9 +5897,20 @@ const CompetitionRaces = () => {
           fullEventNameAr ||
           formatEventTitleWithBoatClass(category, boatClass, "ar");
 
+        yPos = eventTitleLayout.yEnd;
+
         if (fullEventNameAr && arabicFontName) {
-          yPos += 6;
-          doc.setFontSize(13);
+          yPos += 5;
+          const arabicSize = fitSingleLineFontSize({
+            doc,
+            text: fullEventNameAr,
+            maxWidth: 110,
+            initialSize: 12,
+            minSize: 8.5,
+            font: arabicFontName,
+            style: "normal",
+          });
+          doc.setFontSize(arabicSize);
           doc.setFont(arabicFontName, "normal");
           doc.text(fullEventNameAr, center, yPos, { align: "center" });
           doc.setFont(fontName, "normal");
@@ -5651,8 +5928,8 @@ const CompetitionRaces = () => {
           });
         }
 
-        // --- Line 4: Start Time | Race # ---
-        yPos += 4;
+        // --- Line 4: Start Time | Journey/Phase | Race # ---
+        yPos += 6;
         doc.setFontSize(9);
         doc.setFont(fontName, "normal");
         const startTime = race.startTime
@@ -5662,11 +5939,14 @@ const CompetitionRaces = () => {
             })
           : "00:00";
         doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
+        doc.setFontSize(10);
         doc.setFont(fontName, "bold");
+        doc.text(phaseStr, center, yPos, { align: "center" });
+        doc.setFontSize(9);
         doc.text(`Race ${race.order || "1"}`, rightMargin, yPos, {
           align: "right",
         });
-        yPos += 4;
+        yPos += 2;
 
         const exportableLanes = (race?.lanes || []).filter(isAssignedLane);
 
@@ -5893,7 +6173,14 @@ const CompetitionRaces = () => {
           if (headerData) {
             const imgProps = doc.getImageProperties(headerData);
             const h = pageWidth / (imgProps.width / imgProps.height);
-            doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
+            doc.addImage(
+              headerData,
+              getImageFormat(headerData),
+              0,
+              3,
+              pageWidth,
+              h,
+            );
             doc.setDrawColor(128, 0, 0);
             doc.setLineWidth(0.8);
             doc.line(leftMargin, h + 5, rightMargin, h + 5);
@@ -5949,7 +6236,7 @@ const CompetitionRaces = () => {
             const h = pageWidth / (imgProps.width / imgProps.height);
             doc.addImage(
               footerData,
-              "PNG",
+              getImageFormat(footerData),
               0,
               pageHeight - h - 3,
               pageWidth,
@@ -5964,7 +6251,9 @@ const CompetitionRaces = () => {
               pageHeight - h - 5,
             );
             doc.setFontSize(8);
+            doc.setFont(fontName, "normal");
             doc.setTextColor(100);
+            doc.text(asOfLabel, leftMargin, pageHeight - h - 8);
             doc.text(
               `Page ${i} of ${pageCount}`,
               rightMargin,
@@ -5974,10 +6263,7 @@ const CompetitionRaces = () => {
           }
         }
 
-        const raceCode = generateRaceCode(category, boatClass);
-        doc.save(
-          `Results_${competition?.code || "Comp"}_${raceCode}_Race${race.order}.pdf`,
-        );
+        doc.save(buildResultsPdfFileName(competition, [race]));
         toast.success("Results PDF exported successfully");
       } catch (err) {
         console.error("exportResultsPDF error:", err);
@@ -6109,6 +6395,7 @@ const CompetitionRaces = () => {
         month: "short",
         year: "numeric",
       });
+      const asOfLabel = formatAsOfLabel();
 
       // Use event date instead of generation date
       const eventDateStr = competition?.startDate
@@ -6134,6 +6421,7 @@ const CompetitionRaces = () => {
         orientation: "portrait",
         unit: "mm",
         format: "a4",
+        compress: true,
       });
 
       let arabicFontName = null;
@@ -6242,7 +6530,11 @@ const CompetitionRaces = () => {
           const evtAr = formatEventTitleWithBoatClass(c, b, "ar");
           if (evtEn) distinctEnTitles.add(evtEn);
           if (evtAr) distinctArTitles.add(evtAr);
-          if (c || b) distinctCodes.add(generateRaceCode(c, b));
+          if (c || b) {
+            distinctCodes.add(
+              formatRaceCodeForHeader(generateRaceCode(c, b), c),
+            );
+          }
           if (r.order) distinctOrders.add(r.order);
         });
 
@@ -6314,12 +6606,11 @@ const CompetitionRaces = () => {
         doc.text(String(orderStr), leftMargin, yPos);
         doc.text("Results", center, yPos, { align: "center" });
         doc.text(
-          (rightHeaderCode || generateRaceCode(category, boatClass))
-            .replace(
-              /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
-              "$1 $2",
-            )
-            .replace(/X/g, "x"),
+          rightHeaderCode ||
+            formatRaceCodeForHeader(
+              generateRaceCode(category, boatClass),
+              category,
+            ),
           rightMargin,
           yPos,
           {
@@ -6327,20 +6618,32 @@ const CompetitionRaces = () => {
           },
         );
 
-        // --- Line 2: (Event) | Category + Boat Class | Phase ---
+        // --- Line 2: (Event) | Category + Boat Class ---
         yPos += 5;
-        doc.setFontSize(9);
+        const eventLabel = "(Event)";
+        doc.setFontSize(8);
         doc.setFont(fontName, "normal");
-        doc.text("(Event)", leftMargin, yPos);
-        doc.setFontSize(11);
-        doc.setFont(fontName, "bold");
+        doc.text(eventLabel, leftMargin, yPos);
+        const eventLabelWidth = doc.getTextWidth(eventLabel);
+        const eventStartX = leftMargin + eventLabelWidth + 3;
+        const eventLineMaxWidth = rightMargin - eventStartX;
+        const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
         fullEventName =
           fullEventName ||
           formatEventTitleWithBoatClass(category, boatClass, "en");
-        doc.text(fullEventName, center, yPos, { align: "center" });
-        doc.setFontSize(9);
-        doc.setFont(fontName, "normal");
-        doc.text(phaseStr, rightMargin, yPos, { align: "right" });
+        const eventTitleLayout = drawAdaptiveCenteredTitle({
+          doc,
+          text: fullEventName,
+          center: eventLineCenter,
+          y: yPos,
+          maxWidth: eventLineMaxWidth,
+          font: fontName,
+          style: "bold",
+          initialSize: 10.5,
+          minSize: 8,
+          maxLines: 1,
+          lineGap: 4,
+        });
 
         // --- Line 3: Arabic text (center) | Distance (right) ---
         const raceDistance =
@@ -6355,9 +6658,20 @@ const CompetitionRaces = () => {
           fullEventNameAr ||
           formatEventTitleWithBoatClass(category, boatClass, "ar");
 
+        yPos = eventTitleLayout.yEnd;
+
         if (fullEventNameAr && arabicFontName) {
-          yPos += 6;
-          doc.setFontSize(13);
+          yPos += 5;
+          const arabicSize = fitSingleLineFontSize({
+            doc,
+            text: fullEventNameAr,
+            maxWidth: 110,
+            initialSize: 12,
+            minSize: 8.5,
+            font: arabicFontName,
+            style: "normal",
+          });
+          doc.setFontSize(arabicSize);
           doc.setFont(arabicFontName, "normal");
           doc.text(fullEventNameAr, center, yPos, { align: "center" });
           doc.setFont(fontName, "normal");
@@ -6375,8 +6689,8 @@ const CompetitionRaces = () => {
           });
         }
 
-        // --- Line 4: Start Time | Race # ---
-        yPos += 4;
+        // --- Line 4: Start Time | Journey/Phase | Race # ---
+        yPos += 6;
         doc.setFontSize(9);
         doc.setFont(fontName, "normal");
         const startTime = race.startTime
@@ -6386,11 +6700,14 @@ const CompetitionRaces = () => {
             })
           : "00:00";
         doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
+        doc.setFontSize(10);
         doc.setFont(fontName, "bold");
+        doc.text(phaseStr, center, yPos, { align: "center" });
+        doc.setFontSize(9);
         doc.text(`Race ${race.order || "1"}`, rightMargin, yPos, {
           align: "right",
         });
-        yPos += 4;
+        yPos += 2;
 
         const allLanes = (race?.lanes || []).filter(isAssignedLane);
 
@@ -6633,7 +6950,14 @@ const CompetitionRaces = () => {
         if (headerData) {
           const imgProps = doc.getImageProperties(headerData);
           const h = pageWidth / (imgProps.width / imgProps.height);
-          doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
+          doc.addImage(
+            headerData,
+            getImageFormat(headerData),
+            0,
+            3,
+            pageWidth,
+            h,
+          );
           doc.setDrawColor(128, 0, 0);
           doc.setLineWidth(0.8);
           doc.line(leftMargin, h + 5, rightMargin, h + 5);
@@ -6689,7 +7013,14 @@ const CompetitionRaces = () => {
         if (footerData) {
           const imgProps = doc.getImageProperties(footerData);
           const h = pageWidth / (imgProps.width / imgProps.height);
-          doc.addImage(footerData, "PNG", 0, pageHeight - h - 3, pageWidth, h);
+          doc.addImage(
+            footerData,
+            getImageFormat(footerData),
+            0,
+            pageHeight - h - 3,
+            pageWidth,
+            h,
+          );
           doc.setDrawColor(128, 0, 0);
           doc.setLineWidth(0.8);
           doc.line(
@@ -6699,7 +7030,9 @@ const CompetitionRaces = () => {
             pageHeight - h - 5,
           );
           doc.setFontSize(8);
+          doc.setFont(fontName, "normal");
           doc.setTextColor(100);
+          doc.text(asOfLabel, leftMargin, pageHeight - h - 8);
           doc.text(
             `Page ${i} of ${pageCount}`,
             rightMargin,
@@ -6709,7 +7042,7 @@ const CompetitionRaces = () => {
         }
       }
 
-      doc.save(`Results_${competition?.code || "Competition"}_All.pdf`);
+      doc.save(buildResultsPdfFileName(competition, racesWithResults));
       toast.success(
         `Exported results for ${racesWithResults.length} event category(ies)`,
       );
