@@ -10,7 +10,6 @@ import OfficialResult from "../Models/officialResultModel.js";
 import TransferRequest from "../Models/transferRequestModel.js";
 import AthleteDeletionRequest from "../Models/athleteDeletionRequestModel.js";
 import Club from "../Models/clubModel.js";
-import LicenseCounter from "../Models/licenseCounterModel.js";
 import { importPhotos } from "../scripts/organizeAndImportPhotos.mjs";
 import {
   getNextLicense,
@@ -2214,21 +2213,8 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
     const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const clubCache = new Map();
 
-    // Sync license counter to max existing sequence before starting import
-    const maxSeqAthlete = await Athlete.findOne({
-      licenseSequence: { $exists: true },
-    })
-      .sort({ licenseSequence: -1 })
-      .select("licenseSequence")
-      .lean();
-
-    if (maxSeqAthlete?.licenseSequence) {
-      await LicenseCounter.findOneAndUpdate(
-        { key: "athleteLicense" },
-        { $max: { sequenceValue: maxSeqAthlete.licenseSequence } },
-        { upsert: true },
-      );
-    }
+    // Ensure import starts from the current global max sequence.
+    await syncLicenseCounter();
 
     for (let index = 0; index < records.length; index += 1) {
       const rowNumber = index + 2;
@@ -2477,9 +2463,6 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
           summary.updated += 1;
         } else {
           // Create new athlete with auto-generated license
-          const currentYear = new Date().getFullYear();
-          const yearSuffix = currentYear.toString().slice(-2);
-
           // Retry loop for license collision handling
           let saved = false;
           let attempts = 0;
@@ -2488,15 +2471,11 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
           while (!saved && attempts < maxAttempts) {
             attempts += 1;
 
-            // Get next license sequence
-            const counter = await LicenseCounter.findOneAndUpdate(
-              { key: "athleteLicense" },
-              { $inc: { sequenceValue: 1 } },
-              { new: true, upsert: true },
-            );
-
-            const licenseSequence = counter.sequenceValue;
-            const licenseNumber = `${licenseSequence}-${yearSuffix}`;
+            const {
+              sequence: licenseSequence,
+              licenseNumber,
+              year: licenseYear,
+            } = await getNextLicense();
 
             const newAthlete = new Athlete({
               firstName: capitalizeName(firstName),
@@ -2510,7 +2489,7 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
               passportNumber: passportNumber || undefined,
               licenseNumber,
               licenseSequence,
-              licenseYear: currentYear,
+              licenseYear,
               status: "pending_documents",
               memberships: [
                 {
@@ -2733,22 +2712,84 @@ export const addSecondaryMembership = asyncHandler(async (req, res) => {
   const primaryClubId =
     typeof primaryClub === "object" ? primaryClub._id : primaryClub;
 
-  // Check if primary club is a Centre de Promotion
+  // Resolve primary club details for dual-membership checks.
   let primaryClubDoc = primaryMembership.club;
   if (typeof primaryClubDoc !== "object" || !primaryClubDoc.type) {
     primaryClubDoc = await Club.findById(primaryClubId).lean();
   }
 
-  if (!primaryClubDoc || primaryClubDoc.type !== "centre_de_promotion") {
+  if (!primaryClubDoc) {
+    return res.status(400).json({ message: "Primary club not found" });
+  }
+
+  const toIdString = (value) => {
+    if (!value) {
+      return null;
+    }
+
+    if (typeof value === "string") {
+      return value;
+    }
+
+    if (value instanceof mongoose.Types.ObjectId) {
+      return value.toString();
+    }
+
+    if (typeof value === "object" && value !== null && value._id) {
+      return value._id.toString();
+    }
+
+    if (typeof value.toString === "function") {
+      const candidate = value.toString();
+      if (candidate && candidate !== "[object Object]") {
+        return candidate;
+      }
+    }
+
+    return null;
+  };
+
+  const primaryClubIdString = toIdString(primaryClubId);
+  const targetClubIdString = toIdString(targetClub._id);
+  const primaryParentClubIdString = toIdString(primaryClubDoc.parentClub);
+  const targetParentClubIdString = toIdString(targetClub.parentClub);
+
+  const isPrimaryCentre = primaryClubDoc.type === "centre_de_promotion";
+  const isTargetCentre = targetClub.type === "centre_de_promotion";
+  const isPrimaryRegularClub = !isPrimaryCentre;
+  const isTargetRegularClub = !isTargetCentre;
+
+  // Direction A: centre -> parent club (existing behavior)
+  const isCentreToClubDirection =
+    isPrimaryCentre &&
+    isTargetRegularClub &&
+    primaryParentClubIdString &&
+    primaryParentClubIdString === targetClubIdString;
+
+  // Direction B: parent club -> associated centre (new, admin only)
+  const isClubToCentreDirection =
+    isPrimaryRegularClub &&
+    isTargetCentre &&
+    targetParentClubIdString &&
+    targetParentClubIdString === primaryClubIdString;
+
+  if (!isCentreToClubDirection && !isClubToCentreDirection) {
     return res.status(400).json({
       message:
-        "Only athletes from Centre de Promotion can have dual membership",
+        "Dual membership is only allowed between a club and its associated Centre de Promotion",
     });
   }
 
   // Access control
   const userRole = req.user?.role;
   const userClubId = req.user?.clubId;
+
+  if (isClubToCentreDirection && userRole !== "admin") {
+    return res.status(403).json({
+      message:
+        "Only admin can add athletes from a club to its Centre de Promotion",
+    });
+  }
 
   if (userRole !== "admin" && userRole !== "federation") {
     // Club manager - check if their club has this Centre de Promotion
@@ -2784,36 +2825,65 @@ export const addSecondaryMembership = asyncHandler(async (req, res) => {
   }
 
   // Check if athlete already has an active membership with this club
-  const existingMembership = athlete.memberships?.find((m) => {
+  const existingActiveMembership = athlete.memberships?.find((m) => {
     const mClubId =
       typeof m.club === "object" ? m.club._id.toString() : m.club.toString();
     return mClubId === clubId && m.status === "active";
   });
 
-  if (existingMembership) {
+  if (existingActiveMembership) {
     return res.status(400).json({
       message: "Athlete already has an active membership with this club",
     });
   }
 
+  const existingInactiveSecondary = athlete.memberships?.find((m) => {
+    const mClubId =
+      typeof m.club === "object" ? m.club._id.toString() : m.club.toString();
+    return (
+      mClubId === clubId &&
+      m.membershipType === "secondary" &&
+      m.status !== "active"
+    );
+  });
+
   // Add the secondary membership
   const now = new Date();
   const membershipSeason = season || now.getFullYear();
 
-  const newMembership = {
-    club: new mongoose.Types.ObjectId(clubId),
-    season: membershipSeason,
-    status: "active",
-    membershipType: "secondary",
-    startDate: now,
-  };
+  let updatedAthlete;
 
-  // Use findByIdAndUpdate to avoid full document validation
-  const updatedAthlete = await Athlete.findByIdAndUpdate(
-    athleteId,
-    { $push: { memberships: newMembership } },
-    { new: true, runValidators: false },
-  ).populate("memberships.club", "name code type");
+  if (existingInactiveSecondary?._id) {
+    // Re-activate previous secondary membership instead of duplicating records.
+    updatedAthlete = await Athlete.findOneAndUpdate(
+      { _id: athleteId, "memberships._id": existingInactiveSecondary._id },
+      {
+        $set: {
+          "memberships.$.status": "active",
+          "memberships.$.season": membershipSeason,
+          "memberships.$.membershipType": "secondary",
+          "memberships.$.startDate": existingInactiveSecondary.startDate || now,
+        },
+        $unset: { "memberships.$.endDate": 1 },
+      },
+      { new: true, runValidators: false },
+    ).populate("memberships.club", "name code type");
+  } else {
+    const newMembership = {
+      club: new mongoose.Types.ObjectId(clubId),
+      season: membershipSeason,
+      status: "active",
+      membershipType: "secondary",
+      startDate: now,
+    };
+
+    // Use findByIdAndUpdate to avoid full document validation
+    updatedAthlete = await Athlete.findByIdAndUpdate(
+      athleteId,
+      { $push: { memberships: newMembership } },
+      { new: true, runValidators: false },
+    ).populate("memberships.club", "name code type");
+  }
 
   res.status(201).json({
     message: "Secondary membership added successfully",

@@ -268,7 +268,7 @@ export const updateClubStatus = asyncHandler(async (req, res) => {
 
   const club = await Club.findById(id).populate(
     "parentClub",
-    "name code type isActive"
+    "name code type isActive",
   );
 
   if (!club) {
@@ -280,7 +280,7 @@ export const updateClubStatus = asyncHandler(async (req, res) => {
 
   await User.updateMany(
     { clubId: club._id, role: "club_manager" },
-    { isActive: Boolean(isActive) }
+    { isActive: Boolean(isActive) },
   );
 
   res.json({ message: "Club status updated", club });
@@ -542,14 +542,14 @@ export const getClubSummary = asyncHandler(async (req, res) => {
   }
 
   const currentSeason = getSeasonYear();
-  const baseMembershipFilter = { 
-    "memberships": {
+  const baseMembershipFilter = {
+    memberships: {
       $elemMatch: {
         club: club._id,
         season: currentSeason,
-        status: { $in: ["active", "pending"] }
-      }
-    }
+        status: { $in: ["active", "pending"] },
+      },
+    },
   };
 
   const [
@@ -563,43 +563,43 @@ export const getClubSummary = asyncHandler(async (req, res) => {
   ] = await Promise.all([
     Athlete.countDocuments(baseMembershipFilter),
     Athlete.countDocuments({
-      memberships: { 
-        $elemMatch: { 
-          club: club._id, 
+      memberships: {
+        $elemMatch: {
+          club: club._id,
           status: "active",
-          season: currentSeason 
-        } 
+          season: currentSeason,
+        },
       },
     }),
     Athlete.countDocuments({
-      memberships: { 
-        $elemMatch: { 
-          club: club._id, 
+      memberships: {
+        $elemMatch: {
+          club: club._id,
           status: "pending",
-          season: currentSeason 
-        } 
+          season: currentSeason,
+        },
       },
     }),
     // License-centric counts (for active/pending members)
     Athlete.countDocuments({
       ...baseMembershipFilter,
-      status: "active"
+      status: "active",
     }),
     Athlete.countDocuments({
       ...baseMembershipFilter,
-      status: "pending_documents"
+      status: "pending_documents",
     }),
     Athlete.countDocuments({
       ...baseMembershipFilter,
-      status: { $in: ["pending_documents", "expired_medical", "suspended"] }
+      status: { $in: ["pending_documents", "expired_medical", "suspended"] },
     }),
     Athlete.countDocuments({
-      memberships: { 
-        $elemMatch: { 
-          club: club._id, 
+      memberships: {
+        $elemMatch: {
+          club: club._id,
           status: "transferred",
-          season: currentSeason 
-        } 
+          season: currentSeason,
+        },
       },
     }),
   ]);
@@ -615,23 +615,25 @@ export const getClubSummary = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(5)
     .select(
-      "firstName lastName firstNameAr lastNameAr licenseNumber status isPara memberships createdAt cin passportNumber categoryAssignments"
+      "firstName lastName firstNameAr lastNameAr licenseNumber status isPara memberships createdAt cin passportNumber categoryAssignments",
     )
     .lean();
 
   const clubIdString = club._id.toString();
   const recentAthletes = recentAthletesRaw.map((athlete) => {
     const membership = athlete.memberships?.find(
-      (entry) => entry.club?.toString() === clubIdString
+      (entry) => entry.club?.toString() === clubIdString,
     );
 
     // Prefer Latin name, fallback to Arabic
     const firstName = athlete.firstName || athlete.firstNameAr || "";
     const lastName = athlete.lastName || athlete.lastNameAr || "";
 
-    const assignments = Array.isArray(athlete.categoryAssignments) ? athlete.categoryAssignments : [];
+    const assignments = Array.isArray(athlete.categoryAssignments)
+      ? athlete.categoryAssignments
+      : [];
     const nationalCategory = assignments.find(
-      (a) => a.type === "national" && a.season === currentSeason
+      (a) => a.type === "national" && a.season === currentSeason,
     );
 
     return {
@@ -667,6 +669,41 @@ export const getClubSummary = asyncHandler(async (req, res) => {
   });
 });
 
+const getMembershipStatusRank = (status = "") => {
+  const normalized = status.toString().toLowerCase();
+  if (normalized === "active") return 0;
+  if (normalized === "pending") return 1;
+  if (normalized === "inactive") return 2;
+  if (normalized === "transferred") return 3;
+  return 4;
+};
+
+const pickBestMembership = (memberships = []) => {
+  if (!memberships.length) {
+    return null;
+  }
+
+  const sorted = [...memberships].sort((a, b) => {
+    const statusRankDiff =
+      getMembershipStatusRank(a?.status) - getMembershipStatusRank(b?.status);
+    if (statusRankDiff !== 0) {
+      return statusRankDiff;
+    }
+
+    const aStart = a?.startDate ? new Date(a.startDate).getTime() : 0;
+    const bStart = b?.startDate ? new Date(b.startDate).getTime() : 0;
+    if (aStart !== bStart) {
+      return bStart - aStart;
+    }
+
+    const aEnd = a?.endDate ? new Date(a.endDate).getTime() : 0;
+    const bEnd = b?.endDate ? new Date(b.endDate).getTime() : 0;
+    return bEnd - aEnd;
+  });
+
+  return sorted[0] || null;
+};
+
 const normalizeClubMembership = (athlete, clubId, seasonYear = null) => {
   if (!athlete?.memberships?.length) {
     return null;
@@ -674,21 +711,36 @@ const normalizeClubMembership = (athlete, clubId, seasonYear = null) => {
 
   const targetId = clubId.toString();
 
+  const clubMemberships = athlete.memberships.filter(
+    (membership) =>
+      (membership.club?._id?.toString() || membership.club?.toString()) ===
+      targetId,
+  );
+
+  if (!clubMemberships.length) {
+    return null;
+  }
+
   // 1. Try to find the exact season match first
   if (seasonYear) {
-    const exactMatch = athlete.memberships.find((membership) => {
-      const membershipClubId = membership.club?._id?.toString() || membership.club?.toString();
-      return membershipClubId === targetId && membership.season === seasonYear;
-    });
+    const exactSeasonMemberships = clubMemberships.filter(
+      (membership) => membership.season === seasonYear,
+    );
+    const exactMatch = pickBestMembership(exactSeasonMemberships);
     if (exactMatch) return exactMatch;
   }
 
   // 2. Fallback: Find the most recent membership for this club across ALL seasons
-  const clubMemberships = athlete.memberships
-    .filter((m) => (m.club?._id?.toString() || m.club?.toString()) === targetId)
-    .sort((a, b) => b.season - a.season);
+  const sortedBySeason = [...clubMemberships].sort(
+    (a, b) => (Number(b?.season) || 0) - (Number(a?.season) || 0),
+  );
 
-  return clubMemberships.length > 0 ? clubMemberships[0] : null;
+  const latestSeason = sortedBySeason[0]?.season;
+  const latestSeasonMemberships = sortedBySeason.filter(
+    (membership) => membership.season === latestSeason,
+  );
+
+  return pickBestMembership(latestSeasonMemberships);
 };
 
 const buildAthleteClubView = (athlete, clubId, seasonYear) => {
@@ -727,13 +779,13 @@ const buildAthleteClubView = (athlete, clubId, seasonYear) => {
     ? athlete.categoryAssignments.map((entry) =>
         typeof entry?.toObject === "function"
           ? entry.toObject({ depopulate: true })
-          : entry
+          : entry,
       )
     : [];
 
   const currentNationalCategory =
     assignments.find(
-      (entry) => entry?.type === "national" && entry?.season === seasonYear
+      (entry) => entry?.type === "national" && entry?.season === seasonYear,
     ) || null;
 
   const documentEvaluation = evaluateDocumentStatuses(athlete);
@@ -828,8 +880,7 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
   // They will be filtered/processed by normalizeClubMembership later
   const athletesRaw = await Athlete.find({ "memberships.club": id })
     .select(
-      "firstName lastName firstNameAr lastNameAr licenseNumber cin passportNumber birthDate gender isPara status licenseStatus documentsStatus documentsIssues memberships documents createdAt updatedAt categoryAssignments"
-
+      "firstName lastName firstNameAr lastNameAr licenseNumber cin passportNumber birthDate gender isPara status licenseStatus documentsStatus documentsIssues memberships documents createdAt updatedAt categoryAssignments",
     )
     .populate("memberships.club", "name code");
 
@@ -839,7 +890,7 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
   await ensureNationalCategoriesForAthletes(
     athletesRaw,
     seasonYear,
-    categoryCache
+    categoryCache,
   );
 
   const athletes = {
@@ -866,17 +917,15 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
     const membership = normalizeClubMembership(athlete, id, seasonYear);
     const status = membership?.status || "inactive";
 
-    // EXCLUSION LOGIC: If an athlete was transferred away from this club,
-    // do not show them in the roster at all.
-    if (status === "transferred") {
-      return;
-    }
-
     // Enforce: Inactive Membership implies Inactive License
     // If it's a previous season's membership (status would be active/pending but for old season),
     // it will be treated as "inactive" in the view.
     let resolvedStatus = status;
-    if (membership && membership.season !== seasonYear && (status === "active" || status === "pending")) {
+    if (
+      membership &&
+      membership.season !== seasonYear &&
+      (status === "active" || status === "pending")
+    ) {
       resolvedStatus = "inactive";
     }
 
@@ -894,10 +943,13 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
       counts.inactive += 1;
     }
 
-    // Add to Eligible Bucket (Active License)
-    if (athlete.licenseStatus === "active") {
-        athletes.eligible.push(view);
-        counts.eligible += 1;
+    // Add to Eligible Bucket (active license + non-transferred membership)
+    if (
+      athlete.licenseStatus === "active" &&
+      ["active", "pending"].includes(resolvedStatus)
+    ) {
+      athletes.eligible.push(view);
+      counts.eligible += 1;
     }
   });
 
@@ -938,7 +990,7 @@ export const getClubDetailsWithAthletes = asyncHandler(async (req, res) => {
       canApproveDeletions: req.user?.role === "admin",
       canRequestDeletions: ["admin", "club_manager"].includes(req.user?.role),
       canManageDualMembership: ["admin", "federation", "club_manager"].includes(
-        req.user?.role
+        req.user?.role,
       ),
     },
   });
@@ -992,8 +1044,10 @@ export const updateClubAthleteStatus = asyncHandler(async (req, res) => {
 
   // Check if there is ANY membership for this club (past or present)
   const anyMembership = athlete.memberships?.find((entry) => {
-    return entry.club?.toString() === clubIdString || 
-           entry.club?._id?.toString() === clubIdString;
+    return (
+      entry.club?.toString() === clubIdString ||
+      entry.club?._id?.toString() === clubIdString
+    );
   });
 
   if (!anyMembership) {
@@ -1004,8 +1058,9 @@ export const updateClubAthleteStatus = asyncHandler(async (req, res) => {
 
   // Check for CURRENT SEASON membership
   const currentMembershipIndex = athlete.memberships?.findIndex((entry) => {
-    const isClub = entry.club?.toString() === clubIdString || 
-                   entry.club?._id?.toString() === clubIdString;
+    const isClub =
+      entry.club?.toString() === clubIdString ||
+      entry.club?._id?.toString() === clubIdString;
     const isSeason = entry.season === seasonYear;
     return isClub && isSeason;
   });
@@ -1019,15 +1074,16 @@ export const updateClubAthleteStatus = asyncHandler(async (req, res) => {
     updateOperations = {
       $set: {
         [`memberships.${currentMembershipIndex}.status`]: status,
-      }
+      },
     };
-    
+
     if (status === "inactive") {
-      updateOperations.$set[`memberships.${currentMembershipIndex}.endDate`] = new Date();
+      updateOperations.$set[`memberships.${currentMembershipIndex}.endDate`] =
+        new Date();
     } else if (status === "active") {
-      updateOperations.$set[`memberships.${currentMembershipIndex}.endDate`] = undefined;
+      updateOperations.$set[`memberships.${currentMembershipIndex}.endDate`] =
+        undefined;
     }
-    
   } else {
     // Create NEW membership for current season
     // Check if we effectively "reactivating" an old athlete
@@ -1038,9 +1094,9 @@ export const updateClubAthleteStatus = asyncHandler(async (req, res) => {
           season: seasonYear,
           status: status,
           startDate: new Date(),
-          membershipType: "primary"
-        }
-      }
+          membershipType: "primary",
+        },
+      },
     };
   }
 
@@ -1052,12 +1108,14 @@ export const updateClubAthleteStatus = asyncHandler(async (req, res) => {
     });
   }
 
-  const updatedAthlete = await Athlete.findById(athleteId)
-    .populate("memberships.club", "name code");
+  const updatedAthlete = await Athlete.findById(athleteId).populate(
+    "memberships.club",
+    "name code",
+  );
 
   // Re-evaluate status to ensure it's fresh
   const evaluation = applyDocumentStatusToAthlete(updatedAthlete);
-  
+
   // Use surgical update instead of .save() to bypass validation on missing legacy fields
   await Athlete.updateOne(
     { _id: athleteId },
@@ -1068,8 +1126,8 @@ export const updateClubAthleteStatus = asyncHandler(async (req, res) => {
         documentsStatus: updatedAthlete.documentsStatus,
         documentsIssues: updatedAthlete.documentsIssues,
         documentsEvaluatedAt: updatedAthlete.documentsEvaluatedAt,
-      }
-    }
+      },
+    },
   );
 
   res.json({

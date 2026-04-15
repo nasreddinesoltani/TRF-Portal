@@ -5128,6 +5128,7 @@ const CompetitionRaces = () => {
   const exportStartListPDF = useCallback(
     async (racesToExport = null) => {
       toast.info("Generating Start List PDF...");
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       // --- GROUP BY START TIME LOGIC ---
       const rawTargetRaces = Array.isArray(racesToExport)
@@ -5787,6 +5788,7 @@ const CompetitionRaces = () => {
       if (!race) return;
 
       toast.info("Generating Results PDF...");
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       try {
         const dateStr = new Date().toLocaleDateString("en-GB", {
@@ -6432,6 +6434,9 @@ const CompetitionRaces = () => {
 
   // Export all results to a single PDF
   const exportAllResultsPDF = useCallback(async () => {
+    toast.info("Generating Results PDF...");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     // Filter races that have results (completed or have times)
     const rawRacesWithResults = sortedRaces.filter((race) => {
       const hasResults = (race.lanes || [])
@@ -6530,10 +6535,6 @@ const CompetitionRaces = () => {
       toast.info("No races with results to export");
       return;
     }
-
-    toast.info(
-      `Generating Results PDF for ${racesWithResults.length} event category(ies)...`,
-    );
 
     try {
       const dateStr = new Date().toLocaleDateString("en-GB", {
@@ -7417,6 +7418,9 @@ const CompetitionRaces = () => {
   );
 
   const exportEntryListByEventPDF = useCallback(async () => {
+    toast.info("Generating Entry List by Event PDF...");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     const rows = collectAssignedEntriesRows().sort((a, b) => {
       const eventNumberA = Number(a.eventNumber || Number.MAX_SAFE_INTEGER);
       const eventNumberB = Number(b.eventNumber || Number.MAX_SAFE_INTEGER);
@@ -7438,8 +7442,6 @@ const CompetitionRaces = () => {
       toast.info("No entries available to export.");
       return;
     }
-
-    toast.info("Generating Entry List by Event PDF...");
 
     try {
       const asOfLabel = formatAsOfLabel();
@@ -7829,13 +7831,14 @@ const CompetitionRaces = () => {
   }, [collectAssignedEntriesRows, competition, isInternationalCompetition]);
 
   const exportEntriesByEventPDF = useCallback(async () => {
+    toast.info("Generating Entries by Event PDF...");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     const rows = collectAssignedEntriesRows();
     if (!rows.length) {
       toast.info("No entries available to export.");
       return;
     }
-
-    toast.info("Generating Entries by Event PDF...");
 
     try {
       const asOfLabel = formatAsOfLabel();
@@ -8479,6 +8482,9 @@ const CompetitionRaces = () => {
   }, [collectAssignedEntriesRows, competition, isInternationalCompetition]);
 
   const exportNumberOfEntriesByCountryPDF = useCallback(async () => {
+    toast.info(`Generating Number of Entries by ${scopeDimensionLabel} PDF...`);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     const rows = collectAssignedEntriesRows();
     const byDimension = new Map();
 
@@ -8516,8 +8522,6 @@ const CompetitionRaces = () => {
       toast.info("No entries available to export.");
       return;
     }
-
-    toast.info(`Generating Number of Entries by ${scopeDimensionLabel} PDF...`);
 
     try {
       const asOfLabel = formatAsOfLabel();
@@ -9166,6 +9170,7 @@ const CompetitionRaces = () => {
 
   const exportEntryListByCountryPDF = useCallback(async () => {
     toast.info(`Generating Entry List by ${scopeDimensionLabel} PDF...`);
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     const raceRows = [];
     const registrationEntriesByCategory = new Map();

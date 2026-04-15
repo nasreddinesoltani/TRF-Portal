@@ -596,7 +596,7 @@ const AthleteCard = ({
       {/* Bottom: Actions - Two rows */}
       <div className="mt-2 pt-2 border-t border-slate-100 space-y-2">
         {/* Row 1: Action Buttons */}
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <Button
             variant="outline"
             size="sm"
@@ -653,15 +653,17 @@ const AthleteCard = ({
 
         {/* Row 2: Status Controls */}
         {(permissions.canManageAthletes || isAdmin) && (
-          <div className="flex items-center gap-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {permissions.canManageAthletes && (
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-slate-500">Membership:</span>
+              <div className="flex min-w-0 items-center gap-1">
+                <span className="shrink-0 whitespace-nowrap text-[10px] text-slate-500">
+                  Membership:
+                </span>
                 <select
                   value={membershipStatus}
                   onChange={(e) => onStatusChange(athlete._id, e.target.value)}
                   disabled={statusUpdating}
-                  className="text-xs h-6 px-1 border border-slate-200 rounded bg-white"
+                  className="h-6 min-w-0 flex-1 rounded border border-slate-200 bg-white px-1 text-xs"
                 >
                   {ATHLETE_STATUS_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -672,15 +674,17 @@ const AthleteCard = ({
               </div>
             )}
             {isAdmin && (
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-slate-500">License:</span>
+              <div className="flex min-w-0 items-center gap-1">
+                <span className="shrink-0 whitespace-nowrap text-[10px] text-slate-500">
+                  License:
+                </span>
                 <select
                   value={licenseStatus}
                   onChange={(e) =>
                     onLicenseStatusChange(athlete._id, e.target.value)
                   }
                   disabled={licenseStatusUpdating}
-                  className="text-xs h-6 px-1 border border-slate-200 rounded bg-white"
+                  className="h-6 min-w-0 flex-1 rounded border border-slate-200 bg-white px-1 text-xs"
                 >
                   {MANUAL_LICENSE_STATUS_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -875,9 +879,16 @@ const ClubDetail = () => {
   const [centreSearchTerm, setCentreSearchTerm] = useState("");
   const [centrePage, setCentrePage] = useState(1);
   const CENTRE_PAGE_SIZE = 10;
+  const [parentClubAthletes, setParentClubAthletes] = useState([]);
+  const [loadingParentClubAthletes, setLoadingParentClubAthletes] =
+    useState(false);
+  const [parentSearchTerm, setParentSearchTerm] = useState("");
+  const [parentPage, setParentPage] = useState(1);
+  const PARENT_PAGE_SIZE = 10;
   const [dualMembershipDialog, setDualMembershipDialog] = useState({
     open: false,
     athlete: null,
+    mode: "toClub",
     submitting: false,
   });
 
@@ -1026,6 +1037,72 @@ const ClubDetail = () => {
     loadCentreAthletes();
   }, [loadCentreAthletes]);
 
+  // Load athletes from parent club when viewing a Centre de Promotion (admin only)
+  const loadParentClubAthletes = useCallback(async () => {
+    if (
+      !token ||
+      !isAdmin ||
+      club?.type !== "centre_de_promotion" ||
+      !club?.parentClub?._id
+    ) {
+      setParentClubAthletes([]);
+      return;
+    }
+
+    setLoadingParentClubAthletes(true);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/athletes?clubId=${club.parentClub._id}&membershipStatus=active&limit=1000`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(
+          payload.message || "Failed to load parent club athletes",
+        );
+      }
+
+      const payload = await response.json();
+      const parentClubId = club.parentClub._id;
+
+      const primaryParentAthletes = (
+        Array.isArray(payload) ? payload : []
+      ).filter((athlete) => {
+        const primaryMembership = athlete.memberships?.find(
+          (m) =>
+            m.status === "active" &&
+            (m.membershipType === "primary" || !m.membershipType),
+        );
+
+        if (!primaryMembership) return false;
+
+        const primaryClubId =
+          typeof primaryMembership.club === "object"
+            ? primaryMembership.club._id?.toString()
+            : primaryMembership.club?.toString();
+
+        return primaryClubId === parentClubId;
+      });
+
+      setParentClubAthletes(primaryParentAthletes);
+    } catch (error) {
+      console.error("Failed to load parent club athletes", error);
+      toast.error(error.message);
+    } finally {
+      setLoadingParentClubAthletes(false);
+    }
+  }, [club?.parentClub?._id, club?.type, isAdmin, token]);
+
+  useEffect(() => {
+    loadParentClubAthletes();
+  }, [loadParentClubAthletes]);
+
   // Add secondary membership (add centre athlete to this club)
   const addSecondaryMembership = useCallback(
     async (athleteId) => {
@@ -1062,17 +1139,25 @@ const ClubDetail = () => {
         setDualMembershipDialog({
           open: false,
           athlete: null,
+          mode: "toClub",
           submitting: false,
         });
         await loadClubDetails();
         await loadCentreAthletes();
+        await loadParentClubAthletes();
       } catch (error) {
         console.error("Failed to add secondary membership", error);
         toast.error(error.message);
         setDualMembershipDialog((prev) => ({ ...prev, submitting: false }));
       }
     },
-    [club?._id, loadClubDetails, loadCentreAthletes, token],
+    [
+      club?._id,
+      loadClubDetails,
+      loadCentreAthletes,
+      loadParentClubAthletes,
+      token,
+    ],
   );
 
   // Remove secondary membership
@@ -1108,12 +1193,19 @@ const ClubDetail = () => {
         toast.success("Secondary membership removed");
         await loadClubDetails();
         await loadCentreAthletes();
+        await loadParentClubAthletes();
       } catch (error) {
         console.error("Failed to remove secondary membership", error);
         toast.error(error.message);
       }
     },
-    [club?._id, loadClubDetails, loadCentreAthletes, token],
+    [
+      club?._id,
+      loadClubDetails,
+      loadCentreAthletes,
+      loadParentClubAthletes,
+      token,
+    ],
   );
 
   const filteredBuckets = useMemo(() => {
@@ -3179,6 +3271,7 @@ const ClubDetail = () => {
                                       setDualMembershipDialog({
                                         open: true,
                                         athlete,
+                                        mode: "toClub",
                                         submitting: false,
                                       })
                                     }
@@ -3241,13 +3334,245 @@ const ClubDetail = () => {
         </div>
       ) : null}
 
+      {/* Parent Club Athletes Section (admin only, for centre pages) */}
+      {isAdmin &&
+      club?.type === "centre_de_promotion" &&
+      club?.parentClub?._id &&
+      permissions.canManageDualMembership ? (
+        <div className="mt-8 space-y-4 rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-blue-900">
+                Parent Club Athletes
+              </h2>
+              <p className="text-sm text-blue-700">
+                Athletes from{" "}
+                <span className="font-medium">{club.parentClub.name}</span> who
+                can be added as secondary members to this Centre de Promotion
+              </p>
+            </div>
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-500 text-sm font-semibold text-white">
+              {parentClubAthletes.length}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <Input
+                placeholder="Search by name, license number..."
+                value={parentSearchTerm}
+                onChange={(e) => {
+                  setParentSearchTerm(e.target.value);
+                  setParentPage(1);
+                }}
+                className="bg-white"
+              />
+            </div>
+          </div>
+
+          {loadingParentClubAthletes ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-sm text-blue-700">
+                Loading parent club athletes...
+              </div>
+            </div>
+          ) : parentClubAthletes.length === 0 ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-sm text-slate-500">
+                No athletes found in the parent club
+              </div>
+            </div>
+          ) : (
+            (() => {
+              const needle = parentSearchTerm.trim().toLowerCase();
+              const filtered = parentClubAthletes.filter((athlete) => {
+                if (!needle) return true;
+                const fields = [
+                  athlete.firstName,
+                  athlete.lastName,
+                  athlete.firstNameAr,
+                  athlete.lastNameAr,
+                  athlete.licenseNumber,
+                ];
+                return fields.some((f) => f?.toLowerCase().includes(needle));
+              });
+              const totalPages = Math.ceil(filtered.length / PARENT_PAGE_SIZE);
+              const paginated = filtered.slice(
+                (parentPage - 1) * PARENT_PAGE_SIZE,
+                parentPage * PARENT_PAGE_SIZE,
+              );
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="text-sm text-slate-500">
+                      No athletes match your search
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-blue-200 text-xs font-semibold uppercase tracking-wide text-blue-800">
+                          <th className="px-4 py-3">Athlete</th>
+                          <th className="px-4 py-3">License</th>
+                          <th className="px-4 py-3">Gender</th>
+                          <th className="px-4 py-3">Birth Date</th>
+                          <th className="px-4 py-3">Status</th>
+                          <th className="px-4 py-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-blue-100">
+                        {paginated.map((athlete) => {
+                          const hasSecondaryHere = athlete.memberships?.some(
+                            (m) =>
+                              m.membershipType === "secondary" &&
+                              m.status === "active" &&
+                              (m.club === club?._id ||
+                                m.club?._id === club?._id ||
+                                (typeof m.club === "object" &&
+                                  m.club?._id?.toString() === club?._id)),
+                          );
+
+                          return (
+                            <tr
+                              key={athlete._id}
+                              className="hover:bg-blue-100/50"
+                            >
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-200 text-xs font-medium text-blue-700">
+                                    {getAthleteInitials(athlete)}
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-slate-900">
+                                      {athlete.firstName} {athlete.lastName}
+                                    </div>
+                                    {athlete.firstNameAr ||
+                                    athlete.lastNameAr ? (
+                                      <div className="text-xs text-slate-500">
+                                        {athlete.firstNameAr}{" "}
+                                        {athlete.lastNameAr}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                {athlete.licenseNumber || "-"}
+                              </td>
+                              <td className="px-4 py-3 text-slate-600 capitalize">
+                                {athlete.gender || "-"}
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                {formatDisplayDate(athlete.birthDate) || "-"}
+                              </td>
+                              <td className="px-4 py-3">
+                                {hasSecondaryHere ? (
+                                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+                                    Member
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                                    Not a member
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {hasSecondaryHere ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      removeSecondaryMembership(athlete._id)
+                                    }
+                                    className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                  >
+                                    Remove
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      setDualMembershipDialog({
+                                        open: true,
+                                        athlete,
+                                        mode: "toCentre",
+                                        submitting: false,
+                                      })
+                                    }
+                                    className="text-blue-700 hover:bg-blue-100 hover:text-blue-800"
+                                  >
+                                    Add to Centre
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {totalPages > 1 ? (
+                    <div className="flex items-center justify-between border-t border-blue-200 pt-4">
+                      <p className="text-sm text-blue-700">
+                        Showing {(parentPage - 1) * PARENT_PAGE_SIZE + 1} to{" "}
+                        {Math.min(
+                          parentPage * PARENT_PAGE_SIZE,
+                          filtered.length,
+                        )}{" "}
+                        of {filtered.length} athletes
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={parentPage === 1}
+                          onClick={() => setParentPage((p) => p - 1)}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-sm text-blue-800">
+                          Page {parentPage} of {totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={parentPage === totalPages}
+                          onClick={() => setParentPage((p) => p + 1)}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-blue-700 pt-2">
+                      Showing {filtered.length} athlete
+                      {filtered.length !== 1 ? "s" : ""}
+                    </p>
+                  )}
+                </>
+              );
+            })()
+          )}
+        </div>
+      ) : null}
+
       {/* Dual Membership Confirmation Dialog */}
       {dualMembershipDialog.open ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 px-4 py-10">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-900">
-                Add athlete to club
+                {dualMembershipDialog.mode === "toCentre"
+                  ? "Add athlete to centre"
+                  : "Add athlete to club"}
               </h2>
               <Button
                 variant="ghost"
@@ -3256,6 +3581,7 @@ const ClubDetail = () => {
                   setDualMembershipDialog({
                     open: false,
                     athlete: null,
+                    mode: "toClub",
                     submitting: false,
                   })
                 }
@@ -3272,12 +3598,20 @@ const ClubDetail = () => {
                   {dualMembershipDialog.athlete?.lastName}
                 </span>{" "}
                 from{" "}
-                <span className="font-medium">{associatedCentre?.name}</span> as
-                a secondary member of this club.
+                <span className="font-medium">
+                  {dualMembershipDialog.mode === "toCentre"
+                    ? club?.parentClub?.name
+                    : associatedCentre?.name}
+                </span>{" "}
+                as a secondary member of this{" "}
+                {dualMembershipDialog.mode === "toCentre"
+                  ? "Centre de Promotion"
+                  : "club"}
+                .
               </p>
               <p className="text-sm text-slate-500">
-                The athlete will maintain their primary membership at the Centre
-                de Promotion while also being able to compete for this club.
+                The athlete will maintain the existing primary membership while
+                being registered as a secondary member in this organization.
               </p>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -3288,6 +3622,7 @@ const ClubDetail = () => {
                     setDualMembershipDialog({
                       open: false,
                       athlete: null,
+                      mode: "toClub",
                       submitting: false,
                     })
                   }

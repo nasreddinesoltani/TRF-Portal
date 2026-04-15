@@ -128,6 +128,15 @@ export const buildStartListTableBody = ({
 
     const clubCode =
       lane?.club?.code || lane?.club?.name?.slice(0, 3).toUpperCase() || "-";
+    const hasCrewNumber =
+      lane?.crewNumber !== undefined &&
+      lane?.crewNumber !== null &&
+      String(lane.crewNumber).trim() !== "";
+    const isCrewLane = Array.isArray(lane?.crew) && lane.crew.length > 1;
+    const clubLabel =
+      isCrewLane && hasCrewNumber
+        ? `${clubCode} ${String(lane.crewNumber).trim()}`
+        : clubCode;
 
     let athleteName = "Unassigned";
     let license = "";
@@ -183,7 +192,7 @@ export const buildStartListTableBody = ({
       lCat,
     );
 
-    return [rowIdx + 1, clubCode, athleteName, license, dob, lEvent];
+    return [rowIdx + 1, clubLabel, athleteName, license, dob, lEvent];
   });
 
   return { tableBody, lanes: visibleLanes };
