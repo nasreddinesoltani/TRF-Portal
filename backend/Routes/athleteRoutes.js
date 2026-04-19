@@ -25,6 +25,8 @@ import {
   removeSecondaryMembership,
   getCentreAthletes,
   triggerPhotoImport,
+  exportEligibleAthletesExcel,
+  exportAthletePhotosZip,
 } from "../Controllers/athleteController.js";
 import { allowRoles, protect } from "../Middleware/authMiddleware.js";
 import { documentUpload } from "../config/upload.js";
@@ -68,6 +70,18 @@ router.get(
   protect,
   allowRoles("admin", "club_manager", "jury_president", "umpire"),
   getAthleteStatistics,
+);
+router.get(
+  "/export/eligible-excel",
+  protect,
+  allowRoles("admin"),
+  exportEligibleAthletesExcel,
+);
+router.get(
+  "/export/photos-zip",
+  protect,
+  allowRoles("admin"),
+  exportAthletePhotosZip,
 );
 router.get(
   "/:id/history",

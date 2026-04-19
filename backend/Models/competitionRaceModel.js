@@ -13,7 +13,14 @@ export const RACE_STATUSES = [
 // dnf - Did Not Finish (started but didn't complete)
 // dsq - Disqualified
 // abs - Absent (did not show up at all)
-export const LANE_RESULT_STATUSES = ["ok", "dns", "dnf", "dsq", "abs"];
+export const LANE_RESULT_STATUSES = [
+  "ok",
+  "dns",
+  "dnf",
+  "dsq",
+  "abs",
+  "withdrawn",
+];
 
 const laneResultSchema = new mongoose.Schema(
   {
@@ -82,6 +89,11 @@ const laneAssignmentSchema = new mongoose.Schema(
     result: {
       type: laneResultSchema,
       default: undefined,
+    },
+    registrationStatus: {
+      type: String,
+      enum: ["active", "withdrawn"],
+      default: "active",
     },
   },
   { _id: false },

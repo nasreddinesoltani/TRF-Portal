@@ -59,6 +59,9 @@ const loadImage = (url) => {
   });
 };
 
+const getImageFormat = (dataUrl) =>
+  String(dataUrl || "").startsWith("data:image/png") ? "PNG" : "JPEG";
+
 const loadFont = async (url) => {
   try {
     const response = await fetch(url);
@@ -130,6 +133,176 @@ const formatRaceCodeForHeader = (raceCode, category) => {
     /([A-Z0-9-]+)(\d(?:[xX]|[+-])(?:[+-])?)(?=$|\s*\/)/g,
     "$1 $2",
   );
+};
+
+const formatEventTitleWithBoatClass = (
+  category,
+  boatClass,
+  language = "en",
+) => {
+  const categoryTitle =
+    category?.titles?.[language] ||
+    category?.titles?.en ||
+    category?.abbreviation ||
+    "";
+  const boatClassTitle =
+    (language === "ar"
+      ? boatClass?.names?.ar || boatClass?.code
+      : boatClass?.names?.en || boatClass?.code) || "";
+  return [categoryTitle, boatClassTitle].filter(Boolean).join(" ").trim();
+};
+
+const formatAsOfLabel = (value = new Date()) =>
+  `As of: ${value.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+
+const shouldShowJourney = (competition, races = []) => {
+  const textHaystack = [
+    competition?.code,
+    competition?.name,
+    competition?.names?.en,
+    competition?.names?.fr,
+    competition?.names?.ar,
+    competition?.type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const isChampionship =
+    /championship|championnat|championnats|champion|بطولة/.test(textHaystack);
+
+  const journeyValues = Array.from(
+    new Set(
+      (races || [])
+        .map((currentRace) => Number(currentRace?.journeyIndex))
+        .filter((value) => Number.isFinite(value) && value > 0),
+    ),
+  );
+  const hasMultipleJourneyValues = journeyValues.length > 1;
+
+  const competitionStart = competition?.startDate
+    ? new Date(competition.startDate)
+    : null;
+  const competitionEnd = competition?.endDate
+    ? new Date(competition.endDate)
+    : null;
+  const hasCompetitionMultiDay =
+    competitionStart instanceof Date &&
+    !Number.isNaN(competitionStart.getTime()) &&
+    competitionEnd instanceof Date &&
+    !Number.isNaN(competitionEnd.getTime()) &&
+    competitionEnd.toDateString() !== competitionStart.toDateString();
+
+  const raceDays = Array.from(
+    new Set(
+      (races || [])
+        .map((currentRace) => {
+          if (!currentRace?.startTime) return null;
+          const d = new Date(currentRace.startTime);
+          return Number.isNaN(d.getTime()) ? null : d.toDateString();
+        })
+        .filter(Boolean),
+    ),
+  );
+  const hasRaceMultiDay = raceDays.length > 1;
+
+  return (
+    isChampionship ||
+    hasMultipleJourneyValues ||
+    hasCompetitionMultiDay ||
+    hasRaceMultiDay
+  );
+};
+
+const isJourneyPhaseLabel = (phaseLabel) => {
+  const normalized = String(phaseLabel || "")
+    .trim()
+    .toLowerCase();
+  return /journey|جولة|رحلة/.test(normalized);
+};
+
+const fitSingleLineFontSize = ({
+  doc,
+  text,
+  maxWidth,
+  initialSize,
+  minSize,
+  font,
+  style,
+}) => {
+  let size = initialSize;
+  doc.setFont(font, style);
+  while (size > minSize) {
+    doc.setFontSize(size);
+    if (doc.getTextWidth(text) <= maxWidth) {
+      break;
+    }
+    size -= 0.5;
+  }
+  return Math.max(size, minSize);
+};
+
+const drawAdaptiveCenteredTitle = ({
+  doc,
+  text,
+  center,
+  y,
+  maxWidth,
+  font,
+  style = "bold",
+  initialSize = 11,
+  minSize = 8,
+  maxLines = 2,
+  lineGap = 4,
+}) => {
+  const safeText = String(text || "").trim();
+  if (!safeText) {
+    return { lineCount: 0, yEnd: y };
+  }
+
+  let size = initialSize;
+  let lines = [safeText];
+
+  while (size >= minSize) {
+    doc.setFont(font, style);
+    doc.setFontSize(size);
+    lines = doc.splitTextToSize(safeText, maxWidth);
+    if (lines.length <= maxLines) {
+      break;
+    }
+    size -= 0.5;
+  }
+
+  if (lines.length > maxLines) {
+    lines = lines.slice(0, maxLines);
+    doc.setFont(font, style);
+    doc.setFontSize(Math.max(size, minSize));
+    let lastLine = String(lines[maxLines - 1] || "").trim();
+    while (
+      lastLine.length > 0 &&
+      doc.getTextWidth(`${lastLine}...`) > maxWidth
+    ) {
+      lastLine = lastLine.slice(0, -1).trimEnd();
+    }
+    lines[maxLines - 1] = `${lastLine}...`;
+  }
+
+  doc.setFont(font, style);
+  doc.setFontSize(Math.max(size, minSize));
+  lines.forEach((line, index) => {
+    doc.text(line, center, y + index * lineGap, { align: "center" });
+  });
+
+  return {
+    lineCount: lines.length,
+    yEnd: y + (lines.length - 1) * lineGap,
+  };
 };
 
 const formatAthleteName = (athlete) => {
@@ -273,11 +446,44 @@ const calculatePoints = (position, rankingSystem = null) => {
 
 const LANE_RESULT_STATUS_OPTIONS = [
   { value: "ok", label: "OK" },
+  { value: "withdrawn", label: "WD" },
   { value: "dns", label: "DNS" },
   { value: "dnf", label: "DNF" },
   { value: "dsq", label: "DSQ" },
   { value: "abs", label: "ABS" },
 ];
+
+const toSortedUniqueIds = (values) =>
+  Array.from(new Set((values || []).filter(Boolean))).sort();
+
+const buildAssignmentKey = ({
+  categoryId,
+  boatClassId,
+  clubId,
+  athleteId,
+  crewIds,
+}) => {
+  const normalizedCrewIds = toSortedUniqueIds(crewIds);
+  const participantKey = normalizedCrewIds.length
+    ? `crew:${normalizedCrewIds.join("|")}`
+    : athleteId
+      ? `athlete:${athleteId}`
+      : "";
+
+  if (!participantKey) {
+    return null;
+  }
+
+  return [
+    categoryId || "-",
+    boatClassId || "-",
+    clubId || "-",
+    participantKey,
+  ].join("::");
+};
+
+const buildEventAssignmentKey = ({ categoryId, boatClassId }) =>
+  [categoryId || "-", boatClassId || "-"].join("::");
 
 // --- Main Component ---
 
@@ -297,6 +503,7 @@ const RaceDetail = () => {
   const [showResultsEntry, setShowResultsEntry] = useState(false);
   const [resultsForm, setResultsForm] = useState({});
   const [timeErrors, setTimeErrors] = useState({});
+  const [registrationEntries, setRegistrationEntries] = useState([]);
 
   const fetchData = useCallback(async () => {
     if (!token || !competitionId || !raceId) return;
@@ -364,6 +571,27 @@ const RaceDetail = () => {
         setActiveRankingSystem(rankData.availableSystems[0]);
       }
 
+      // Optional source for withdrawn state; do not fail the page if unavailable.
+      try {
+        const regResponse = await fetch(
+          `${API_BASE_URL}/api/competitions/${competitionId}/registration`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+
+        if (regResponse.ok) {
+          const regPayload = await regResponse.json().catch(() => ({}));
+          setRegistrationEntries(
+            Array.isArray(regPayload?.entries) ? regPayload.entries : [],
+          );
+        } else {
+          setRegistrationEntries([]);
+        }
+      } catch {
+        setRegistrationEntries([]);
+      }
+
       // Initialize results form
       if (raceData.lanes) {
         const initial = {};
@@ -424,6 +652,140 @@ const RaceDetail = () => {
 
     return positions;
   }, [resultsForm]);
+
+  const withdrawnAssignmentKeys = useMemo(() => {
+    const keys = new Set();
+
+    registrationEntries.forEach((entry) => {
+      if ((entry?.status || "").toLowerCase() !== "withdrawn") {
+        return;
+      }
+
+      const categoryId = toDocumentId(entry?.category);
+      const boatClassId = toDocumentId(entry?.boatClass);
+      const clubId = toDocumentId(entry?.club);
+      const crewIds = toSortedUniqueIds(
+        (entry?.crew || []).map((member) => toDocumentId(member)),
+      );
+      const athleteId = crewIds.length ? null : toDocumentId(entry?.athlete);
+
+      const key = buildAssignmentKey({
+        categoryId,
+        boatClassId,
+        clubId,
+        athleteId,
+        crewIds,
+      });
+
+      if (key) {
+        keys.add(key);
+      }
+    });
+
+    return keys;
+  }, [registrationEntries]);
+
+  const activeAssignmentKeys = useMemo(() => {
+    const keys = new Set();
+
+    registrationEntries.forEach((entry) => {
+      if ((entry?.status || "").toLowerCase() === "withdrawn") {
+        return;
+      }
+
+      const categoryId = toDocumentId(entry?.category);
+      const boatClassId = toDocumentId(entry?.boatClass);
+      const clubId = toDocumentId(entry?.club);
+      const crewIds = toSortedUniqueIds(
+        (entry?.crew || []).map((member) => toDocumentId(member)),
+      );
+      const athleteId = crewIds.length ? null : toDocumentId(entry?.athlete);
+
+      const key = buildAssignmentKey({
+        categoryId,
+        boatClassId,
+        clubId,
+        athleteId,
+        crewIds,
+      });
+
+      if (key) {
+        keys.add(key);
+      }
+    });
+
+    return keys;
+  }, [registrationEntries]);
+
+  const registrationEventKeys = useMemo(() => {
+    const keys = new Set();
+
+    registrationEntries.forEach((entry) => {
+      const eventKey = buildEventAssignmentKey({
+        categoryId: toDocumentId(entry?.category),
+        boatClassId: toDocumentId(entry?.boatClass),
+      });
+      keys.add(eventKey);
+    });
+
+    return keys;
+  }, [registrationEntries]);
+
+  const isLaneWithdrawn = useCallback(
+    (lane) => {
+      if (!lane) {
+        return false;
+      }
+
+      const laneResultStatus = String(lane?.result?.status || "").toLowerCase();
+      if (
+        String(lane?.registrationStatus || "").toLowerCase() === "withdrawn" ||
+        laneResultStatus === "withdrawn"
+      ) {
+        return true;
+      }
+
+      const categoryId =
+        toDocumentId(lane?.category) || toDocumentId(race?.category);
+      const boatClassId =
+        toDocumentId(lane?.boatClass) || toDocumentId(race?.boatClass);
+      const clubId = toDocumentId(lane?.club);
+      const crewIds = toSortedUniqueIds(
+        (lane?.crew || []).map((member) => toDocumentId(member)),
+      );
+      const athleteId = crewIds.length ? null : toDocumentId(lane?.athlete);
+
+      const key = buildAssignmentKey({
+        categoryId,
+        boatClassId,
+        clubId,
+        athleteId,
+        crewIds,
+      });
+
+      if (!key) {
+        return false;
+      }
+
+      if (withdrawnAssignmentKeys.has(key)) {
+        return true;
+      }
+
+      const eventKey = buildEventAssignmentKey({ categoryId, boatClassId });
+      if (!registrationEventKeys.has(eventKey)) {
+        return false;
+      }
+
+      return !activeAssignmentKeys.has(key);
+    },
+    [
+      withdrawnAssignmentKeys,
+      activeAssignmentKeys,
+      registrationEventKeys,
+      race?.category,
+      race?.boatClass,
+    ],
+  );
 
   const handleResultChange = (laneNum, field, value) => {
     setResultsForm((prev) => ({
@@ -518,7 +880,7 @@ const RaceDetail = () => {
     if (!fullEventName) {
       fullEventName = Array.from(distinctEnTitles).join(" / ");
     }
-    const fullEventNameAr =
+    let fullEventNameAr =
       `${category?.titles?.ar || ""} ${boatClass?.names?.ar || ""}`.trim() ||
       Array.from(distinctArTitles).join(" / ");
     const rightHeaderCode = Array.from(distinctCodes).join(" / ");
@@ -527,11 +889,13 @@ const RaceDetail = () => {
       rightHeaderCode ||
       formatRaceCodeForHeader(generateRaceCode(category, boatClass), category);
 
+    const showJourney = shouldShowJourney(competition, allOrigRaces);
     const explicitNonFinalPhases = Array.from(
       new Set(
         allOrigRaces
           .map((r) => String(r?.phase || "").trim())
-          .filter((p) => p && !/^final$/i.test(p)),
+          .filter((p) => p && !/^final$/i.test(p))
+          .filter((p) => showJourney || !isJourneyPhaseLabel(p)),
       ),
     );
     const journeyValues = Array.from(
@@ -551,7 +915,7 @@ const RaceDetail = () => {
     let phaseStr = "Final";
     if (explicitNonFinalPhases.length > 0) {
       phaseStr = explicitNonFinalPhases.join(" / ");
-    } else if (journeyValues.length > 0) {
+    } else if (showJourney && journeyValues.length > 0) {
       const reachedConfiguredFinal =
         configuredMaxJourney != null &&
         journeyValues.every((j) => j >= configuredMaxJourney);
@@ -566,6 +930,7 @@ const RaceDetail = () => {
       month: "short",
       year: "numeric",
     });
+    const asOfLabel = formatAsOfLabel();
 
     // Load assets
     const [headerData, footerData, logoData, sponsorData, arabicFontBase64] =
@@ -645,9 +1010,9 @@ const RaceDetail = () => {
     doc.line(leftMargin, yPos, rightMargin, yPos);
     yPos += 5;
 
-    // --- Event Details (original layout) ---
+    // --- Event Details (aligned with race management full results PDF) ---
     // Line 1: Race order | Results/Start List | Race code
-    doc.setFontSize(14);
+    doc.setFontSize(12);
     doc.setFont(fontName, "bold");
     doc.text(
       String(sequenceOrderStr || pseudoRace.order || "1"),
@@ -659,27 +1024,57 @@ const RaceDetail = () => {
     });
     doc.text(formattedHeaderCode, rightMargin, yPos, { align: "right" });
 
-    // Line 2: (Event) | Category + Boat Class | Phase
+    // Line 2: (Event) | Category + Boat Class
     yPos += 5;
-    doc.setFontSize(9);
+    const eventLabel = "(Event)";
+    doc.setFontSize(8);
     doc.setFont(fontName, "normal");
-    doc.text("(Event)", leftMargin, yPos);
-    doc.setFontSize(10);
-    doc.setFont(fontName, "bold");
-    fullEventName = fullEventName || `${category?.titles?.en || ""}`.trim();
-    doc.text(fullEventName, center, yPos, { align: "center" });
-    doc.setFontSize(9);
-    doc.setFont(fontName, "normal");
-    doc.text(phaseStr, rightMargin, yPos, { align: "right" });
+    doc.text(eventLabel, leftMargin, yPos);
+    const eventLabelWidth = doc.getTextWidth(eventLabel);
+    const eventStartX = leftMargin + eventLabelWidth + 3;
+    const eventLineMaxWidth = rightMargin - eventStartX;
+    const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
+    fullEventName =
+      fullEventName || formatEventTitleWithBoatClass(category, boatClass, "en");
+    const eventTitleLayout = drawAdaptiveCenteredTitle({
+      doc,
+      text: fullEventName,
+      center: eventLineCenter,
+      y: yPos,
+      maxWidth: eventLineMaxWidth,
+      font: fontName,
+      style: "bold",
+      initialSize: 10.5,
+      minSize: 8,
+      maxLines: 1,
+      lineGap: 4,
+    });
 
     // Line 3: Arabic text (center) | Distance (right)
     const raceDistance =
-      pseudoRace.distanceOverride ||
-      competition?.defaultDistance ||
-      competition?.distance;
+      pseudoRace.distanceOverride ??
+      pseudoRace.distance ??
+      allOrigRaces.find((r) => r?.distanceOverride != null)?.distanceOverride ??
+      competition?.defaultDistance ??
+      competition?.distance ??
+      null;
+    fullEventNameAr =
+      fullEventNameAr ||
+      formatEventTitleWithBoatClass(category, boatClass, "ar");
+    yPos = eventTitleLayout.yEnd;
+
     if (arabicFontName && fullEventNameAr) {
-      yPos += 6;
-      doc.setFontSize(14);
+      yPos += 5;
+      const arabicSize = fitSingleLineFontSize({
+        doc,
+        text: fullEventNameAr,
+        maxWidth: 110,
+        initialSize: 12,
+        minSize: 8.5,
+        font: arabicFontName,
+        style: "normal",
+      });
+      doc.setFontSize(arabicSize);
       doc.setFont(arabicFontName, "normal");
       doc.text(fullEventNameAr, center, yPos, { align: "center" });
       doc.setFont(fontName, "normal");
@@ -695,9 +1090,10 @@ const RaceDetail = () => {
       doc.text(`Distance: ${raceDistance}m`, center, yPos, { align: "center" });
     }
 
-    // Line 4: Start Time | Race #
-    yPos += 4;
+    // Line 4: Start Time | Journey/Phase | Race #
+    yPos += 6;
     doc.setFontSize(9);
+    doc.setFont(fontName, "normal");
     const startTime = pseudoRace.startTime
       ? new Date(pseudoRace.startTime).toLocaleTimeString([], {
           hour: "2-digit",
@@ -705,9 +1101,14 @@ const RaceDetail = () => {
         })
       : "00:00";
     doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
+    doc.setFontSize(10);
     doc.setFont(fontName, "bold");
-    doc.text("Race 1", rightMargin, yPos, { align: "right" });
-    yPos += 4;
+    doc.text(phaseStr, center, yPos, { align: "center" });
+    doc.setFontSize(9);
+    doc.text(`Race ${pseudoRace.order || "1"}`, rightMargin, yPos, {
+      align: "right",
+    });
+    yPos += 2;
 
     // --- Calculate legend height for bottom margin ---
     const uniqueClubs = Array.from(
@@ -901,8 +1302,6 @@ const RaceDetail = () => {
               fontSize: 8,
               cellPadding: 0.8,
               minCellHeight: 6.5,
-              overflow: "linebreak",
-              valign: "middle",
             }
           : {
               fontSize: 9,
@@ -915,7 +1314,7 @@ const RaceDetail = () => {
             0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
             1: { cellWidth: 12 },
             2: { cellWidth: 25, fontStyle: "bold" },
-            3: { fontStyle: "bold" },
+            3: { cellWidth: 88, fontStyle: "bold" },
             4: {
               cellWidth: 22,
               halign: "right",
@@ -975,8 +1374,8 @@ const RaceDetail = () => {
     const progressionBoxEnd = yPos + 7;
     const legendTop =
       uniqueClubs.length > 0
-        ? pageHeight - 30 - (uniqueClubs.length * legendLineHeight + 7)
-        : pageHeight - 30;
+        ? pageHeight - 35 - (uniqueClubs.length * legendLineHeight + 7)
+        : pageHeight - 35;
     if (progressionBoxEnd < legendTop) {
       doc.setDrawColor(0);
       doc.setLineWidth(0.3);
@@ -998,7 +1397,14 @@ const RaceDetail = () => {
       if (headerData) {
         const imgProps = doc.getImageProperties(headerData);
         const h = pageWidth / (imgProps.width / imgProps.height);
-        doc.addImage(headerData, "PNG", 0, 3, pageWidth, h);
+        doc.addImage(
+          headerData,
+          getImageFormat(headerData),
+          0,
+          3,
+          pageWidth,
+          h,
+        );
         doc.setDrawColor(128, 0, 0);
         doc.setLineWidth(0.8);
         doc.line(leftMargin, h + 5, rightMargin, h + 5);
@@ -1065,7 +1471,14 @@ const RaceDetail = () => {
       if (footerData) {
         const imgProps = doc.getImageProperties(footerData);
         const h = pageWidth / (imgProps.width / imgProps.height);
-        doc.addImage(footerData, "PNG", 0, pageHeight - h - 3, pageWidth, h);
+        doc.addImage(
+          footerData,
+          getImageFormat(footerData),
+          0,
+          pageHeight - h - 3,
+          pageWidth,
+          h,
+        );
         doc.setDrawColor(128, 0, 0);
         doc.setLineWidth(0.8);
         doc.line(
@@ -1075,7 +1488,9 @@ const RaceDetail = () => {
           pageHeight - h - 5,
         );
         doc.setFontSize(8);
+        doc.setFont(fontName, "normal");
         doc.setTextColor(100);
+        doc.text(asOfLabel, leftMargin, pageHeight - h - 8);
         doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - h - 8, {
           align: "right",
         });
@@ -1110,6 +1525,13 @@ const RaceDetail = () => {
   });
 
   const sortedLanes = [...assignedLanes].sort((a, b) => {
+    const withdrawnA = isLaneWithdrawn(a);
+    const withdrawnB = isLaneWithdrawn(b);
+
+    if (withdrawnA !== withdrawnB) {
+      return withdrawnA ? 1 : -1;
+    }
+
     if (race?.status === "completed") {
       const statusA = a.result?.status || "ok";
       const statusB = b.result?.status || "ok";
@@ -1128,20 +1550,28 @@ const RaceDetail = () => {
   });
 
   const winningTime = sortedLanes.find(
-    (l) => (l.result?.status || "ok") === "ok" && l.result?.elapsedMs,
+    (l) =>
+      !isLaneWithdrawn(l) &&
+      (l.result?.status || "ok") === "ok" &&
+      l.result?.elapsedMs,
   )?.result?.elapsedMs;
 
   const explicitFinisherPositions = sortedLanes
-    .filter((l) => (l.result?.status || "ok") === "ok")
+    .filter((l) => !isLaneWithdrawn(l) && (l.result?.status || "ok") === "ok")
     .map((l) => l.result?.finishPosition)
     .filter((p) => Number.isInteger(p) && p > 0);
   const lastFinisherPosition = explicitFinisherPositions.length
     ? Math.max(...explicitFinisherPositions)
     : sortedLanes.filter(
         (l) =>
+          !isLaneWithdrawn(l) &&
           (l.result?.status || "ok") === "ok" &&
           Number.isFinite(l.result?.elapsedMs),
       ).length;
+
+  const withdrawnLaneCount = sortedLanes.filter((lane) =>
+    isLaneWithdrawn(lane),
+  ).length;
 
   return (
     <div className="min-h-screen bg-slate-50/50 pb-20">
@@ -1341,86 +1771,111 @@ const RaceDetail = () => {
                   </Button>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {race?.lanes?.map((lane) => (
-                      <div
-                        key={lane.lane}
-                        className="grid grid-cols-1 gap-4 rounded-xl border p-4 sm:grid-cols-4 sm:items-center"
-                      >
-                        <div className="flex items-center gap-3 sm:col-span-2">
-                          <div className="flex flex-col items-center">
-                            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">
-                              {lane.lane}
-                            </span>
-                            {calculatedPositions[lane.lane] && (
-                              <span className="mt-1 text-xs font-bold text-indigo-600">
-                                #{calculatedPositions[lane.lane]}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-slate-900 truncate max-w-[200px]">
-                              {lane.crew?.length > 0
-                                ? formatCrewName(lane.crew)
-                                : formatAthleteName(lane.athlete)}
-                            </span>
-                            <span className="text-xs text-slate-500 uppercase">
-                              {lane.club?.code}
-                            </span>
-                          </div>
-                        </div>
+                  {withdrawnLaneCount > 0 && (
+                    <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                      {withdrawnLaneCount} withdrawn entr
+                      {withdrawnLaneCount === 1 ? "y" : "ies"} detected for this
+                      race. These lanes are marked and locked for result entry.
+                    </div>
+                  )}
 
-                        <div className="space-y-1">
-                          <Label className="text-[10px] uppercase text-slate-400">
-                            Time
-                          </Label>
-                          <Input
-                            placeholder="MM:SS.cc"
-                            value={resultsForm[lane.lane]?.elapsedTime}
-                            onChange={(e) =>
-                              handleResultChange(
-                                lane.lane,
-                                "elapsedTime",
-                                e.target.value,
-                              )
-                            }
-                            onBlur={(e) => {
-                              const formatted = autoFormatTime(e.target.value);
-                              if (formatted !== e.target.value) {
+                  <div className="space-y-4">
+                    {race?.lanes?.map((lane) => {
+                      const laneWithdrawn = isLaneWithdrawn(lane);
+
+                      return (
+                        <div
+                          key={lane.lane}
+                          className={`grid grid-cols-1 gap-4 rounded-xl border p-4 sm:grid-cols-4 sm:items-center ${laneWithdrawn ? "border-rose-200 bg-rose-50/40" : ""}`}
+                        >
+                          <div className="flex items-center gap-3 sm:col-span-2">
+                            <div className="flex flex-col items-center">
+                              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">
+                                {lane.lane}
+                              </span>
+                              {calculatedPositions[lane.lane] && (
+                                <span className="mt-1 text-xs font-bold text-indigo-600">
+                                  #{calculatedPositions[lane.lane]}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-col">
+                              <span
+                                className={`font-semibold truncate max-w-[200px] ${laneWithdrawn ? "text-rose-700 line-through" : "text-slate-900"}`}
+                              >
+                                {lane.crew?.length > 0
+                                  ? formatCrewName(lane.crew)
+                                  : formatAthleteName(lane.athlete)}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 uppercase">
+                                  {lane.club?.code}
+                                </span>
+                                {laneWithdrawn && (
+                                  <Badge className="h-5 border-rose-200 bg-rose-100 px-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100">
+                                    Withdrawn
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-[10px] uppercase text-slate-400">
+                              Time
+                            </Label>
+                            <Input
+                              placeholder="MM:SS.cc"
+                              value={resultsForm[lane.lane]?.elapsedTime}
+                              onChange={(e) =>
                                 handleResultChange(
                                   lane.lane,
                                   "elapsedTime",
-                                  formatted,
-                                );
+                                  e.target.value,
+                                )
                               }
-                            }}
-                            className="font-mono"
-                          />
-                        </div>
+                              onBlur={(e) => {
+                                const formatted = autoFormatTime(
+                                  e.target.value,
+                                );
+                                if (formatted !== e.target.value) {
+                                  handleResultChange(
+                                    lane.lane,
+                                    "elapsedTime",
+                                    formatted,
+                                  );
+                                }
+                              }}
+                              className="font-mono"
+                              disabled={laneWithdrawn}
+                            />
+                          </div>
 
-                        <div className="space-y-1">
-                          <Label className="text-[10px] uppercase text-slate-400">
-                            Status
-                          </Label>
-                          <Select
-                            value={resultsForm[lane.lane]?.status}
-                            onChange={(e) =>
-                              handleResultChange(
-                                lane.lane,
-                                "status",
-                                e.target.value,
-                              )
-                            }
-                          >
-                            {LANE_RESULT_STATUS_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </Select>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] uppercase text-slate-400">
+                              Status
+                            </Label>
+                            <Select
+                              value={resultsForm[lane.lane]?.status}
+                              onChange={(e) =>
+                                handleResultChange(
+                                  lane.lane,
+                                  "status",
+                                  e.target.value,
+                                )
+                              }
+                              disabled={laneWithdrawn}
+                            >
+                              {LANE_RESULT_STATUS_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </Select>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
@@ -1461,18 +1916,30 @@ const RaceDetail = () => {
                       <User className="h-3 w-3" /> {sortedLanes.length || 0}{" "}
                       Boats
                     </div>
+                    {withdrawnLaneCount > 0 && (
+                      <Badge className="border-rose-200 bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100">
+                        {withdrawnLaneCount} Withdrawn
+                      </Badge>
+                    )}
                   </div>
                 </div>
 
+                {withdrawnLaneCount > 0 && (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                    Withdrawn athletes are highlighted and labeled as WD.
+                  </div>
+                )}
+
                 <div className="space-y-3">
                   {sortedLanes.map((lane, index) => {
+                    const laneWithdrawn = isLaneWithdrawn(lane);
                     const status = lane.result?.status || "ok";
                     const effectivePos =
                       status === "dnf"
                         ? lane.result?.finishPosition ||
                           lastFinisherPosition + 1
                         : lane.result?.finishPosition;
-                    const isWinner = effectivePos === 1;
+                    const isWinner = !laneWithdrawn && effectivePos === 1;
 
                     // Fallback position for DNF if not explicitly stored
                     const points = calculatePoints(
@@ -1483,7 +1950,7 @@ const RaceDetail = () => {
                     return (
                       <div
                         key={lane.lane}
-                        className={`group relative flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition-all hover:shadow-md ${isWinner ? "ring-2 ring-indigo-500" : ""}`}
+                        className={`group relative flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition-all hover:shadow-md ${isWinner ? "ring-2 ring-indigo-500" : ""} ${laneWithdrawn ? "border border-rose-200 bg-rose-50/40" : ""}`}
                       >
                         {/* Rank / Lane Indicator */}
                         <div className="flex flex-col items-center justify-center">
@@ -1491,7 +1958,9 @@ const RaceDetail = () => {
                             className={`flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black ${isWinner ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : "bg-slate-100 text-slate-400"}`}
                           >
                             {race?.status === "completed"
-                              ? effectivePos || "-"
+                              ? laneWithdrawn
+                                ? "WD"
+                                : effectivePos || "-"
                               : lane.lane}
                           </span>
                           <span className="mt-1 text-[10px] font-bold uppercase text-slate-400">
@@ -1501,7 +1970,9 @@ const RaceDetail = () => {
 
                         {/* Athlete / Crew Detail */}
                         <div className="flex flex-1 flex-col min-w-0">
-                          <h4 className="text-base font-bold text-slate-900 truncate">
+                          <h4
+                            className={`text-base font-bold truncate ${laneWithdrawn ? "text-rose-700 line-through" : "text-slate-900"}`}
+                          >
                             {lane.crew?.length > 0
                               ? formatCrewName(lane.crew)
                               : formatAthleteName(lane.athlete)}
@@ -1516,6 +1987,11 @@ const RaceDetail = () => {
                             <span className="text-xs text-slate-500 truncate">
                               {lane.club?.name}
                             </span>
+                            {laneWithdrawn && (
+                              <Badge className="h-5 border-rose-200 bg-rose-100 px-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100">
+                                Withdrawn
+                              </Badge>
+                            )}
                           </div>
                         </div>
 
@@ -1523,16 +1999,19 @@ const RaceDetail = () => {
                         <div className="flex flex-col items-end gap-1">
                           <div className="flex items-baseline gap-1 text-right">
                             <p
-                              className={`text-lg font-black tracking-tight ${isWinner ? "text-indigo-600" : "text-slate-900"}`}
+                              className={`text-lg font-black tracking-tight ${laneWithdrawn ? "text-rose-700" : isWinner ? "text-indigo-600" : "text-slate-900"}`}
                             >
-                              {status !== "ok"
-                                ? status.toUpperCase()
-                                : lane.result?.elapsedMs
-                                  ? formatElapsedTime(lane.result.elapsedMs)
-                                  : "-"}
+                              {laneWithdrawn
+                                ? "WD"
+                                : status !== "ok"
+                                  ? status.toUpperCase()
+                                  : lane.result?.elapsedMs
+                                    ? formatElapsedTime(lane.result.elapsedMs)
+                                    : "-"}
                             </p>
                           </div>
                           {race.status === "completed" &&
+                            !laneWithdrawn &&
                             (status === "ok" || status === "dnf") && (
                               <div className="flex items-center gap-2">
                                 {status === "ok" &&

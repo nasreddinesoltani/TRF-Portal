@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import archiver from "archiver";
+import ExcelJS from "exceljs";
 import { parse } from "csv-parse/sync";
 import Athlete from "../Models/athleteModel.js";
 import CompetitionRace from "../Models/competitionRaceModel.js";
@@ -91,9 +93,13 @@ const resolveStoragePath = (storagePath) => {
     return null;
   }
 
+  const normalizedStoragePath = storagePath
+    .toString()
+    .replace(/^[\\/]*uploads[\\/]+/i, "");
+
   const absolute = path.isAbsolute(storagePath)
     ? storagePath
-    : path.join(UPLOADS_ROOT, storagePath);
+    : path.join(UPLOADS_ROOT, normalizedStoragePath);
   const normalised = path.normalize(absolute);
   const relative = path.relative(UPLOADS_ROOT, normalised);
 
@@ -333,6 +339,260 @@ export const searchAthletes = asyncHandler(async (req, res) => {
   });
 
   res.json(athletes);
+});
+
+// @desc    Export eligible athletes across all clubs to a single Excel file
+// @route   GET /api/athletes/export/eligible-excel
+// @access  Admin
+export const exportEligibleAthletesExcel = asyncHandler(async (req, res) => {
+  const seasonYear = getSeasonYear();
+
+  const eligibleAthletes = await Athlete.find({
+    status: "active",
+    licenseNumber: { $nin: [null, ""] },
+    memberships: {
+      $elemMatch: {
+        season: seasonYear,
+        status: "active",
+      },
+    },
+  })
+    .select(
+      "firstNameAr lastNameAr licenseNumber birthDate memberships categoryAssignments",
+    )
+    .populate("memberships.club", "name nameAr")
+    .lean();
+
+  const resolveClubForSeason = (athlete) => {
+    const memberships = Array.isArray(athlete?.memberships)
+      ? athlete.memberships
+      : [];
+
+    const currentSeasonMembership = memberships.find(
+      (membership) =>
+        Number(membership?.season) === Number(seasonYear) &&
+        (membership?.status || "").toLowerCase() === "active" &&
+        (membership?.membershipType || "").toLowerCase() === "primary",
+    );
+
+    if (currentSeasonMembership?.club) {
+      return currentSeasonMembership.club;
+    }
+
+    const fallbackCurrentSeasonMembership = memberships.find(
+      (membership) =>
+        Number(membership?.season) === Number(seasonYear) &&
+        (membership?.status || "").toLowerCase() === "active",
+    );
+
+    if (fallbackCurrentSeasonMembership?.club) {
+      return fallbackCurrentSeasonMembership.club;
+    }
+
+    return null;
+  };
+
+  const resolveArabicCategory = (athlete) => {
+    const assignments = Array.isArray(athlete?.categoryAssignments)
+      ? athlete.categoryAssignments
+      : [];
+
+    const currentSeasonAssignment = assignments.find(
+      (assignment) =>
+        assignment?.type === "national" &&
+        Number(assignment?.season) === Number(seasonYear),
+    );
+
+    if (!currentSeasonAssignment) {
+      return "";
+    }
+
+    return (
+      currentSeasonAssignment?.titles?.ar ||
+      currentSeasonAssignment?.abbreviation ||
+      ""
+    );
+  };
+
+  const rows = eligibleAthletes
+    .map((athlete) => {
+      const club = resolveClubForSeason(athlete);
+      const arabicFullName = [athlete?.firstNameAr, athlete?.lastNameAr]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+      return {
+        arabicFullName,
+        licenseNumber: athlete?.licenseNumber || "",
+        birthDate: athlete?.birthDate || null,
+        clubNameAr: club?.nameAr || club?.name || "",
+        categoryAr: resolveArabicCategory(athlete),
+      };
+    })
+    .sort((a, b) => {
+      const clubCompare = (a.clubNameAr || "").localeCompare(
+        b.clubNameAr || "",
+      );
+      if (clubCompare !== 0) {
+        return clubCompare;
+      }
+      return (a.arabicFullName || "").localeCompare(b.arabicFullName || "");
+    });
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "TRF Portal";
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet("Eligible Athletes");
+  worksheet.columns = [
+    { header: "Arabic Full Name", key: "arabicFullName", width: 34 },
+    { header: "License Number", key: "licenseNumber", width: 20 },
+    { header: "Birth Date", key: "birthDate", width: 16 },
+    { header: "Club Name (Arabic)", key: "clubNameAr", width: 34 },
+    { header: "Category (Arabic)", key: "categoryAr", width: 26 },
+  ];
+
+  worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).alignment = { vertical: "middle" };
+
+  rows.forEach((row) => {
+    const excelRow = worksheet.addRow({
+      ...row,
+      birthDate: row.birthDate ? new Date(row.birthDate) : "",
+    });
+    excelRow.getCell("birthDate").numFmt = "yyyy-mm-dd";
+  });
+
+  worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  worksheet.autoFilter = {
+    from: "A1",
+    to: "E1",
+  };
+
+  const fileName = `eligible_athletes_all_clubs_${seasonYear}.xlsx`;
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.send(buffer);
+});
+
+// @desc    Download all athlete photos in a single ZIP file
+// @route   GET /api/athletes/export/photos-zip
+// @access  Admin
+export const exportAthletePhotosZip = asyncHandler(async (req, res) => {
+  const athletesWithPhotos = await Athlete.find({
+    "documents.photo.storagePath": { $nin: [null, ""] },
+  })
+    .select(
+      "firstName lastName firstNameAr lastNameAr licenseNumber documents memberships",
+    )
+    .populate("memberships.club", "code name")
+    .lean();
+
+  const sanitizePart = (value, fallback = "unknown") => {
+    const cleaned = (value || "")
+      .toString()
+      .trim()
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "");
+
+    return cleaned || fallback;
+  };
+
+  const resolveClubCode = (athlete) => {
+    const memberships = Array.isArray(athlete?.memberships)
+      ? athlete.memberships
+      : [];
+
+    const primaryMembership = memberships.find(
+      (membership) =>
+        (membership?.status || "").toLowerCase() === "active" &&
+        (membership?.membershipType || "").toLowerCase() === "primary",
+    );
+
+    const fallbackMembership = memberships.find(
+      (membership) => (membership?.status || "").toLowerCase() === "active",
+    );
+
+    const club = primaryMembership?.club || fallbackMembership?.club || null;
+    return (
+      sanitizePart(club?.code, "") || sanitizePart(club?.name, "") || "NO_CLUB"
+    );
+  };
+
+  const files = [];
+  const entryNameCounts = new Map();
+
+  for (const athlete of athletesWithPhotos) {
+    const storagePath = athlete?.documents?.photo?.storagePath;
+    const absolutePath = resolveStoragePath(storagePath);
+
+    if (!absolutePath) {
+      continue;
+    }
+
+    try {
+      await fsPromises.access(absolutePath);
+    } catch {
+      continue;
+    }
+
+    const extension = path.extname(absolutePath) || ".jpg";
+    const clubCode = resolveClubCode(athlete);
+    const license = sanitizePart(athlete?.licenseNumber, "NO_LICENSE");
+    const baseEntryName = `${clubCode}/${license}`;
+    const nextCount = (entryNameCounts.get(baseEntryName) || 0) + 1;
+    entryNameCounts.set(baseEntryName, nextCount);
+
+    const suffix = nextCount > 1 ? `_${nextCount}` : "";
+
+    files.push({
+      absolutePath,
+      entryName: `${baseEntryName}${suffix}${extension}`,
+    });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const fileName = `athlete_photos_all_clubs_${today}.zip`;
+
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+
+  const archive = archiver("zip", { zlib: { level: 9 } });
+
+  archive.on("warning", (error) => {
+    if (error?.code !== "ENOENT") {
+      console.warn("ZIP warning:", error?.message || error);
+    }
+  });
+
+  archive.on("error", (error) => {
+    console.error("ZIP export error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: "Failed to build photos ZIP" });
+      return;
+    }
+    res.end();
+  });
+
+  archive.pipe(res);
+
+  if (!files.length) {
+    archive.append("No athlete photos found.", { name: "README.txt" });
+  } else {
+    files.forEach((file) => {
+      archive.file(file.absolutePath, { name: file.entryName });
+    });
+  }
+
+  await archive.finalize();
 });
 
 // @desc    Retrieve global athlete/license statistics

@@ -299,6 +299,8 @@ const CreateAthlete = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isExportingEligible, setIsExportingEligible] = useState(false);
+  const [isExportingPhotos, setIsExportingPhotos] = useState(false);
 
   const [documentDialog, setDocumentDialog] = useState({
     open: false,
@@ -1221,6 +1223,112 @@ const CreateAthlete = () => {
     }
   };
 
+  const handleExportEligibleAthletes = useCallback(async () => {
+    if (!isAdmin) {
+      return;
+    }
+
+    try {
+      setIsExportingEligible(true);
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/athletes/export/eligible-excel`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        let message = "Failed to export eligible athletes";
+        try {
+          const payload = await response.json();
+          if (payload?.message) {
+            message = payload.message;
+          }
+        } catch {
+          // Ignore JSON parse errors for binary responses.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const fileName = `eligible_athletes_all_clubs_${new Date().getFullYear()}.xlsx`;
+
+      const anchor = document.createElement("a");
+      anchor.href = downloadUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(downloadUrl);
+
+      toast.success("Eligible athletes exported successfully");
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to export eligible athletes");
+    } finally {
+      setIsExportingEligible(false);
+    }
+  }, [isAdmin, token]);
+
+  const handleExportAthletePhotos = useCallback(async () => {
+    if (!isAdmin) {
+      return;
+    }
+
+    try {
+      setIsExportingPhotos(true);
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/athletes/export/photos-zip`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        let message = "Failed to export athlete photos";
+        try {
+          const payload = await response.json();
+          if (payload?.message) {
+            message = payload.message;
+          }
+        } catch {
+          // Ignore JSON parse errors for binary responses.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const disposition = response.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename="?([^\";]+)"?/i);
+      const fileName =
+        match?.[1] ||
+        `athlete_photos_all_clubs_${new Date().toISOString().slice(0, 10)}.zip`;
+
+      const anchor = document.createElement("a");
+      anchor.href = downloadUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(downloadUrl);
+
+      toast.success("Athlete photos downloaded successfully");
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to export athlete photos");
+    } finally {
+      setIsExportingPhotos(false);
+    }
+  }, [isAdmin, token]);
+
   const renderAthleteCell = useCallback((athlete) => {
     if (!athlete) {
       return null;
@@ -1678,6 +1786,30 @@ const CreateAthlete = () => {
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {isAdmin ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleExportAthletePhotos}
+              disabled={isExportingPhotos}
+            >
+              {isExportingPhotos
+                ? "Preparing Photos ZIP..."
+                : "Download Athlete Photos"}
+            </Button>
+          ) : null}
+          {isAdmin ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleExportEligibleAthletes}
+              disabled={isExportingEligible}
+            >
+              {isExportingEligible
+                ? "Exporting Eligible Athletes..."
+                : "Export Eligible Athletes"}
+            </Button>
+          ) : null}
           <Button type="button" onClick={handleOpenCreateDialog}>
             Add athlete
           </Button>

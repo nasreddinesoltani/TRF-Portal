@@ -87,8 +87,8 @@ const buildGroupTitle = (groupKey, groupBy, metadata, language = "en") => {
     return language === "ar"
       ? "الترتيب العام"
       : language === "fr"
-      ? "Classement Global"
-      : "Global Ranking";
+        ? "Classement Global"
+        : "Global Ranking";
   }
 
   // Get full category name from metadata
@@ -131,6 +131,7 @@ const RankingTable = ({
   groupBy,
   language = "en",
   scoringMode = "points",
+  includePenalties = false,
   groupMetadata = {},
   stages = [],
   competition = null,
@@ -141,7 +142,7 @@ const RankingTable = ({
     groupKey,
     groupBy,
     groupMetadata,
-    language
+    language,
   );
 
   // Determine if this is athlete or club ranking
@@ -319,10 +320,13 @@ const RankingTable = ({
         5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
       };
     } else {
-      tableHeaders = ["#", "Club", "Points", "1st", "2nd", "3rd", "Races"];
+      tableHeaders = includePenalties
+        ? ["#", "Club", "Penalties", "Total", "1st", "2nd", "3rd", "Races"]
+        : ["#", "Club", "Points", "1st", "2nd", "3rd", "Races"];
       tableBody = entries.map((entry) => [
         entry.rank,
         getEntityName(entry),
+        ...(includePenalties ? [entry.penaltyPoints || 0] : []),
         entry.totalPoints,
         entry.positionCounts?.[1] || 0,
         entry.positionCounts?.[2] || 0,
@@ -333,11 +337,22 @@ const RankingTable = ({
       columnStyles = {
         0: { cellWidth: 8, halign: "center", fontStyle: "bold" },
         1: { cellWidth: "auto" },
-        2: { cellWidth: 16, halign: "center", fontStyle: "bold" },
-        3: { cellWidth: 12, halign: "center" },
-        4: { cellWidth: 12, halign: "center" },
-        5: { cellWidth: 12, halign: "center" },
-        6: { cellWidth: 14, halign: "center" },
+        ...(includePenalties
+          ? {
+              2: { cellWidth: 16, halign: "center" },
+              3: { cellWidth: 16, halign: "center", fontStyle: "bold" },
+              4: { cellWidth: 12, halign: "center" },
+              5: { cellWidth: 12, halign: "center" },
+              6: { cellWidth: 12, halign: "center" },
+              7: { cellWidth: 14, halign: "center" },
+            }
+          : {
+              2: { cellWidth: 16, halign: "center", fontStyle: "bold" },
+              3: { cellWidth: 12, halign: "center" },
+              4: { cellWidth: 12, halign: "center" },
+              5: { cellWidth: 12, halign: "center" },
+              6: { cellWidth: 14, halign: "center" },
+            }),
       };
     }
 
@@ -345,8 +360,8 @@ const RankingTable = ({
     const headerColor = isMedalMode
       ? [245, 158, 11]
       : isAthleteRanking
-      ? [16, 185, 129]
-      : [59, 130, 246];
+        ? [16, 185, 129]
+        : [59, 130, 246];
 
     autoTable(doc, {
       startY: yPos,
@@ -391,8 +406,8 @@ const RankingTable = ({
           isMedalMode
             ? "bg-gradient-to-r from-amber-500 to-amber-600"
             : isAthleteRanking
-            ? "bg-gradient-to-r from-emerald-600 to-emerald-700"
-            : "bg-gradient-to-r from-blue-600 to-blue-700"
+              ? "bg-gradient-to-r from-emerald-600 to-emerald-700"
+              : "bg-gradient-to-r from-blue-600 to-blue-700"
         }`}
       >
         <div>
@@ -402,15 +417,15 @@ const RankingTable = ({
               isMedalMode
                 ? "text-amber-100"
                 : isAthleteRanking
-                ? "text-emerald-100"
-                : "text-blue-100"
+                  ? "text-emerald-100"
+                  : "text-blue-100"
             }`}
           >
             {isMedalMode
               ? "🏅 Medal Rankings"
               : isAthleteRanking
-              ? "🏃 Athlete Rankings"
-              : "🏢 Club Rankings"}{" "}
+                ? "🏃 Athlete Rankings"
+                : "🏢 Club Rankings"}{" "}
             • {entries?.length || 0} {isAthleteRanking ? "athletes" : "clubs"}
           </p>
         </div>
@@ -420,8 +435,8 @@ const RankingTable = ({
             isMedalMode
               ? "bg-amber-700 hover:bg-amber-800 text-white"
               : isAthleteRanking
-              ? "bg-emerald-800 hover:bg-emerald-900 text-white"
-              : "bg-blue-800 hover:bg-blue-900 text-white"
+                ? "bg-emerald-800 hover:bg-emerald-900 text-white"
+                : "bg-blue-800 hover:bg-blue-900 text-white"
           }`}
           title="Export this table to PDF"
         >
@@ -485,8 +500,13 @@ const RankingTable = ({
               ) : (
                 /* Club ranking */
                 <>
+                  {includePenalties && (
+                    <th className="px-3 py-3 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider w-20">
+                      Penalties
+                    </th>
+                  )}
                   <th className="px-3 py-3 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider w-20">
-                    Points
+                    Total
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider w-14">
                     🥇
@@ -573,6 +593,11 @@ const RankingTable = ({
                 ) : (
                   /* Club ranking */
                   <>
+                    {includePenalties && (
+                      <td className="px-3 py-3 text-center text-slate-600">
+                        {entry.penaltyPoints || 0}
+                      </td>
+                    )}
                     <td className="px-3 py-3 text-center">
                       <span className="inline-flex items-center justify-center min-w-[3rem] px-2 py-1 rounded-full font-bold bg-blue-100 text-blue-800">
                         {entry.totalPoints}
@@ -603,8 +628,10 @@ const RankingTable = ({
                         ? 4 + stages.length
                         : 4
                       : isMedalMode
-                      ? 6
-                      : 7
+                        ? 6
+                        : includePenalties
+                          ? 8
+                          : 7
                   }
                   className="px-4 py-8 text-center text-slate-500"
                 >
@@ -652,7 +679,8 @@ const PointTableLegend = () => (
 export default function CompetitionRankings() {
   const { competitionId } = useParams();
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { token, loading: authLoading } = useAuth();
+  const unauthorizedRedirectedRef = React.useRef(false);
 
   // State
   const [competition, setCompetition] = useState(null);
@@ -662,6 +690,32 @@ export default function CompetitionRankings() {
   const [loading, setLoading] = useState(true);
   const [rankingLoading, setRankingLoading] = useState(false);
   const [includeMasters, setIncludeMasters] = useState(true);
+  const [includePenalties, setIncludePenalties] = useState(false);
+
+  const handleUnauthorized = useCallback(
+    (message = "Session expired. Please login again.") => {
+      if (unauthorizedRedirectedRef.current) {
+        return true;
+      }
+      unauthorizedRedirectedRef.current = true;
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      setLoading(false);
+      toast.error(message);
+      navigate("/login", { replace: true });
+      return true;
+    },
+    [navigate],
+  );
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+    if (!token) {
+      handleUnauthorized("Please login to access competition rankings.");
+    }
+  }, [authLoading, handleUnauthorized, token]);
 
   // Fetch competition details
   useEffect(() => {
@@ -671,8 +725,12 @@ export default function CompetitionRankings() {
           `${API_BASE_URL}/api/competitions/${competitionId}`,
           {
             headers: { Authorization: `Bearer ${token}` },
-          }
+          },
         );
+        if (response.status === 401) {
+          handleUnauthorized("Not authorized to access this route");
+          return;
+        }
         if (response.ok) {
           const data = await response.json();
           setCompetition(data);
@@ -683,10 +741,10 @@ export default function CompetitionRankings() {
       }
     };
 
-    if (competitionId && token) {
+    if (competitionId && token && !authLoading) {
       fetchCompetition();
     }
-  }, [competitionId, token]);
+  }, [authLoading, competitionId, handleUnauthorized, token]);
 
   // Fetch available ranking systems
   useEffect(() => {
@@ -696,8 +754,12 @@ export default function CompetitionRankings() {
           `${API_BASE_URL}/api/rankings/competition/${competitionId}/available-systems`,
           {
             headers: { Authorization: `Bearer ${token}` },
-          }
+          },
         );
+        if (response.status === 401) {
+          handleUnauthorized("Not authorized to access this route");
+          return;
+        }
         if (response.ok) {
           const data = await response.json();
           setRankingSystems(data.availableSystems || []);
@@ -713,10 +775,10 @@ export default function CompetitionRankings() {
       }
     };
 
-    if (competitionId && token) {
+    if (competitionId && token && !authLoading) {
       fetchRankingSystems();
     }
-  }, [competitionId, token]);
+  }, [authLoading, competitionId, handleUnauthorized, token]);
 
   // Fetch ranking data when system or includeMasters changes
   useEffect(() => {
@@ -729,11 +791,15 @@ export default function CompetitionRankings() {
       setRankingLoading(true);
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/rankings/competition/${competitionId}?systemId=${selectedSystemId}&summary=true&includeMasters=${includeMasters}`,
+          `${API_BASE_URL}/api/rankings/competition/${competitionId}?systemId=${selectedSystemId}&summary=true&includeMasters=${includeMasters}&includePenalties=${includePenalties}`,
           {
             headers: { Authorization: `Bearer ${token}` },
-          }
+          },
         );
+        if (response.status === 401) {
+          handleUnauthorized("Not authorized to access this route");
+          return;
+        }
         if (response.ok) {
           const data = await response.json();
           setRankingData(data);
@@ -748,10 +814,18 @@ export default function CompetitionRankings() {
       }
     };
 
-    if (selectedSystemId && token) {
+    if (selectedSystemId && token && !authLoading) {
       fetchRanking();
     }
-  }, [competitionId, selectedSystemId, includeMasters, token]);
+  }, [
+    authLoading,
+    competitionId,
+    handleUnauthorized,
+    selectedSystemId,
+    includeMasters,
+    includePenalties,
+    token,
+  ]);
 
   // Get selected system info
   const selectedSystem = useMemo(() => {
@@ -891,7 +965,7 @@ export default function CompetitionRankings() {
             "Points: 1st=20 | 2nd=12 | 3rd=8 | 4th=6 | 5th=4 | 6th=3 | 7th=2 | 8th=1",
             center,
             y,
-            { align: "center" }
+            { align: "center" },
           );
           y += 6;
         } else {
@@ -935,7 +1009,7 @@ export default function CompetitionRankings() {
         });
 
         const uniqueClubs = Array.from(clubsMap.values()).sort((a, b) =>
-          (a.code || "").localeCompare(b.code || "")
+          (a.code || "").localeCompare(b.code || ""),
         );
 
         if (uniqueClubs.length > 0) {
@@ -973,7 +1047,7 @@ export default function CompetitionRankings() {
               doc.text(
                 " : " + arabicName,
                 leftMargin + 4 + codeWidth + frenchWidth,
-                clubY
+                clubY,
               );
               doc.setFont(fontName, "normal");
             }
@@ -1020,7 +1094,7 @@ export default function CompetitionRankings() {
         groupKey,
         rankingData.groupBy,
         metadata,
-        "en"
+        "en",
       );
 
       doc.setFontSize(11);
@@ -1114,10 +1188,13 @@ export default function CompetitionRankings() {
         };
       } else {
         // CLUB RANKING: Rank | Club | Points | 1st | 2nd | 3rd | Races
-        tableHeaders = ["#", "Club", "Points", "1st", "2nd", "3rd", "Races"];
+        tableHeaders = rankingData.includePenalties
+          ? ["#", "Club", "Penalties", "Total", "1st", "2nd", "3rd", "Races"]
+          : ["#", "Club", "Points", "1st", "2nd", "3rd", "Races"];
         tableBody = entries.map((entry) => [
           entry.rank,
           getEntityName(entry),
+          ...(rankingData.includePenalties ? [entry.penaltyPoints || 0] : []),
           entry.totalPoints,
           entry.positionCounts?.[1] || 0,
           entry.positionCounts?.[2] || 0,
@@ -1125,23 +1202,34 @@ export default function CompetitionRankings() {
           entry.raceCount || entry.raceResults?.length || 0,
         ]);
 
-        columnStyles = {
-          0: { cellWidth: 8, halign: "center", fontStyle: "bold" },
-          1: { cellWidth: "auto" }, // Club - auto expand
-          2: { cellWidth: 16, halign: "center", fontStyle: "bold" },
-          3: { cellWidth: 12, halign: "center" },
-          4: { cellWidth: 12, halign: "center" },
-          5: { cellWidth: 12, halign: "center" },
-          6: { cellWidth: 14, halign: "center" },
-        };
+        columnStyles = rankingData.includePenalties
+          ? {
+              0: { cellWidth: 8, halign: "center", fontStyle: "bold" },
+              1: { cellWidth: "auto" },
+              2: { cellWidth: 16, halign: "center" },
+              3: { cellWidth: 16, halign: "center", fontStyle: "bold" },
+              4: { cellWidth: 12, halign: "center" },
+              5: { cellWidth: 12, halign: "center" },
+              6: { cellWidth: 12, halign: "center" },
+              7: { cellWidth: 14, halign: "center" },
+            }
+          : {
+              0: { cellWidth: 8, halign: "center", fontStyle: "bold" },
+              1: { cellWidth: "auto" },
+              2: { cellWidth: 16, halign: "center", fontStyle: "bold" },
+              3: { cellWidth: 12, halign: "center" },
+              4: { cellWidth: 12, halign: "center" },
+              5: { cellWidth: 12, halign: "center" },
+              6: { cellWidth: 14, halign: "center" },
+            };
       }
 
       // Header color based on mode
       const headerColor = isMedalMode
         ? [245, 158, 11] // Amber for medals
         : isAthleteRanking
-        ? [16, 185, 129] // Emerald for athletes
-        : [59, 130, 246]; // Blue for clubs
+          ? [16, 185, 129] // Emerald for athletes
+          : [59, 130, 246]; // Blue for clubs
 
       autoTable(doc, {
         startY: yPos,
@@ -1263,6 +1351,22 @@ export default function CompetitionRankings() {
               Include Masters
             </Label>
           </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="includePenalties"
+              checked={includePenalties}
+              onChange={(e) => setIncludePenalties(e.target.checked)}
+              className="h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+            />
+            <Label
+              htmlFor="includePenalties"
+              className="text-sm text-slate-700 cursor-pointer"
+            >
+              Include Penalties
+            </Label>
+          </div>
         </div>
 
         {selectedSystem && (
@@ -1274,8 +1378,8 @@ export default function CompetitionRankings() {
             {selectedSystem.groupBy === "gender"
               ? "Gender"
               : selectedSystem.groupBy === "category"
-              ? "Age Category"
-              : "Category + Gender"}
+                ? "Age Category"
+                : "Category + Gender"}
             {selectedSystem.boatClassFilter === "skiff_only" && (
               <span className="ml-2 text-amber-600">(Skiff only)</span>
             )}
@@ -1316,6 +1420,7 @@ export default function CompetitionRankings() {
                 entries={entries}
                 groupBy={rankingData.groupBy}
                 scoringMode={rankingData.scoringMode || "points"}
+                includePenalties={rankingData.includePenalties === true}
                 groupMetadata={rankingData.groupMetadata?.[groupKey]}
                 stages={rankingData.stages || []}
                 competition={competition}

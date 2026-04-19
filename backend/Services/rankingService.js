@@ -20,6 +20,7 @@ import BoatClass from "../Models/boatClassModel.js";
 import RankingSystem, {
   DEFAULT_POINT_TABLE,
 } from "../Models/rankingSystemModel.js";
+import CompetitionPenalty from "../Models/competitionPenaltyModel.js";
 
 /**
  * Get points for a finish position using the ranking system's point table
@@ -227,6 +228,7 @@ export async function buildCompetitionRanking(
     options.includeMasters !== undefined
       ? options.includeMasters
       : config.includeMastersDefault !== false;
+  const includePenalties = options.includePenalties === true;
 
   // Load all completed races for this competition
   const races = await CompetitionRace.find({
@@ -294,17 +296,79 @@ export async function buildCompetitionRanking(
   // Group races based on configuration
   const groups = groupRaces(filteredRaces, config.groupBy);
 
+  let penaltiesByCategoryClub = new Map();
+  if (includePenalties) {
+    const penalties = await CompetitionPenalty.find({
+      competition: competitionId,
+      isActive: true,
+    })
+      .select("club category penaltyPoints")
+      .lean();
+
+    penaltiesByCategoryClub = penalties.reduce((acc, penalty) => {
+      const categoryId = penalty?.category?.toString?.();
+      const clubId = penalty?.club?.toString?.();
+      const points = Number(penalty?.penaltyPoints);
+      if (!categoryId || !clubId || !Number.isFinite(points) || points <= 0) {
+        return acc;
+      }
+      const key = `${categoryId}::${clubId}`;
+      acc.set(key, (acc.get(key) || 0) + points);
+      return acc;
+    }, new Map());
+  }
+
   // Calculate ranking for each group and collect metadata
   const rankings = {};
   const groupMetadata = {};
 
   for (const [groupKey, groupData] of Object.entries(groups)) {
-    rankings[groupKey] = calculateGroupRanking(groupData, config);
+    const calculated = calculateGroupRanking(groupData, config);
+
+    if (
+      includePenalties &&
+      config.entityType === "club" &&
+      (config.scoringMode || "points") === "points"
+    ) {
+      const categoryId =
+        groupData?.metadata?.category?._id?.toString?.() ||
+        groupData?.metadata?.category?.toString?.() ||
+        null;
+
+      calculated.forEach((entry) => {
+        entry.basePoints = Number(entry.totalPoints || 0);
+
+        if (!categoryId) {
+          entry.penaltyPoints = 0;
+          return;
+        }
+
+        const penaltyKey = `${categoryId}::${entry.entityId}`;
+        const penaltyPoints = Number(
+          penaltiesByCategoryClub.get(penaltyKey) || 0,
+        );
+        entry.penaltyPoints = penaltyPoints;
+        entry.totalPoints = entry.basePoints - penaltyPoints;
+      });
+
+      rankings[groupKey] = sortAndAssignRanks(calculated, config);
+    } else {
+      calculated.forEach((entry) => {
+        entry.basePoints = Number(entry.totalPoints || 0);
+        entry.penaltyPoints = 0;
+      });
+      rankings[groupKey] = calculated;
+    }
+
     // Store metadata for each group (includes full category info)
     groupMetadata[groupKey] = {
       gender: groupData.metadata?.gender,
       categoryAbbr: groupData.metadata?.category?.abbreviation,
       categoryNames: groupData.metadata?.category?.titles,
+      categoryId:
+        groupData.metadata?.category?._id?.toString?.() ||
+        groupData.metadata?.category?.toString?.() ||
+        null,
     };
   }
 
@@ -325,6 +389,7 @@ export async function buildCompetitionRanking(
     groupBy: config.groupBy,
     entityType: config.entityType || "club",
     scoringMode: config.scoringMode || "points",
+    includePenalties,
     rankings,
     groupMetadata,
     // Include stage/journey info for display
@@ -894,6 +959,8 @@ export async function getRankingSummary(
       club: entry.club, // For athlete rankings - their club
       clubId: entry.clubId,
       totalPoints: entry.totalPoints,
+      basePoints: entry.basePoints,
+      penaltyPoints: entry.penaltyPoints,
       raceResults: entry.raceResults,
       positionCounts: entry.positionCounts,
       raceCount: entry.raceResults?.length || 0,

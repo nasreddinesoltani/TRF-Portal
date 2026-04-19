@@ -8,6 +8,7 @@ import Athlete from "../Models/athleteModel.js";
 import Club from "../Models/clubModel.js";
 import Category from "../Models/categoryModel.js";
 import BoatClass from "../Models/boatClassModel.js";
+import CompetitionRace from "../Models/competitionRaceModel.js";
 
 const toObjectId = (value) => {
   if (!value) {
@@ -58,6 +59,132 @@ const roleIsAdmin = (role) => role === "admin";
 const roleIsJury = (role) => role === "jury_president";
 const roleIsClubManager = (role) => role === "club_manager";
 const hasManagementPrivileges = (role) => roleIsAdmin(role) || roleIsJury(role);
+
+const toSortedUniqueIds = (values) =>
+  Array.from(new Set((values || []).filter(Boolean))).sort();
+
+const buildAssignmentKey = ({
+  categoryId,
+  boatClassId,
+  clubId,
+  athleteId,
+  crewIds,
+}) => {
+  const normalizedCrewIds = toSortedUniqueIds(crewIds);
+  const participantKey = normalizedCrewIds.length
+    ? `crew:${normalizedCrewIds.join("|")}`
+    : athleteId
+      ? `athlete:${athleteId}`
+      : "";
+
+  if (!participantKey) {
+    return null;
+  }
+
+  return [
+    categoryId || "-",
+    boatClassId || "-",
+    clubId || "-",
+    participantKey,
+  ].join("::");
+};
+
+const buildEntryAssignmentKey = (entry) => {
+  const categoryId = entry?.category?.toString?.() || null;
+  const boatClassId = entry?.boatClass?.toString?.() || null;
+  const clubId = entry?.club?.toString?.() || null;
+  const crewIds = toSortedUniqueIds(
+    Array.isArray(entry?.crew)
+      ? entry.crew.map((member) => member?.toString?.()).filter(Boolean)
+      : [],
+  );
+  const athleteId = crewIds.length
+    ? null
+    : entry?.athlete?.toString?.() || null;
+
+  return buildAssignmentKey({
+    categoryId,
+    boatClassId,
+    clubId,
+    athleteId,
+    crewIds,
+  });
+};
+
+const buildLaneAssignmentKey = (race, lane) => {
+  const categoryId =
+    lane?.category?.toString?.() || race?.category?.toString?.() || null;
+  const boatClassId =
+    lane?.boatClass?.toString?.() || race?.boatClass?.toString?.() || null;
+  const clubId = lane?.club?.toString?.() || null;
+  const crewIds = toSortedUniqueIds(
+    Array.isArray(lane?.crew)
+      ? lane.crew.map((member) => member?.toString?.()).filter(Boolean)
+      : [],
+  );
+  const athleteId = crewIds.length ? null : lane?.athlete?.toString?.() || null;
+
+  return buildAssignmentKey({
+    categoryId,
+    boatClassId,
+    clubId,
+    athleteId,
+    crewIds,
+  });
+};
+
+const markRaceLanesWithdrawn = async (competitionId, entry, userId) => {
+  const entryKey = buildEntryAssignmentKey(entry);
+  if (!entryKey) {
+    return { matched: 0, updated: 0 };
+  }
+
+  const races = await CompetitionRace.find({ competition: competitionId });
+  let matched = 0;
+  let updated = 0;
+
+  for (const race of races) {
+    let raceChanged = false;
+    race.lanes = (race.lanes || []).map((lane) => {
+      const laneKey = buildLaneAssignmentKey(race, lane);
+      if (laneKey !== entryKey) {
+        return lane;
+      }
+
+      matched += 1;
+      const nextLane = {
+        ...lane.toObject?.(),
+        ...lane,
+        registrationStatus: "withdrawn",
+      };
+
+      const existingResult = nextLane.result || {};
+      if ((existingResult.status || "ok") === "ok") {
+        nextLane.result = {
+          ...existingResult,
+          status: "withdrawn",
+          finishPosition: undefined,
+          elapsedMs: undefined,
+          notes: existingResult.notes || "Withdrawn",
+        };
+      }
+
+      raceChanged = true;
+      updated += 1;
+      return nextLane;
+    });
+
+    if (raceChanged) {
+      race.markModified("lanes");
+      if (userId) {
+        race.updatedBy = userId;
+      }
+      await race.save();
+    }
+  }
+
+  return { matched, updated };
+};
 
 const serializeCategory = (category) => {
   if (!category) {
@@ -722,10 +849,17 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
 
   // Filter by para status if a category is selected
   if (selectedCategoryDoc) {
-    athleteQuery.isPara = selectedCategoryDoc.isPara === true ? true : { $ne: true };
+    athleteQuery.isPara =
+      selectedCategoryDoc.isPara === true ? true : { $ne: true };
   }
 
-  const athletes = await Athlete.find(athleteQuery).select("firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isPara").limit(numericLimit).sort({ lastName: 1, firstName: 1 }).lean();
+  const athletes = await Athlete.find(athleteQuery)
+    .select(
+      "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isPara",
+    )
+    .limit(numericLimit)
+    .sort({ lastName: 1, firstName: 1 })
+    .lean();
 
   const requestedCategories = new Set();
   if (categoryId) {
@@ -1474,8 +1608,18 @@ export const withdrawEntry = asyncHandler(async (req, res) => {
 
   // If before deadline, HARD DELETE
   if (isBeforeDeadline) {
+    const laneSync = await markRaceLanesWithdrawn(
+      competition._id,
+      entry,
+      req.user?.id,
+    );
     await CompetitionEntry.deleteOne({ _id: entry._id });
-    return res.json({ message: "Entry deleted", deleted: true, entryId });
+    return res.json({
+      message: "Entry deleted",
+      deleted: true,
+      entryId,
+      raceLaneSync: laneSync,
+    });
   }
 
   // If after deadline, SOFT WITHDRAW
@@ -1491,9 +1635,14 @@ export const withdrawEntry = asyncHandler(async (req, res) => {
     : "Withdrawn by official";
 
   await entry.save();
+  const laneSync = await markRaceLanesWithdrawn(
+    competition._id,
+    entry,
+    req.user?.id,
+  );
   await populateEntryDoc(entry);
 
-  return res.json({ entry: serializeEntry(entry) });
+  return res.json({ entry: serializeEntry(entry), raceLaneSync: laneSync });
 });
 
 export const updateEntry = asyncHandler(async (req, res) => {

@@ -256,12 +256,16 @@ export const syncPresets = async (req, res) => {
 export const getCompetitionRanking = async (req, res) => {
   try {
     const { competitionId } = req.params;
-    const { systemId, summary, includeMasters, debug } = req.query;
+    const { systemId, summary, includeMasters, includePenalties, debug } =
+      req.query;
 
     // Build options from query params
     const options = {};
     if (includeMasters !== undefined) {
       options.includeMasters = includeMasters === "true";
+    }
+    if (includePenalties !== undefined) {
+      options.includePenalties = includePenalties === "true";
     }
 
     let ranking;

@@ -13,6 +13,7 @@ import RankingSystem, {
   DEFAULT_POINT_TABLE,
 } from "../Models/rankingSystemModel.js";
 import OfficialResult from "../Models/officialResultModel.js";
+import CompetitionPenalty from "../Models/competitionPenaltyModel.js";
 
 // Lane limits per discipline
 // Classic: 8 lanes (standard water lanes)
@@ -43,6 +44,209 @@ const toObjectId = (value) => {
     return new mongoose.Types.ObjectId(value);
   }
   return null;
+};
+
+const toStringId = (value) => {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  if (value instanceof mongoose.Types.ObjectId) {
+    return value.toString();
+  }
+  if (typeof value === "object") {
+    if (value._id) {
+      return toStringId(value._id);
+    }
+    if (value.id) {
+      return toStringId(value.id);
+    }
+    if (typeof value.toString === "function") {
+      try {
+        const converted = value.toString();
+        return converted && converted !== "[object Object]" ? converted : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+};
+
+const toSortedUniqueIds = (values) =>
+  Array.from(new Set((values || []).filter(Boolean))).sort();
+
+const buildAssignmentKey = ({
+  categoryId,
+  boatClassId,
+  clubId,
+  athleteId,
+  crewIds,
+}) => {
+  const normalizedCrewIds = toSortedUniqueIds(crewIds);
+  const participantKey = normalizedCrewIds.length
+    ? `crew:${normalizedCrewIds.join("|")}`
+    : athleteId
+      ? `athlete:${athleteId}`
+      : "";
+
+  if (!participantKey) {
+    return null;
+  }
+
+  return [
+    categoryId || "-",
+    boatClassId || "-",
+    clubId || "-",
+    participantKey,
+  ].join("::");
+};
+
+const buildEventKey = ({ categoryId, boatClassId }) =>
+  [categoryId || "-", boatClassId || "-"].join("::");
+
+const laneHasAssignment = (lane) => {
+  if (!lane) {
+    return false;
+  }
+  if (lane.athlete) {
+    return true;
+  }
+  return Array.isArray(lane.crew) && lane.crew.length > 0;
+};
+
+const buildEntryAssignmentKey = (entry) => {
+  const categoryId = toStringId(entry?.category);
+  const boatClassId = toStringId(entry?.boatClass);
+  const clubId = toStringId(entry?.club);
+  const crewIds = toSortedUniqueIds(
+    (entry?.crew || []).map((member) => toStringId(member)),
+  );
+  const athleteId = crewIds.length ? null : toStringId(entry?.athlete);
+
+  return buildAssignmentKey({
+    categoryId,
+    boatClassId,
+    clubId,
+    athleteId,
+    crewIds,
+  });
+};
+
+const buildLaneAssignmentKey = (race, lane) => {
+  const categoryId = toStringId(lane?.category) || toStringId(race?.category);
+  const boatClassId =
+    toStringId(lane?.boatClass) || toStringId(race?.boatClass);
+  const clubId = toStringId(lane?.club);
+  const crewIds = toSortedUniqueIds(
+    (lane?.crew || []).map((member) => toStringId(member)),
+  );
+  const athleteId = crewIds.length ? null : toStringId(lane?.athlete);
+
+  return buildAssignmentKey({
+    categoryId,
+    boatClassId,
+    clubId,
+    athleteId,
+    crewIds,
+  });
+};
+
+const annotateRacesWithRegistrationStatus = (
+  races,
+  competitionEntries = [],
+) => {
+  if (!Array.isArray(races) || races.length === 0) {
+    return [];
+  }
+
+  if (!Array.isArray(competitionEntries) || competitionEntries.length === 0) {
+    return races;
+  }
+
+  const activeEntryKeys = new Set();
+  const eventEntryKeys = new Set();
+
+  competitionEntries.forEach((entry) => {
+    const eventKey = buildEventKey({
+      categoryId: toStringId(entry?.category),
+      boatClassId: toStringId(entry?.boatClass),
+    });
+    eventEntryKeys.add(eventKey);
+
+    if (String(entry?.status || "").toLowerCase() === "withdrawn") {
+      return;
+    }
+
+    const assignmentKey = buildEntryAssignmentKey(entry);
+    if (assignmentKey) {
+      activeEntryKeys.add(assignmentKey);
+    }
+  });
+
+  return races.map((race) => {
+    const raceEventKey = buildEventKey({
+      categoryId: toStringId(race?.category),
+      boatClassId: toStringId(race?.boatClass),
+    });
+    const hasRegistrationDataForEvent = eventEntryKeys.has(raceEventKey);
+
+    const lanes = Array.isArray(race?.lanes)
+      ? race.lanes.map((lane) => {
+          if (!laneHasAssignment(lane)) {
+            return lane;
+          }
+
+          const explicitWithdrawn =
+            String(lane?.registrationStatus || "").toLowerCase() ===
+              "withdrawn" ||
+            String(lane?.result?.status || "").toLowerCase() === "withdrawn";
+
+          let inferredWithdrawn = false;
+          if (hasRegistrationDataForEvent) {
+            const laneKey = buildLaneAssignmentKey(race, lane);
+            inferredWithdrawn = Boolean(
+              laneKey && !activeEntryKeys.has(laneKey),
+            );
+          }
+
+          if (!explicitWithdrawn && !inferredWithdrawn) {
+            if (lane?.registrationStatus) {
+              return lane;
+            }
+            return { ...lane, registrationStatus: "active" };
+          }
+
+          const nextLane = {
+            ...lane,
+            registrationStatus: "withdrawn",
+          };
+
+          const nextResult = lane?.result ? { ...lane.result } : {};
+          if ((nextResult.status || "ok") === "ok") {
+            nextResult.status = "withdrawn";
+            nextResult.finishPosition = undefined;
+            nextResult.elapsedMs = undefined;
+            nextResult.notes = nextResult.notes || "Withdrawn";
+          }
+          if (Object.keys(nextResult).length > 0) {
+            nextLane.result = nextResult;
+          }
+
+          return nextLane;
+        })
+      : race?.lanes;
+
+    return {
+      ...race,
+      lanes,
+    };
+  });
 };
 
 const ensureCompetition = async (competitionId) => {
@@ -783,7 +987,18 @@ export const listRaces = asyncHandler(async (req, res) => {
     })
     .lean();
 
-  return res.json(races);
+  const competitionEntries = await CompetitionEntry.find({
+    competition: competition._id,
+  })
+    .select("athlete crew club category boatClass status")
+    .lean();
+
+  const annotatedRaces = annotateRacesWithRegistrationStatus(
+    races,
+    competitionEntries,
+  );
+
+  return res.json(annotatedRaces);
 });
 
 export const getRace = asyncHandler(async (req, res) => {
@@ -825,7 +1040,18 @@ export const getRace = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Race not found" });
   }
 
-  return res.json(race);
+  const competitionEntries = await CompetitionEntry.find({
+    competition: competition._id,
+  })
+    .select("athlete crew club category boatClass status")
+    .lean();
+
+  const [annotatedRace] = annotateRacesWithRegistrationStatus(
+    [race],
+    competitionEntries,
+  );
+
+  return res.json(annotatedRace || race);
 });
 
 export const createRace = asyncHandler(async (req, res) => {
@@ -1844,6 +2070,98 @@ export const unpublishOfficialEventResults = asyncHandler(async (req, res) => {
   }
 
   return res.json({ success: true, eventGroupId });
+});
+
+export const listCompetitionPenalties = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const penalties = await CompetitionPenalty.find({
+    competition: competition._id,
+    isActive: true,
+  })
+    .populate({ path: "club", select: "name code nameAr" })
+    .populate({ path: "category", select: "abbreviation titles gender" })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return res.json(penalties);
+});
+
+export const createCompetitionPenalty = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const clubId = toObjectId(req.body?.club);
+  const categoryId = toObjectId(req.body?.category);
+  const penaltyPoints = Number(req.body?.penaltyPoints);
+
+  if (!clubId) {
+    return res.status(400).json({ message: "club is required" });
+  }
+  if (!Number.isFinite(penaltyPoints) || penaltyPoints <= 0) {
+    return res
+      .status(400)
+      .json({ message: "penaltyPoints must be a positive number" });
+  }
+
+  const payload = {
+    competition: competition._id,
+    club: clubId,
+    category: categoryId || undefined,
+    penaltyPoints,
+    targetType: req.body?.targetType === "official" ? "official" : "club",
+    firstName: normaliseString(req.body?.firstName),
+    lastName: normaliseString(req.body?.lastName),
+    licenseNumber: normaliseString(req.body?.licenseNumber),
+    role: normaliseString(req.body?.role),
+    observations: normaliseString(req.body?.observations),
+    createdBy: req.user?.id,
+    updatedBy: req.user?.id,
+  };
+
+  const created = await CompetitionPenalty.create(payload);
+  const hydrated = await CompetitionPenalty.findById(created._id)
+    .populate({ path: "club", select: "name code nameAr" })
+    .populate({ path: "category", select: "abbreviation titles gender" })
+    .lean();
+
+  return res.status(201).json(hydrated);
+});
+
+export const deleteCompetitionPenalty = asyncHandler(async (req, res) => {
+  const { competitionId, penaltyId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const deleted = await CompetitionPenalty.findOneAndUpdate(
+    {
+      _id: penaltyId,
+      competition: competition._id,
+      isActive: true,
+    },
+    {
+      $set: {
+        isActive: false,
+        updatedBy: req.user?.id,
+      },
+    },
+    { new: true },
+  ).lean();
+
+  if (!deleted) {
+    return res.status(404).json({ message: "Penalty not found" });
+  }
+
+  return res.json({ success: true, penaltyId: deleted._id });
 });
 
 export const computeCompetitionRankings = asyncHandler(async (req, res) => {

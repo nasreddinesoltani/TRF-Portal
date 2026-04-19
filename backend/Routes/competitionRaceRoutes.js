@@ -18,6 +18,9 @@ import {
   unpublishOfficialEventResults,
   autoAssignEventGroups,
   publishAllReadyOfficialResults,
+  listCompetitionPenalties,
+  createCompetitionPenalty,
+  deleteCompetitionPenalty,
 } from "../Controllers/competitionRaceController.js";
 import { protect, allowRoles } from "../Middleware/authMiddleware.js";
 
@@ -67,6 +70,15 @@ router
 router
   .route("/official-results/auto-group")
   .post(allowRoles("admin", "jury_president"), autoAssignEventGroups);
+
+router
+  .route("/penalties")
+  .get(allowRoles("admin", "jury_president"), listCompetitionPenalties)
+  .post(allowRoles("admin", "jury_president"), createCompetitionPenalty);
+
+router
+  .route("/penalties/:penaltyId")
+  .delete(allowRoles("admin", "jury_president"), deleteCompetitionPenalty);
 
 router
   .route("/auto-generate")

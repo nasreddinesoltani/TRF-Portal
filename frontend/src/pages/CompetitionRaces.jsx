@@ -854,6 +854,7 @@ const calculatePoints = (position, rankingSystem = null) => {
 
 const LANE_RESULT_STATUS_OPTIONS = [
   { value: "ok", label: "OK" },
+  { value: "withdrawn", label: "WD (Withdrawn)" },
   { value: "dns", label: "DNS (Did Not Start)" },
   { value: "dnf", label: "DNF (Did Not Finish)" },
   { value: "dsq", label: "DSQ (Disqualified)" },
@@ -877,6 +878,38 @@ const formatCrewName = (crew) => {
     })
     .join(" / ");
 };
+
+const toSortedUniqueIds = (values) =>
+  Array.from(new Set((values || []).filter(Boolean))).sort();
+
+const buildAssignmentKey = ({
+  categoryId,
+  boatClassId,
+  clubId,
+  athleteId,
+  crewIds,
+}) => {
+  const normalizedCrewIds = toSortedUniqueIds(crewIds);
+  const participantKey = normalizedCrewIds.length
+    ? `crew:${normalizedCrewIds.join("|")}`
+    : athleteId
+      ? `athlete:${athleteId}`
+      : "";
+
+  if (!participantKey) {
+    return null;
+  }
+
+  return [
+    categoryId || "-",
+    boatClassId || "-",
+    clubId || "-",
+    participantKey,
+  ].join("::");
+};
+
+const buildEventAssignmentKey = ({ categoryId, boatClassId }) =>
+  [categoryId || "-", boatClassId || "-"].join("::");
 
 const SearchResultsList = ({ term, results, loading, error, onPick }) => {
   if (!term) {
@@ -1421,6 +1454,9 @@ const buildCompetitionPdfFileName = (prefix, competition, races) => {
 const buildStartListPdfFileName = (competition, races) =>
   buildCompetitionPdfFileName("StartList", competition, races);
 
+const buildJuryStartListPdfFileName = (competition, races) =>
+  buildCompetitionPdfFileName("JuryStartList", competition, races);
+
 const buildResultsPdfFileName = (competition, races) =>
   buildCompetitionPdfFileName("Results", competition, races);
 
@@ -1897,11 +1933,21 @@ const RaceInfoView = ({
                   }
 
                   const elapsedMs = lane.result?.elapsedMs;
-                  const status = lane.result?.status || "ok";
+                  const laneWithdrawn =
+                    String(lane?.registrationStatus || "").toLowerCase() ===
+                      "withdrawn" ||
+                    String(lane?.result?.status || "").toLowerCase() ===
+                      "withdrawn";
+                  const status = laneWithdrawn
+                    ? "withdrawn"
+                    : lane.result?.status || "ok";
                   const position =
-                    status === "dnf"
-                      ? lane.result?.finishPosition || lastFinisherPosition + 1
-                      : lane.result?.finishPosition;
+                    status === "withdrawn"
+                      ? null
+                      : status === "dnf"
+                        ? lane.result?.finishPosition ||
+                          lastFinisherPosition + 1
+                        : lane.result?.finishPosition;
 
                   // Calculate time and delta (World Rowing style)
                   const timeStr = elapsedMs
@@ -1917,11 +1963,13 @@ const RaceInfoView = ({
                     <tr
                       key={lane.lane}
                       className={
-                        status !== "ok"
-                          ? "bg-amber-50"
-                          : position === 1
+                        status === "withdrawn"
+                          ? "bg-rose-50"
+                          : status !== "ok"
                             ? "bg-amber-50"
-                            : undefined
+                            : position === 1
+                              ? "bg-amber-50"
+                              : undefined
                       }
                     >
                       <td className="px-4 py-3">
@@ -1948,11 +1996,24 @@ const RaceInfoView = ({
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3">{athleteName}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span>{athleteName}</span>
+                          {status === "withdrawn" && (
+                            <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                              WD
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3">
                         {status !== "ok" ? (
-                          <span className="font-semibold text-red-600">
-                            {status.toUpperCase()}
+                          <span
+                            className={`font-semibold ${status === "withdrawn" ? "text-rose-700" : "text-red-600"}`}
+                          >
+                            {status === "withdrawn"
+                              ? "WITHDRAWN"
+                              : status.toUpperCase()}
                           </span>
                         ) : (
                           <div className="flex flex-col">
@@ -2042,64 +2103,106 @@ const RaceInfoView = ({
 
                 const formData = resultsForm[lane.lane] || {};
                 const timeError = timeErrors[lane.lane];
+                const laneWithdrawn =
+                  String(lane?.registrationStatus || "").toLowerCase() ===
+                    "withdrawn" ||
+                  String(lane?.result?.status || "").toLowerCase() ===
+                    "withdrawn";
 
                 return (
-                  <tr key={lane.lane}>
-                    <td className="px-4 py-3 font-medium">{lane.lane}</td>
+                  <tr
+                    key={lane.lane}
+                    className={laneWithdrawn ? "bg-rose-50" : undefined}
+                  >
+                    <td className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-2">
+                        <span>{lane.lane}</span>
+                        {laneWithdrawn && (
+                          <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                            WD
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <span className="font-semibold">{clubCode}</span>
                       {clubName && clubCode !== clubName && (
                         <span className="ml-2 text-slate-500">{clubName}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">{athleteName}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span>{athleteName}</span>
+                        {laneWithdrawn && (
+                          <span className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                            Withdrawn
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     {showResultsEntry && (
                       <>
                         <td className="px-4 py-3">
-                          <span
-                            className={
-                              calculatedPositions[lane.lane] === 1
-                                ? "font-bold text-amber-600"
-                                : calculatedPositions[lane.lane] === 2
-                                  ? "font-semibold text-slate-500"
-                                  : calculatedPositions[lane.lane] === 3
-                                    ? "font-semibold text-orange-700"
-                                    : ""
-                            }
-                          >
-                            {calculatedPositions[lane.lane] || "-"}
-                          </span>
+                          {laneWithdrawn ? (
+                            <span className="font-semibold text-rose-700">
+                              WD
+                            </span>
+                          ) : (
+                            <span
+                              className={
+                                calculatedPositions[lane.lane] === 1
+                                  ? "font-bold text-amber-600"
+                                  : calculatedPositions[lane.lane] === 2
+                                    ? "font-semibold text-slate-500"
+                                    : calculatedPositions[lane.lane] === 3
+                                      ? "font-semibold text-orange-700"
+                                      : ""
+                              }
+                            >
+                              {calculatedPositions[lane.lane] || "-"}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="space-y-1">
-                            <Input
-                              type="text"
-                              className={`w-28 ${
-                                timeError
-                                  ? "border-red-500 focus:ring-red-500"
-                                  : ""
-                              }`}
-                              value={formData.elapsedTime || ""}
-                              onChange={(e) =>
-                                handleResultChange(
-                                  lane.lane,
-                                  "elapsedTime",
-                                  e.target.value,
-                                )
-                              }
-                              onBlur={() => handleTimeBlur(lane.lane)}
-                              placeholder="M:SS.cc"
-                            />
-                            {timeError && (
-                              <p className="text-xs text-red-600">
-                                {timeError}
-                              </p>
-                            )}
-                          </div>
+                          {laneWithdrawn ? (
+                            <span className="text-xs font-semibold text-rose-700">
+                              Locked
+                            </span>
+                          ) : (
+                            <div className="space-y-1">
+                              <Input
+                                type="text"
+                                className={`w-28 ${
+                                  timeError
+                                    ? "border-red-500 focus:ring-red-500"
+                                    : ""
+                                }`}
+                                value={formData.elapsedTime || ""}
+                                onChange={(e) =>
+                                  handleResultChange(
+                                    lane.lane,
+                                    "elapsedTime",
+                                    e.target.value,
+                                  )
+                                }
+                                onBlur={() => handleTimeBlur(lane.lane)}
+                                placeholder="M:SS.cc"
+                              />
+                              {timeError && (
+                                <p className="text-xs text-red-600">
+                                  {timeError}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <Select
-                            value={formData.status || "ok"}
+                            value={
+                              laneWithdrawn
+                                ? "withdrawn"
+                                : formData.status || "ok"
+                            }
                             onChange={(e) =>
                               handleResultChange(
                                 lane.lane,
@@ -2108,6 +2211,7 @@ const RaceInfoView = ({
                               )
                             }
                             className="w-32"
+                            disabled={laneWithdrawn}
                           >
                             {LANE_RESULT_STATUS_OPTIONS.map((opt) => (
                               <option key={opt.value} value={opt.value}>
@@ -2129,6 +2233,7 @@ const RaceInfoView = ({
                               )
                             }
                             placeholder="Notes"
+                            disabled={laneWithdrawn}
                           />
                         </td>
                       </>
@@ -2177,7 +2282,7 @@ const RaceInfoView = ({
 };
 
 const CompetitionRaces = () => {
-  const { token, user } = useAuth();
+  const { token, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { competitionId } = useParams();
 
@@ -2192,7 +2297,24 @@ const CompetitionRaces = () => {
   const [registrationStats, setRegistrationStats] = useState(null);
   const [activeRankingSystem, setActiveRankingSystem] = useState(null);
   const initialDataLoadedRef = React.useRef(false);
+  const unauthorizedRedirectedRef = React.useRef(false);
   const skipAutoFillAfterGenerateRef = useRef(false);
+
+  const handleUnauthorized = useCallback(
+    (message = "Session expired. Please login again.") => {
+      if (unauthorizedRedirectedRef.current) {
+        return true;
+      }
+      unauthorizedRedirectedRef.current = true;
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      setLoadingCompetition(false);
+      toast.error(message);
+      navigate("/login", { replace: true });
+      return true;
+    },
+    [navigate],
+  );
 
   const [entrySearchTerm, setEntrySearchTerm] = useState("");
   const [entrySearchResults, setEntrySearchResults] = useState([]);
@@ -2366,6 +2488,26 @@ const CompetitionRaces = () => {
     useState(false);
   const [publishingAllOfficialResults, setPublishingAllOfficialResults] =
     useState(false);
+  const [competitionPenalties, setCompetitionPenalties] = useState([]);
+  const [loadingCompetitionPenalties, setLoadingCompetitionPenalties] =
+    useState(false);
+  const [savingCompetitionPenalty, setSavingCompetitionPenalty] =
+    useState(false);
+  const [deletingPenaltyId, setDeletingPenaltyId] = useState("");
+  const [penaltyClubOptions, setPenaltyClubOptions] = useState([]);
+  const [loadingPenaltyClubOptions, setLoadingPenaltyClubOptions] =
+    useState(false);
+  const [penaltyForm, setPenaltyForm] = useState({
+    club: "",
+    category: "",
+    penaltyPoints: "",
+    targetType: "club",
+    firstName: "",
+    lastName: "",
+    licenseNumber: "",
+    role: "",
+    observations: "",
+  });
 
   const canManageRaceSchedule =
     user?.role === "admin" || user?.role === "jury_president";
@@ -2832,7 +2974,13 @@ const CompetitionRaces = () => {
   }, [competitionId, token, categories]);
 
   const loadRankingSystem = useCallback(async () => {
-    if (!token || !competitionId) return;
+    if (
+      authLoading ||
+      !token ||
+      !competitionId ||
+      unauthorizedRedirectedRef.current
+    )
+      return;
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/rankings/competition/${competitionId}/available-systems`,
@@ -2841,6 +2989,12 @@ const CompetitionRaces = () => {
         },
       );
       const data = await response.json();
+      if (response.status === 401) {
+        handleUnauthorized(
+          data?.message || "Not authorized to access this route",
+        );
+        return;
+      }
       if (response.ok && data.availableSystems?.length > 0) {
         // Pick the first active system as default for point calculation in results
         setActiveRankingSystem(data.availableSystems[0]);
@@ -2848,10 +3002,15 @@ const CompetitionRaces = () => {
     } catch (error) {
       console.error("Failed to load ranking systems", error);
     }
-  }, [competitionId, token]);
+  }, [authLoading, competitionId, handleUnauthorized, token]);
 
   const loadCompetition = useCallback(async () => {
-    if (!token || !competitionId) {
+    if (
+      authLoading ||
+      !token ||
+      !competitionId ||
+      unauthorizedRedirectedRef.current
+    ) {
       return;
     }
     setLoadingCompetition(true);
@@ -2865,6 +3024,12 @@ const CompetitionRaces = () => {
         },
       );
       const payload = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        handleUnauthorized(
+          payload.message || "Not authorized to access this route",
+        );
+        return;
+      }
       if (!response.ok) {
         throw new Error(payload.message || "Failed to load competition");
       }
@@ -2876,14 +3041,16 @@ const CompetitionRaces = () => {
       }));
     } catch (error) {
       console.error("Failed to load competition", error);
-      toast.error(error.message);
+      if (!unauthorizedRedirectedRef.current) {
+        toast.error(error.message);
+      }
     } finally {
       setLoadingCompetition(false);
     }
-  }, [competitionId, token]);
+  }, [authLoading, competitionId, handleUnauthorized, token]);
 
   const loadReferenceData = useCallback(async () => {
-    if (!token) {
+    if (authLoading || !token || unauthorizedRedirectedRef.current) {
       return;
     }
     try {
@@ -2899,6 +3066,13 @@ const CompetitionRaces = () => {
       const boatClassesPayload = await boatClassesResponse
         .json()
         .catch(() => []);
+      if (
+        categoriesResponse.status === 401 ||
+        boatClassesResponse.status === 401
+      ) {
+        handleUnauthorized("Not authorized to access this route");
+        return;
+      }
       if (categoriesResponse.ok) {
         setCategories(
           Array.isArray(categoriesPayload) ? categoriesPayload : [],
@@ -2912,10 +3086,15 @@ const CompetitionRaces = () => {
     } catch (error) {
       console.error("Failed to load race reference data", error);
     }
-  }, [token]);
+  }, [authLoading, handleUnauthorized, token]);
 
   const loadRaces = useCallback(async () => {
-    if (!token || !competitionId) {
+    if (
+      authLoading ||
+      !token ||
+      !competitionId ||
+      unauthorizedRedirectedRef.current
+    ) {
       return;
     }
     setLoadingRaces(true);
@@ -2929,17 +3108,32 @@ const CompetitionRaces = () => {
         },
       );
       const payload = await response.json().catch(() => []);
+      if (response.status === 401) {
+        handleUnauthorized("Not authorized to access this route");
+        return;
+      }
       if (!response.ok) {
         throw new Error(payload.message || "Failed to load races");
       }
       setRaces(Array.isArray(payload) ? payload : []);
     } catch (error) {
       console.error("Failed to load races", error);
-      toast.error(error.message);
+      if (!unauthorizedRedirectedRef.current) {
+        toast.error(error.message);
+      }
     } finally {
       setLoadingRaces(false);
     }
-  }, [competitionId, token]);
+  }, [authLoading, competitionId, handleUnauthorized, token]);
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+    if (!token) {
+      handleUnauthorized("Please login to access race management.");
+    }
+  }, [authLoading, handleUnauthorized, token]);
 
   useEffect(() => {
     loadCompetition();
@@ -3007,7 +3201,7 @@ const CompetitionRaces = () => {
     };
   }, [entrySearchTerm, token]);
 
-  const handleAutoGenFieldChange = useCallback((event) => {
+  const handleAutoGenFieldChange = (event) => {
     const { name, value, type, checked } = event.target;
 
     // Special handling for category change to trigger entry loading
@@ -3030,7 +3224,7 @@ const CompetitionRaces = () => {
     // Clear validation on change
     setValidationErrors([]);
     setValidationWarnings([]);
-  }, []);
+  };
 
   // Apply preset configuration
 
@@ -3554,6 +3748,220 @@ const CompetitionRaces = () => {
     token,
   ]);
 
+  const loadPenaltyClubOptions = useCallback(async () => {
+    if (
+      authLoading ||
+      !token ||
+      !canManageRaceSchedule ||
+      unauthorizedRedirectedRef.current
+    ) {
+      return;
+    }
+
+    setLoadingPenaltyClubOptions(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/clubs?isActive=true`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => []);
+      if (response.status === 401) {
+        handleUnauthorized("Not authorized to access this route");
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(payload.message || "Failed to load clubs");
+      }
+
+      const clubs = (Array.isArray(payload) ? payload : []).sort((a, b) => {
+        const labelA = `${a.code || ""} ${a.name || ""}`.trim();
+        const labelB = `${b.code || ""} ${b.name || ""}`.trim();
+        return labelA.localeCompare(labelB);
+      });
+      setPenaltyClubOptions(clubs);
+    } catch (error) {
+      console.error("Failed to load clubs for penalties", error);
+      if (!unauthorizedRedirectedRef.current) {
+        toast.error(error.message || "Failed to load clubs");
+      }
+    } finally {
+      setLoadingPenaltyClubOptions(false);
+    }
+  }, [authLoading, canManageRaceSchedule, handleUnauthorized, token]);
+
+  const loadCompetitionPenalties = useCallback(async () => {
+    if (
+      authLoading ||
+      !token ||
+      !competitionDocumentId ||
+      !canManageRaceSchedule ||
+      unauthorizedRedirectedRef.current
+    ) {
+      return;
+    }
+
+    setLoadingCompetitionPenalties(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/penalties`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const payload = await response.json().catch(() => []);
+      if (response.status === 401) {
+        handleUnauthorized("Not authorized to access this route");
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(payload.message || "Failed to load penalties");
+      }
+
+      setCompetitionPenalties(Array.isArray(payload) ? payload : []);
+    } catch (error) {
+      console.error("Failed to load competition penalties", error);
+      if (!unauthorizedRedirectedRef.current) {
+        toast.error(error.message || "Failed to load penalties");
+      }
+    } finally {
+      setLoadingCompetitionPenalties(false);
+    }
+  }, [
+    authLoading,
+    canManageRaceSchedule,
+    competitionDocumentId,
+    handleUnauthorized,
+    token,
+  ]);
+
+  const handlePenaltyFieldChange = useCallback((field, value) => {
+    setPenaltyForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+  }, []);
+
+  const resetPenaltyForm = useCallback(() => {
+    setPenaltyForm({
+      club: "",
+      category: "",
+      penaltyPoints: "",
+      targetType: "club",
+      firstName: "",
+      lastName: "",
+      licenseNumber: "",
+      role: "",
+      observations: "",
+    });
+  }, []);
+
+  const submitCompetitionPenalty = useCallback(async () => {
+    if (!token || !competitionDocumentId) {
+      return;
+    }
+
+    if (!penaltyForm.club) {
+      toast.error("Club is required");
+      return;
+    }
+
+    const penaltyPoints = Number(penaltyForm.penaltyPoints);
+    if (!Number.isFinite(penaltyPoints) || penaltyPoints <= 0) {
+      toast.error("Penalty points must be a positive number");
+      return;
+    }
+
+    setSavingCompetitionPenalty(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/penalties`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            club: penaltyForm.club,
+            category: penaltyForm.category || undefined,
+            penaltyPoints,
+            targetType: penaltyForm.targetType || "club",
+            firstName: penaltyForm.firstName || undefined,
+            lastName: penaltyForm.lastName || undefined,
+            licenseNumber: penaltyForm.licenseNumber || undefined,
+            role: penaltyForm.role || undefined,
+            observations: penaltyForm.observations || undefined,
+          }),
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Failed to save penalty");
+      }
+
+      toast.success("Penalty saved");
+      resetPenaltyForm();
+      await loadCompetitionPenalties();
+    } catch (error) {
+      console.error("Failed to save penalty", error);
+      toast.error(error.message || "Failed to save penalty");
+    } finally {
+      setSavingCompetitionPenalty(false);
+    }
+  }, [
+    competitionDocumentId,
+    loadCompetitionPenalties,
+    penaltyForm,
+    resetPenaltyForm,
+    token,
+  ]);
+
+  const deleteCompetitionPenalty = useCallback(
+    async (penaltyId) => {
+      if (!token || !competitionDocumentId || !penaltyId) {
+        return;
+      }
+
+      const proceed = window.confirm("Delete this penalty record?");
+      if (!proceed) {
+        return;
+      }
+
+      setDeletingPenaltyId(penaltyId);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/penalties/${penaltyId}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.message || "Failed to delete penalty");
+        }
+
+        toast.success("Penalty deleted");
+        await loadCompetitionPenalties();
+      } catch (error) {
+        console.error("Failed to delete penalty", error);
+        toast.error(error.message || "Failed to delete penalty");
+      } finally {
+        setDeletingPenaltyId("");
+      }
+    },
+    [competitionDocumentId, loadCompetitionPenalties, token],
+  );
+
   useEffect(() => {
     if (!token || !competitionDocumentId || !initialDataLoadedRef.current) {
       return;
@@ -3564,6 +3972,14 @@ const CompetitionRaces = () => {
   useEffect(() => {
     loadOfficialPreview();
   }, [loadOfficialPreview]);
+
+  useEffect(() => {
+    if (!canManageRaceSchedule) {
+      return;
+    }
+    loadPenaltyClubOptions();
+    loadCompetitionPenalties();
+  }, [canManageRaceSchedule, loadCompetitionPenalties, loadPenaltyClubOptions]);
 
   const handleAddEntry = useCallback(
     async (athlete) => {
@@ -4442,6 +4858,165 @@ const CompetitionRaces = () => {
     autoGenState.category,
     registrationStats,
     dbEntryOverrides,
+  ]);
+
+  const withdrawnRaceLaneIndicators = useMemo(() => {
+    const selectedCategoryId = autoGenState.category;
+    if (!selectedCategoryId) {
+      return [];
+    }
+
+    const selectedBoatClassId = autoGenState.boatClass || null;
+
+    const activeAssignmentKeys = new Set();
+    const registrationEventKeys = new Set();
+
+    const selectedCategoryData = registrationStats?.byCategory?.find(
+      (cat) => cat.id === selectedCategoryId,
+    );
+    const selectedCategoryEntries = Array.isArray(selectedCategoryData?.entries)
+      ? selectedCategoryData.entries
+      : [];
+
+    selectedCategoryEntries.forEach((entry) => {
+      const categoryId = toDocumentId(entry?.category) || selectedCategoryId;
+      const boatClassId = toDocumentId(entry?.boatClass);
+      registrationEventKeys.add(
+        buildEventAssignmentKey({ categoryId, boatClassId }),
+      );
+
+      if (String(entry?.status || "").toLowerCase() === "withdrawn") {
+        return;
+      }
+
+      const assignmentKey = buildAssignmentKey({
+        categoryId,
+        boatClassId,
+        clubId: toDocumentId(entry?.club),
+        athleteId: toDocumentId(entry?.athlete),
+        crewIds: toSortedUniqueIds(
+          (entry?.crew || []).map((member) => toDocumentId(member)),
+        ),
+      });
+
+      if (assignmentKey) {
+        activeAssignmentKeys.add(assignmentKey);
+      }
+    });
+
+    const seen = new Set();
+    const indicators = [];
+
+    races
+      .filter((race) => {
+        const raceCategoryId = toDocumentId(race?.category);
+        if (raceCategoryId !== selectedCategoryId) {
+          return false;
+        }
+        if (!selectedBoatClassId) {
+          return true;
+        }
+        return toDocumentId(race?.boatClass) === selectedBoatClassId;
+      })
+      .forEach((race) => {
+        const raceCategoryId =
+          toDocumentId(race?.category) || selectedCategoryId;
+        const raceBoatClassId = toDocumentId(race?.boatClass) || null;
+
+        (race?.lanes || []).forEach((lane, laneIndex) => {
+          const hasAssignedAthlete = Boolean(lane?.athlete);
+          const hasAssignedCrew =
+            Array.isArray(lane?.crew) && lane.crew.length > 0;
+          if (!hasAssignedAthlete && !hasAssignedCrew) {
+            return;
+          }
+
+          const categoryId = toDocumentId(lane?.category) || raceCategoryId;
+          const boatClassId = toDocumentId(lane?.boatClass) || raceBoatClassId;
+          const assignmentKey = buildAssignmentKey({
+            categoryId,
+            boatClassId,
+            clubId: toDocumentId(lane?.club),
+            athleteId: hasAssignedCrew ? null : toDocumentId(lane?.athlete),
+            crewIds: toSortedUniqueIds(
+              (lane?.crew || []).map((member) => toDocumentId(member)),
+            ),
+          });
+
+          if (!assignmentKey || seen.has(assignmentKey)) {
+            return;
+          }
+
+          const eventKey = buildEventAssignmentKey({ categoryId, boatClassId });
+          const explicitWithdrawn =
+            String(lane?.registrationStatus || "").toLowerCase() ===
+              "withdrawn" ||
+            String(lane?.result?.status || "").toLowerCase() === "withdrawn";
+          const inferredWithdrawn =
+            registrationEventKeys.has(eventKey) &&
+            !activeAssignmentKeys.has(assignmentKey);
+
+          if (!explicitWithdrawn && !inferredWithdrawn) {
+            return;
+          }
+
+          seen.add(assignmentKey);
+
+          const resolvedCrew = hasAssignedCrew
+            ? lane.crew.map((member) => {
+                if (member && typeof member === "object") {
+                  return member;
+                }
+                const memberId = toDocumentId(member);
+                return memberId
+                  ? raceAthleteLookup.get(memberId) || member
+                  : member;
+              })
+            : [];
+          const resolvedAthlete = hasAssignedCrew
+            ? null
+            : lane?.athlete && typeof lane.athlete === "object"
+              ? lane.athlete
+              : raceAthleteLookup.get(toDocumentId(lane?.athlete));
+          const athleteName = hasAssignedCrew
+            ? formatCrewName(resolvedCrew) || "Unknown crew"
+            : resolvedAthlete
+              ? formatAthleteName(resolvedAthlete)
+              : "Unknown athlete";
+
+          const laneClubObj =
+            lane?.club && typeof lane.club === "object" ? lane.club : null;
+          const fallbackClubName = raceClubLookup.get(toDocumentId(lane?.club));
+
+          indicators.push({
+            key: assignmentKey,
+            athleteName,
+            clubCode: laneClubObj?.code || "",
+            clubName: laneClubObj?.name || fallbackClubName || "",
+            raceOrder: Number(race?.order) || 0,
+            lane: Number(lane?.lane) || laneIndex + 1,
+          });
+        });
+      });
+
+    return indicators.sort((a, b) => {
+      if (a.raceOrder !== b.raceOrder) {
+        return a.raceOrder - b.raceOrder;
+      }
+      if (a.lane !== b.lane) {
+        return a.lane - b.lane;
+      }
+      return String(a.athleteName || "").localeCompare(
+        String(b.athleteName || ""),
+      );
+    });
+  }, [
+    autoGenState.category,
+    autoGenState.boatClass,
+    races,
+    registrationStats,
+    raceAthleteLookup,
+    raceClubLookup,
   ]);
 
   const handleSaveEntries = useCallback(async () => {
@@ -5768,6 +6343,671 @@ const CompetitionRaces = () => {
         console.error("exportStartListPDF error:", err);
         toast.error(
           "Failed to export Start List PDF: " +
+            (err.message || "Unknown error"),
+        );
+      }
+    },
+    [
+      sortedRaces,
+      competition,
+      categories,
+      boatClasses,
+      raceAthleteLookup,
+      raceClubLookup,
+      eventNumberMap,
+    ],
+  );
+
+  const exportJuryStartListPDF = useCallback(
+    async (racesToExport = null) => {
+      toast.info("Generating Jury Start List PDF...");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // --- GROUP BY START TIME LOGIC (same as Start List) ---
+      const rawTargetRaces = Array.isArray(racesToExport)
+        ? racesToExport
+        : sortedRaces;
+      const timeMap = new Map();
+      rawTargetRaces.forEach((race) => {
+        const timeKey = race.startTime
+          ? new Date(race.startTime).getTime().toString()
+          : `no-time-${race._id || Math.random()}`;
+        if (!timeMap.has(timeKey)) {
+          timeMap.set(timeKey, {
+            ...race,
+            lanes: [...(race.lanes || [])].map((l) => ({
+              ...l,
+              _originalRaceId: race._id,
+            })),
+          });
+        } else {
+          const existing = timeMap.get(timeKey);
+          existing.lanes.push(
+            ...(race.lanes || []).map((l) => ({
+              ...l,
+              _originalRaceId: race._id,
+            })),
+          );
+          if (race.order && (!existing.order || race.order < existing.order)) {
+            existing.order = race.order;
+          }
+        }
+      });
+      const targetRaces = Array.from(timeMap.values()).sort(
+        (a, b) => (a.order || 0) - (b.order || 0),
+      );
+
+      if (!targetRaces.length) {
+        toast.info("No races to export");
+        return;
+      }
+
+      try {
+        const dateStr = new Date().toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
+        const asOfLabel = formatAsOfLabel();
+
+        const [
+          headerData,
+          footerData,
+          logoData,
+          sponsorData,
+          arabicFontBase64,
+        ] = await Promise.all([
+          loadImage("/header.png"),
+          loadImage("/footer.png"),
+          loadImage("/logo.png"),
+          loadImage("/sponsors.png"),
+          loadFont("/fonts/Amiri-Regular.ttf"),
+        ]);
+
+        const doc = new jsPDF({
+          orientation: "portrait",
+          unit: "mm",
+          format: "a4",
+          compress: true,
+        });
+
+        let arabicFontName = null;
+        if (arabicFontBase64) {
+          try {
+            doc.addFileToVFS("Amiri-Regular.ttf", arabicFontBase64);
+            doc.addFont("Amiri-Regular.ttf", "Amiri", "normal");
+            arabicFontName = "Amiri";
+          } catch (err) {
+            console.warn("Could not register Arabic font:", err);
+          }
+        }
+
+        const fontName = "helvetica";
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const leftMargin = 14;
+        const rightMargin = 196;
+        const center = 105;
+
+        let headerHeight = 32;
+        if (headerData) {
+          const imgProps = doc.getImageProperties(headerData);
+          headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
+        }
+
+        const eventDateStr = competition?.startDate
+          ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })
+          : dateStr;
+
+        const compLocation = String(
+          competition?.location?.name ||
+            competition?.venue?.name ||
+            (typeof competition?.venue === "string"
+              ? competition.venue
+              : null) ||
+            (typeof competition?.location === "string"
+              ? competition.location
+              : null) ||
+            "Location",
+        );
+
+        const competitionTitle =
+          competition?.names?.en ||
+          competition?.name ||
+          competition?.code ||
+          "Competition";
+
+        const pageClubsMap = new Map();
+
+        for (let raceIndex = 0; raceIndex < targetRaces.length; raceIndex++) {
+          const race = targetRaces[raceIndex];
+          if (raceIndex > 0) {
+            doc.addPage();
+          }
+
+          let yPos = headerHeight;
+
+          const categoryId = toDocumentId(race.category);
+          const category = categoryId
+            ? categories.find((item) => toDocumentId(item) === categoryId)
+            : null;
+          const boatClassId = toDocumentId(race.boatClass);
+          const boatClass = boatClassId
+            ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
+            : null;
+
+          const distinctOrigIds = Array.from(
+            new Set(
+              (race.lanes || []).map((l) => l._originalRaceId).filter(Boolean),
+            ),
+          );
+          const allOrigRaces = distinctOrigIds.length
+            ? distinctOrigIds
+                .map((id) => rawTargetRaces.find((r) => r._id === id))
+                .filter(Boolean)
+            : [race];
+          const origRaceLookup = new Map(
+            allOrigRaces.filter((r) => r?._id).map((r) => [String(r._id), r]),
+          );
+
+          const distinctEnTitles = new Set();
+          const distinctArTitles = new Set();
+          const distinctCodes = new Set();
+          const distinctOrders = new Set();
+
+          allOrigRaces.forEach((r) => {
+            const c = categories.find(
+              (x) => toDocumentId(x) === toDocumentId(r.category),
+            );
+            const b = boatClasses.find(
+              (x) => toDocumentId(x) === toDocumentId(r.boatClass),
+            );
+            const evtEn = formatEventTitleWithBoatClass(c, b, "en");
+            const evtAr = formatEventTitleWithBoatClass(c, b, "ar");
+            if (evtEn) distinctEnTitles.add(evtEn);
+            if (evtAr) distinctArTitles.add(evtAr);
+            if (c || b) {
+              distinctCodes.add(
+                formatRaceCodeForHeader(generateRaceCode(c, b), c),
+              );
+            }
+            if (r.order) distinctOrders.add(r.order);
+          });
+
+          let fullEventName = Array.from(distinctEnTitles).join(" / ");
+          let fullEventNameAr = Array.from(distinctArTitles).join(" / ");
+          let rightHeaderCode = Array.from(distinctCodes).join(" / ");
+          let orderStr =
+            Array.from(distinctOrders)
+              .sort((a, b) => a - b)
+              .join(" / ") ||
+            race.order ||
+            "1";
+
+          const showJourney = shouldShowJourney(competition, allOrigRaces);
+          const explicitNonFinalPhases = Array.from(
+            new Set(
+              allOrigRaces
+                .map((r) => String(r?.phase || "").trim())
+                .filter((p) => p && !/^final$/i.test(p))
+                .filter((p) => showJourney || !isJourneyPhaseLabel(p)),
+            ),
+          );
+          const journeyValues = Array.from(
+            new Set(
+              allOrigRaces
+                .map((r) => Number(r?.journeyIndex))
+                .filter((j) => Number.isFinite(j) && j > 0),
+            ),
+          ).sort((a, b) => a - b);
+          const configuredMaxJourney =
+            Number(
+              competition?.maximumJourney ??
+                competition?.maxJourney ??
+                competition?.journeysCount,
+            ) || null;
+
+          let phaseStr = "Final";
+          if (explicitNonFinalPhases.length > 0) {
+            phaseStr = explicitNonFinalPhases.join(" / ");
+          } else if (showJourney && journeyValues.length > 0) {
+            const reachedConfiguredFinal =
+              configuredMaxJourney != null &&
+              journeyValues.every((j) => j >= configuredMaxJourney);
+            phaseStr = reachedConfiguredFinal
+              ? "Final"
+              : `Journey ${journeyValues.join(" / ")}`;
+          }
+
+          doc.setFontSize(14);
+          doc.setFont(fontName, "bold");
+          doc.setTextColor(0, 0, 0);
+          doc.text(competitionTitle, center, yPos, { align: "center" });
+
+          doc.setFontSize(9);
+          doc.setFont(fontName, "normal");
+          doc.text(compLocation, leftMargin, yPos);
+          doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
+
+          yPos += 2;
+          doc.setLineWidth(0.5);
+          doc.setDrawColor(0);
+          doc.line(leftMargin, yPos, rightMargin, yPos);
+          yPos += 5;
+
+          doc.setFontSize(12);
+          doc.setFont(fontName, "bold");
+          doc.text(String(orderStr), leftMargin, yPos);
+          doc.text("Jury Start List", center, yPos, { align: "center" });
+          doc.text(
+            rightHeaderCode ||
+              formatRaceCodeForHeader(
+                generateRaceCode(category, boatClass),
+                category,
+              ),
+            rightMargin,
+            yPos,
+            {
+              align: "right",
+            },
+          );
+
+          yPos += 5;
+          const eventLabel = "(Event)";
+          doc.setFontSize(8);
+          doc.setFont(fontName, "normal");
+          doc.text(eventLabel, leftMargin, yPos);
+          const eventLabelWidth = doc.getTextWidth(eventLabel);
+          const eventStartX = leftMargin + eventLabelWidth + 3;
+          const eventLineMaxWidth = rightMargin - eventStartX;
+          const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
+          fullEventName =
+            fullEventName ||
+            formatEventTitleWithBoatClass(category, boatClass, "en");
+          const eventTitleLayout = drawAdaptiveCenteredTitle({
+            doc,
+            text: fullEventName,
+            center: eventLineCenter,
+            y: yPos,
+            maxWidth: eventLineMaxWidth,
+            font: fontName,
+            style: "bold",
+            initialSize: 10.5,
+            minSize: 8,
+            maxLines: 1,
+            lineGap: 4,
+          });
+
+          const raceDistance =
+            race.distanceOverride ??
+            race.distance ??
+            allOrigRaces.find((r) => r?.distanceOverride != null)
+              ?.distanceOverride ??
+            competition?.defaultDistance ??
+            competition?.distance ??
+            null;
+          fullEventNameAr =
+            fullEventNameAr ||
+            formatEventTitleWithBoatClass(category, boatClass, "ar");
+
+          yPos = eventTitleLayout.yEnd;
+
+          if (fullEventNameAr && arabicFontName) {
+            yPos += 5;
+            const arabicSize = fitSingleLineFontSize({
+              doc,
+              text: fullEventNameAr,
+              maxWidth: 110,
+              initialSize: 12,
+              minSize: 8.5,
+              font: arabicFontName,
+              style: "normal",
+            });
+            doc.setFontSize(arabicSize);
+            doc.setFont(arabicFontName, "normal");
+            doc.text(fullEventNameAr, center, yPos, { align: "center" });
+            doc.setFont(fontName, "normal");
+            doc.setFontSize(9);
+            if (raceDistance) {
+              doc.text(`Distance: ${raceDistance}m`, rightMargin, yPos, {
+                align: "right",
+              });
+            }
+          } else if (raceDistance) {
+            yPos += 4;
+            doc.setFontSize(9);
+            doc.text(`Distance: ${raceDistance}m`, center, yPos, {
+              align: "center",
+            });
+          }
+
+          yPos += 6;
+          doc.setFontSize(9);
+          doc.setFont(fontName, "normal");
+          const startTime = race.startTime
+            ? new Date(race.startTime).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "00:00";
+          doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
+          doc.setFontSize(10);
+          doc.setFont(fontName, "bold");
+          doc.text(phaseStr, center, yPos, { align: "center" });
+          doc.setFontSize(9);
+          doc.text(`Race ${raceIndex + 1}`, rightMargin, yPos, {
+            align: "right",
+          });
+          yPos += 2;
+
+          const uniqueClubs = Array.from(
+            new Set(
+              (race.lanes || [])
+                .map((l) => toDocumentId(l.club))
+                .filter(Boolean),
+            ),
+          )
+            .map(
+              (id) =>
+                (race.lanes || []).find((l) => toDocumentId(l.club) === id)
+                  ?.club,
+            )
+            .filter(Boolean)
+            .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+
+          const legendLineHeight = 4;
+          const legendBoxHeight =
+            uniqueClubs.length > 0
+              ? uniqueClubs.length * legendLineHeight + 7
+              : 0;
+          const bottomMargin = 35 + legendBoxHeight + 20;
+
+          pageClubsMap.set(raceIndex + 1, uniqueClubs);
+
+          const formatNameForPdf = (a) => {
+            if (!a) return "Unknown";
+            const first = a.firstName || "";
+            const last = (a.lastName || "").toUpperCase();
+            return `${first} ${last}`.trim() || a.licenseNumber || "Unknown";
+          };
+
+          const { tableBody } = buildStartListTableBody({
+            lanes: race.lanes || [],
+            referenceRace: race,
+            originalRaceLookup: origRaceLookup,
+            athleteLookup: raceAthleteLookup,
+            categories,
+            boatClasses,
+            toDocumentId,
+            generateRaceCode,
+            formatName: formatNameForPdf,
+          });
+
+          const juryTableBody = tableBody.map((row) => [
+            row[0] || "",
+            row[1] || "",
+            row[2] || "",
+            "",
+            "",
+            "",
+          ]);
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [["Lane", "Club", "Name", "Time", "Observation", "Rank"]],
+            body: juryTableBody,
+            theme: "plain",
+            headStyles: {
+              fillColor: [255, 255, 255],
+              textColor: [0, 0, 0],
+              fontStyle: "bold",
+              lineWidth: 0.1,
+              lineColor: [0, 0, 0],
+              cellPadding: 1,
+            },
+            styles: {
+              fontSize: 8.5,
+              cellPadding: 1,
+              minCellHeight: 9.5,
+              font: fontName,
+            },
+            columnStyles: {
+              0: { cellWidth: 14, halign: "center", fontStyle: "bold" },
+              1: { cellWidth: 24, fontStyle: "bold" },
+              2: { cellWidth: 64, fontStyle: "bold" },
+              3: { cellWidth: 34, halign: "center" },
+              4: { cellWidth: 30 },
+              5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
+            },
+            margin: {
+              left: leftMargin,
+              right: 14,
+              bottom: bottomMargin,
+              top: headerHeight,
+            },
+            didParseCell: (data) => {
+              if (data.section === "head") {
+                data.cell.styles.lineWidth = {
+                  top: 0.1,
+                  bottom: 0.1,
+                  left: 0.1,
+                  right: 0.1,
+                };
+              } else if (data.section === "body") {
+                data.cell.styles.lineWidth = {
+                  top: 0,
+                  bottom: 0.1,
+                  left: 0,
+                  right: 0,
+                };
+                data.cell.styles.lineColor = [0, 0, 0];
+              }
+            },
+          });
+        }
+
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+          doc.setPage(i);
+
+          if (headerData) {
+            const imgProps = doc.getImageProperties(headerData);
+            const h = pageWidth / (imgProps.width / imgProps.height);
+            doc.addImage(
+              headerData,
+              getImageFormat(headerData),
+              0,
+              3,
+              pageWidth,
+              h,
+            );
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(leftMargin, h + 5, rightMargin, h + 5);
+          }
+
+          let legendTopY = null;
+          let legendBottomY = null;
+          const pageClubs = pageClubsMap.get(i) || [];
+          if (pageClubs.length > 0) {
+            const clubs = [...pageClubs].sort((a, b) =>
+              (a.code || "").localeCompare(b.code || ""),
+            );
+
+            const lineHeight = 4;
+            const boxHeight = clubs.length * lineHeight + 7;
+            const legendY = pageHeight - 35 - boxHeight;
+            legendTopY = legendY;
+            legendBottomY = legendY + boxHeight;
+
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.rect(leftMargin, legendY, 182, boxHeight);
+
+            doc.setFontSize(9);
+            doc.setFont(fontName, "bold");
+            doc.setTextColor(0, 0, 0);
+            doc.text("Legend:", leftMargin + 2, legendY + 5);
+
+            doc.setFontSize(8);
+            let clubY = legendY + 9;
+
+            for (const club of clubs) {
+              const code = club.code || "---";
+              const frenchName =
+                club.name || club.names?.fr || club.names?.en || "";
+              const arabicName = club.nameAr || club.names?.ar || "";
+
+              doc.setFont(fontName, "bold");
+              doc.text(code + ": ", leftMargin + 4, clubY);
+
+              const codeWidth = doc.getTextWidth(code + ": ");
+              doc.setFont(fontName, "normal");
+              doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+
+              if (arabicName && arabicFontName) {
+                const frenchWidth = doc.getTextWidth(frenchName);
+                doc.setFont(arabicFontName, "normal");
+                doc.text(
+                  " : " + arabicName,
+                  leftMargin + 4 + codeWidth + frenchWidth,
+                  clubY,
+                );
+                doc.setFont(fontName, "normal");
+              }
+              clubY += lineHeight;
+            }
+          }
+
+          const drawSignatureSpace = (defaultBaselineY) => {
+            let baselineY = defaultBaselineY;
+            const signatureLegendGap = 8;
+            if (
+              Number.isFinite(legendTopY) &&
+              Number.isFinite(legendBottomY) &&
+              legendBottomY + signatureLegendGap > baselineY
+            ) {
+              baselineY = Math.max(legendTopY - signatureLegendGap, 20);
+            }
+
+            const signatureLabelX = rightMargin - 58;
+            const signatureLineStartX = rightMargin - 30;
+            const signatureLineEndX = rightMargin - 6;
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(10);
+            doc.setFont(fontName, "normal");
+            doc.text("Signature:", signatureLabelX, baselineY);
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.line(
+              signatureLineStartX,
+              baselineY,
+              signatureLineEndX,
+              baselineY,
+            );
+          };
+
+          if (footerData) {
+            const imgProps = doc.getImageProperties(footerData);
+            const h = pageWidth / (imgProps.width / imgProps.height);
+
+            drawSignatureSpace(pageHeight - h - 12);
+
+            doc.addImage(
+              footerData,
+              getImageFormat(footerData),
+              0,
+              pageHeight - h - 3,
+              pageWidth,
+              h,
+            );
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(
+              leftMargin,
+              pageHeight - h - 5,
+              rightMargin,
+              pageHeight - h - 5,
+            );
+            doc.setFontSize(8);
+            doc.setFont(fontName, "normal");
+            doc.setTextColor(100);
+            doc.text(asOfLabel, leftMargin, pageHeight - h - 8);
+            doc.text(
+              `Page ${i} of ${pageCount}`,
+              rightMargin,
+              pageHeight - h - 8,
+              { align: "right" },
+            );
+          } else if (sponsorData) {
+            const imgProps = doc.getImageProperties(sponsorData);
+            const ratio = imgProps.width / imgProps.height;
+            let w = 180;
+            let h = w / ratio;
+            if (h > 20) {
+              h = 20;
+              w = h * ratio;
+            }
+            const x = leftMargin + (180 - w) / 2;
+
+            drawSignatureSpace(pageHeight - h - 12);
+
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(
+              leftMargin,
+              pageHeight - h - 5,
+              rightMargin,
+              pageHeight - h - 5,
+            );
+            doc.addImage(
+              sponsorData,
+              getImageFormat(sponsorData),
+              x,
+              pageHeight - h - 3,
+              w,
+              h,
+            );
+            doc.setFontSize(8);
+            doc.setFont(fontName, "normal");
+            doc.setTextColor(100, 100, 100);
+            doc.text(asOfLabel, leftMargin, pageHeight - h - 8);
+            doc.text(
+              `Page ${i} of ${pageCount}`,
+              rightMargin,
+              pageHeight - h - 8,
+              {
+                align: "right",
+              },
+            );
+          } else {
+            drawSignatureSpace(pageHeight - 12);
+
+            doc.setDrawColor(128, 0, 0);
+            doc.setLineWidth(0.8);
+            doc.line(leftMargin, pageHeight - 15, rightMargin, pageHeight - 15);
+            doc.setFontSize(8);
+            doc.setFont(fontName, "normal");
+            doc.setTextColor(100, 100, 100);
+            doc.text(asOfLabel, leftMargin, pageHeight - 8);
+            doc.text(`Page ${i} of ${pageCount}`, rightMargin, pageHeight - 8, {
+              align: "right",
+            });
+          }
+        }
+
+        doc.save(buildJuryStartListPdfFileName(competition, targetRaces));
+        toast.success("Jury Start List PDF exported successfully");
+      } catch (err) {
+        console.error("exportJuryStartListPDF error:", err);
+        toast.error(
+          "Failed to export Jury Start List PDF: " +
             (err.message || "Unknown error"),
         );
       }
@@ -9289,29 +10529,42 @@ const CompetitionRaces = () => {
           const registrationCandidates =
             registrationEntriesByCategory.get(raceCategoryId) || [];
 
-          const matchedRegistrationCrew = registrationCandidates.find((entry) => {
-            if (!Array.isArray(entry?.crew) || entry.crew.length !== crewMembers.length) {
-              return false;
-            }
+          const matchedRegistrationCrew = registrationCandidates.find(
+            (entry) => {
+              if (
+                !Array.isArray(entry?.crew) ||
+                entry.crew.length !== crewMembers.length
+              ) {
+                return false;
+              }
 
-            const entryBoatClassId = toDocumentId(entry?.boatClass);
-            if (raceBoatClassId && entryBoatClassId && entryBoatClassId !== raceBoatClassId) {
-              return false;
-            }
+              const entryBoatClassId = toDocumentId(entry?.boatClass);
+              if (
+                raceBoatClassId &&
+                entryBoatClassId &&
+                entryBoatClassId !== raceBoatClassId
+              ) {
+                return false;
+              }
 
-            const entryClubId = toDocumentId(entry?.club);
-            if (laneClubId && entryClubId && entryClubId !== laneClubId) {
-              return false;
-            }
+              const entryClubId = toDocumentId(entry?.club);
+              if (laneClubId && entryClubId && entryClubId !== laneClubId) {
+                return false;
+              }
 
-            const entryCrewIds = entry.crew.map((member) => toDocumentId(member));
-            const entryCrewSignature = entryCrewIds
-              .filter(Boolean)
-              .sort()
-              .join("|");
+              const entryCrewIds = entry.crew.map((member) =>
+                toDocumentId(member),
+              );
+              const entryCrewSignature = entryCrewIds
+                .filter(Boolean)
+                .sort()
+                .join("|");
 
-            return entryCrewSignature && entryCrewSignature === laneCrewSignature;
-          });
+              return (
+                entryCrewSignature && entryCrewSignature === laneCrewSignature
+              );
+            },
+          );
 
           const registrationOrderMap = new Map(
             (Array.isArray(matchedRegistrationCrew?.crew)
@@ -9900,6 +11153,7 @@ const CompetitionRaces = () => {
 
     // Find entries for this category and populate the start list
     const sourceStats = statsOverride || registrationStats;
+    let isRaceFallbackSource = false;
 
     // First check if we have registration entries for this category
     let catData = sourceStats?.byCategory?.find((c) => c.id === categoryId);
@@ -10010,6 +11264,7 @@ const CompetitionRaces = () => {
         });
 
         if (entriesFromRaces.length > 0) {
+          isRaceFallbackSource = true;
           // Get category name
           const catObj = existingRaces[0]?.category;
           let catName = "Unknown";
@@ -10048,6 +11303,10 @@ const CompetitionRaces = () => {
 
       // Transform entries to the format expected by the start list
       let newEntries = catData.entries.map((entry, index) => {
+        const entryId = toDocumentId(entry.id || entry._id);
+        const isRaceDerivedEntry =
+          isRaceFallbackSource || String(entry._id || "").startsWith("race-");
+
         // Prefer the athlete's current club / active membership club when present
         const memberships = Array.isArray(entry.athlete?.memberships)
           ? entry.athlete.memberships
@@ -10074,13 +11333,16 @@ const CompetitionRaces = () => {
         boatClassCounts[bcId]++;
 
         return {
-          id: entry._id,
-          uid: entry._id || `gen-${index}-${Date.now()}`,
+          id: isRaceDerivedEntry ? null : entryId,
+          uid: isRaceDerivedEntry
+            ? entry._id || `race-${index}-${Date.now()}`
+            : `db-${entryId || index}`,
           athleteId:
             toDocumentId(entry.athlete) ||
             (entry.crew && entry.crew.length > 0
               ? toDocumentId(entry.crew[0])
               : null) ||
+            entryId ||
             entry._id,
           athlete: entry.athlete,
           crew: entry.crew,
@@ -10090,6 +11352,7 @@ const CompetitionRaces = () => {
           category: entry.category,
           boatClass: entry.boatClass,
           crewNumber: entry.crewNumber,
+          status: entry.status,
           seed: boatClassCounts[bcId], // Seed per boat class
           notes: entry.notes || "",
         };
@@ -10144,6 +11407,7 @@ const CompetitionRaces = () => {
           .map(
             (e) =>
               e.boatClass?.id ||
+              e.boatClass?._id ||
               (typeof e.boatClass === "string" ? e.boatClass : null),
           )
           .filter(Boolean),
@@ -10798,6 +12062,11 @@ const CompetitionRaces = () => {
                         <span className="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">
                           {relevantEntries.length} entries
                         </span>
+                        {withdrawnRaceLaneIndicators.length > 0 && (
+                          <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">
+                            {withdrawnRaceLaneIndicators.length} withdrawn
+                          </span>
+                        )}
                       </h3>
                       <p className="text-xs text-slate-500 mt-1">
                         Add competitors by name or license number
@@ -10848,6 +12117,32 @@ const CompetitionRaces = () => {
                     requiredSize={requiredCrewSize}
                     onCancel={() => setPendingManualCrew([])}
                   />
+
+                  {withdrawnRaceLaneIndicators.length > 0 && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                      <p className="text-xs font-semibold text-rose-700">
+                        Withdrawn participants already present in generated race
+                        lanes
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-rose-700">
+                        {withdrawnRaceLaneIndicators
+                          .slice(0, 6)
+                          .map((participant) => (
+                            <span key={participant.key}>
+                              {participant.athleteName}
+                              {participant.clubCode
+                                ? ` (${participant.clubCode})`
+                                : ""}
+                            </span>
+                          ))}
+                        {withdrawnRaceLaneIndicators.length > 6 && (
+                          <span>
+                            +{withdrawnRaceLaneIndicators.length - 6} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <EntriesTable
                     entries={relevantEntries}
@@ -10919,245 +12214,545 @@ const CompetitionRaces = () => {
                 </div>
 
                 {canManageRaceSchedule && (
-                  <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
-                    <h3 className="text-xs font-semibold text-slate-900">
-                      Official results workflow
-                    </h3>
-                    <p className="mt-1 text-xs text-slate-600">
-                      Step 1: group races. Step 2: review provisional. Step 3:
-                      publish locked official results.
-                    </p>
+                  <>
+                    <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                      <h3 className="text-xs font-semibold text-slate-900">
+                        Official results workflow
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Step 1: group races. Step 2: review provisional. Step 3:
+                        publish locked official results.
+                      </p>
 
-                    <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                      <span className="rounded bg-slate-100 px-2 py-1 text-slate-700">
-                        Groups: {officialWorkflowStats.total}
-                      </span>
-                      <span className="rounded bg-amber-100 px-2 py-1 text-amber-800">
-                        Ready: {officialWorkflowStats.ready}
-                      </span>
-                      <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-800">
-                        Published: {officialWorkflowStats.published}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 grid gap-3 grid-cols-1 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="officialGroupSelect">Event group</Label>
-                        <Select
-                          id="officialGroupSelect"
-                          value={selectedOfficialGroupId}
-                          onChange={(event) =>
-                            setSelectedOfficialGroupId(
-                              normalizeStringId(event.target.value),
-                            )
-                          }
-                          disabled={loadingOfficialResultGroups}
-                        >
-                          <option value="">Select event group</option>
-                          {officialResultGroups.map((group) => (
-                            <option
-                              key={group.eventGroupId}
-                              value={group.eventGroupId}
-                            >
-                              {group.eventLabel || group.eventGroupId} (
-                              {group.completedRaceCount}/{group.raceCount} done)
-                              {group.published ? " - published" : ""}
-                            </option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 items-end">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={autoAssignOfficialGroups}
-                          disabled={autoGroupingOfficialResults}
-                        >
-                          {autoGroupingOfficialResults
-                            ? "Auto-grouping..."
-                            : "Auto-group races"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={loadOfficialResultGroups}
-                          disabled={loadingOfficialResultGroups}
-                        >
-                          {loadingOfficialResultGroups
-                            ? "Refreshing..."
-                            : "Refresh groups"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={loadOfficialPreview}
-                          disabled={
-                            !selectedOfficialGroupId || loadingOfficialPreview
-                          }
-                          className="md:col-span-2"
-                        >
-                          {loadingOfficialPreview
-                            ? "Loading..."
-                            : "Load preview"}
-                        </Button>
-                      </div>
-                    </div>
-
-                    {selectedOfficialGroup && (
-                      <div className="mt-2 text-[11px] text-slate-700">
-                        {selectedOfficialGroup.canPublish ? (
-                          <span className="font-medium text-emerald-700">
-                            Ready to publish: all races in this group are
-                            completed.
-                          </span>
-                        ) : (
-                          <span className="font-medium text-amber-700">
-                            Not ready: complete all races in this group first (
-                            {selectedOfficialGroup.completedRaceCount}/
-                            {selectedOfficialGroup.raceCount}).
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 items-center">
-                      <Button
-                        type="button"
-                        onClick={publishOfficialResult}
-                        disabled={
-                          !selectedOfficialGroupId ||
-                          !selectedOfficialGroup?.canPublish ||
-                          publishingOfficialResult ||
-                          loadingOfficialPreview
-                        }
-                      >
-                        {publishingOfficialResult
-                          ? "Publishing..."
-                          : "Publish official"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={publishAllReadyOfficial}
-                        disabled={
-                          publishingAllOfficialResults ||
-                          officialWorkflowStats.ready === 0
-                        }
-                      >
-                        {publishingAllOfficialResults
-                          ? "Publishing all..."
-                          : "Publish all ready"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={unpublishOfficialResult}
-                        disabled={
-                          !selectedOfficialGroupId ||
-                          !publishedOfficialResult ||
-                          unpublishingOfficialResult
-                        }
-                      >
-                        {unpublishingOfficialResult
-                          ? "Unpublishing..."
-                          : "Unpublish"}
-                      </Button>
-                      {publishedOfficialResult ? (
-                        <span className="text-xs text-emerald-700 font-medium md:justify-self-end">
-                          Published revision {publishedOfficialResult.revision}
+                      <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                        <span className="rounded bg-slate-100 px-2 py-1 text-slate-700">
+                          Groups: {officialWorkflowStats.total}
                         </span>
-                      ) : (
-                        <span className="hidden md:block" />
-                      )}
-                    </div>
-
-                    {provisionalOfficialResult?.entries?.length > 0 && (
-                      <div className="mt-3">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            setShowOfficialPreviewTable((previous) => !previous)
-                          }
-                        >
-                          {showOfficialPreviewTable
-                            ? "Hide provisional table"
-                            : "Show provisional table"}
-                        </Button>
+                        <span className="rounded bg-amber-100 px-2 py-1 text-amber-800">
+                          Ready: {officialWorkflowStats.ready}
+                        </span>
+                        <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-800">
+                          Published: {officialWorkflowStats.published}
+                        </span>
                       </div>
-                    )}
 
-                    {provisionalOfficialResult?.entries?.length > 0 &&
-                      showOfficialPreviewTable && (
-                        <div className="mt-3 overflow-x-auto rounded border border-emerald-100 bg-white">
-                          <table className="min-w-full text-xs">
-                            <thead className="bg-emerald-50 text-slate-700">
-                              <tr>
-                                <th className="px-2 py-2 text-left">Rank</th>
-                                <th className="px-2 py-2 text-left">Athlete</th>
-                                <th className="px-2 py-2 text-left">Club</th>
-                                <th className="px-2 py-2 text-left">Time</th>
-                                <th className="px-2 py-2 text-left">Status</th>
-                                <th className="px-2 py-2 text-left">Points</th>
-                                <th className="px-2 py-2 text-left">
-                                  Source race
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {provisionalOfficialResult.entries.map(
-                                (entry, index) => {
-                                  const athleteName =
-                                    entry.athleteName ||
-                                    `${entry.athlete?.firstName || ""} ${
-                                      entry.athlete?.lastName || ""
-                                    }`.trim() ||
-                                    "-";
-                                  const clubName =
-                                    entry.clubName ||
-                                    entry.club?.name ||
-                                    entry.club?.code ||
-                                    "-";
+                      <div className="mt-3 grid gap-3 grid-cols-1 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="officialGroupSelect">
+                            Event group
+                          </Label>
+                          <Select
+                            id="officialGroupSelect"
+                            value={selectedOfficialGroupId}
+                            onChange={(event) =>
+                              setSelectedOfficialGroupId(
+                                normalizeStringId(event.target.value),
+                              )
+                            }
+                            disabled={loadingOfficialResultGroups}
+                          >
+                            <option value="">Select event group</option>
+                            {officialResultGroups.map((group) => (
+                              <option
+                                key={group.eventGroupId}
+                                value={group.eventGroupId}
+                              >
+                                {group.eventLabel || group.eventGroupId} (
+                                {group.completedRaceCount}/{group.raceCount}{" "}
+                                done)
+                                {group.published ? " - published" : ""}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
 
-                                  return (
-                                    <tr
-                                      key={`${entry.athleteId || entry.athlete?._id || index}`}
-                                      className="border-t border-slate-100"
-                                    >
-                                      <td className="px-2 py-1.5 font-medium">
-                                        {entry.rank || "-"}
-                                      </td>
-                                      <td className="px-2 py-1.5">
-                                        {athleteName}
-                                      </td>
-                                      <td className="px-2 py-1.5">
-                                        {clubName}
-                                      </td>
-                                      <td className="px-2 py-1.5">
-                                        {Number.isFinite(entry.elapsedMs)
-                                          ? formatElapsedTime(entry.elapsedMs)
-                                          : "-"}
-                                      </td>
-                                      <td className="px-2 py-1.5 uppercase">
-                                        {entry.status || "ok"}
-                                      </td>
-                                      <td className="px-2 py-1.5 font-semibold">
-                                        {entry.points || 0}
-                                      </td>
-                                      <td className="px-2 py-1.5 text-slate-500">
-                                        {entry.sourceRaceName || "-"}
-                                      </td>
-                                    </tr>
-                                  );
-                                },
-                              )}
-                            </tbody>
-                          </table>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 items-end">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={autoAssignOfficialGroups}
+                            disabled={autoGroupingOfficialResults}
+                          >
+                            {autoGroupingOfficialResults
+                              ? "Auto-grouping..."
+                              : "Auto-group races"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={loadOfficialResultGroups}
+                            disabled={loadingOfficialResultGroups}
+                          >
+                            {loadingOfficialResultGroups
+                              ? "Refreshing..."
+                              : "Refresh groups"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={loadOfficialPreview}
+                            disabled={
+                              !selectedOfficialGroupId || loadingOfficialPreview
+                            }
+                            className="md:col-span-2"
+                          >
+                            {loadingOfficialPreview
+                              ? "Loading..."
+                              : "Load preview"}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {selectedOfficialGroup && (
+                        <div className="mt-2 text-[11px] text-slate-700">
+                          {selectedOfficialGroup.canPublish ? (
+                            <span className="font-medium text-emerald-700">
+                              Ready to publish: all races in this group are
+                              completed.
+                            </span>
+                          ) : (
+                            <span className="font-medium text-amber-700">
+                              Not ready: complete all races in this group first
+                              ({selectedOfficialGroup.completedRaceCount}/
+                              {selectedOfficialGroup.raceCount}).
+                            </span>
+                          )}
                         </div>
                       )}
-                  </div>
+
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 items-center">
+                        <Button
+                          type="button"
+                          onClick={publishOfficialResult}
+                          disabled={
+                            !selectedOfficialGroupId ||
+                            !selectedOfficialGroup?.canPublish ||
+                            publishingOfficialResult ||
+                            loadingOfficialPreview
+                          }
+                        >
+                          {publishingOfficialResult
+                            ? "Publishing..."
+                            : "Publish official"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={publishAllReadyOfficial}
+                          disabled={
+                            publishingAllOfficialResults ||
+                            officialWorkflowStats.ready === 0
+                          }
+                        >
+                          {publishingAllOfficialResults
+                            ? "Publishing all..."
+                            : "Publish all ready"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={unpublishOfficialResult}
+                          disabled={
+                            !selectedOfficialGroupId ||
+                            !publishedOfficialResult ||
+                            unpublishingOfficialResult
+                          }
+                        >
+                          {unpublishingOfficialResult
+                            ? "Unpublishing..."
+                            : "Unpublish"}
+                        </Button>
+                        {publishedOfficialResult ? (
+                          <span className="text-xs text-emerald-700 font-medium md:justify-self-end">
+                            Published revision{" "}
+                            {publishedOfficialResult.revision}
+                          </span>
+                        ) : (
+                          <span className="hidden md:block" />
+                        )}
+                      </div>
+
+                      {provisionalOfficialResult?.entries?.length > 0 && (
+                        <div className="mt-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setShowOfficialPreviewTable(
+                                (previous) => !previous,
+                              )
+                            }
+                          >
+                            {showOfficialPreviewTable
+                              ? "Hide provisional table"
+                              : "Show provisional table"}
+                          </Button>
+                        </div>
+                      )}
+
+                      {provisionalOfficialResult?.entries?.length > 0 &&
+                        showOfficialPreviewTable && (
+                          <div className="mt-3 overflow-x-auto rounded border border-emerald-100 bg-white">
+                            <table className="min-w-full text-xs">
+                              <thead className="bg-emerald-50 text-slate-700">
+                                <tr>
+                                  <th className="px-2 py-2 text-left">Rank</th>
+                                  <th className="px-2 py-2 text-left">
+                                    Athlete
+                                  </th>
+                                  <th className="px-2 py-2 text-left">Club</th>
+                                  <th className="px-2 py-2 text-left">Time</th>
+                                  <th className="px-2 py-2 text-left">
+                                    Status
+                                  </th>
+                                  <th className="px-2 py-2 text-left">
+                                    Points
+                                  </th>
+                                  <th className="px-2 py-2 text-left">
+                                    Source race
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {provisionalOfficialResult.entries.map(
+                                  (entry, index) => {
+                                    const athleteName =
+                                      entry.athleteName ||
+                                      `${entry.athlete?.firstName || ""} ${
+                                        entry.athlete?.lastName || ""
+                                      }`.trim() ||
+                                      "-";
+                                    const clubName =
+                                      entry.clubName ||
+                                      entry.club?.name ||
+                                      entry.club?.code ||
+                                      "-";
+
+                                    return (
+                                      <tr
+                                        key={`${entry.athleteId || entry.athlete?._id || index}`}
+                                        className="border-t border-slate-100"
+                                      >
+                                        <td className="px-2 py-1.5 font-medium">
+                                          {entry.rank || "-"}
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                          {athleteName}
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                          {clubName}
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                          {Number.isFinite(entry.elapsedMs)
+                                            ? formatElapsedTime(entry.elapsedMs)
+                                            : "-"}
+                                        </td>
+                                        <td className="px-2 py-1.5 uppercase">
+                                          {entry.status || "ok"}
+                                        </td>
+                                        <td className="px-2 py-1.5 font-semibold">
+                                          {entry.points || 0}
+                                        </td>
+                                        <td className="px-2 py-1.5 text-slate-500">
+                                          {entry.sourceRaceName || "-"}
+                                        </td>
+                                      </tr>
+                                    );
+                                  },
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                    </div>
+
+                    <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50/40 p-3">
+                      <h3 className="text-xs font-semibold text-slate-900">
+                        Penalties workflow
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Create category penalties for clubs or officials. Only
+                        club and penalty points are mandatory.
+                      </p>
+
+                      <div className="mt-3 grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="penaltyClub">Club *</Label>
+                          <Select
+                            id="penaltyClub"
+                            value={penaltyForm.club}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "club",
+                                event.target.value,
+                              )
+                            }
+                            disabled={loadingPenaltyClubOptions}
+                          >
+                            <option value="">Select club</option>
+                            {penaltyClubOptions.map((club) => (
+                              <option key={club._id} value={club._id}>
+                                {club.code ? `${club.code} - ` : ""}
+                                {club.name || club.nameAr || "Unnamed club"}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="penaltyCategory">Category</Label>
+                          <Select
+                            id="penaltyCategory"
+                            value={penaltyForm.category}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "category",
+                                event.target.value,
+                              )
+                            }
+                          >
+                            <option value="">Select category (optional)</option>
+                            {allowedCategories.map((category) => {
+                              const catId = toDocumentId(category);
+                              const catLabel =
+                                category?.titles?.en ||
+                                category?.abbreviation ||
+                                "Unnamed category";
+                              return (
+                                <option key={catId} value={catId}>
+                                  {catLabel}
+                                </option>
+                              );
+                            })}
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="penaltyPoints">
+                            Penalty points *
+                          </Label>
+                          <Input
+                            id="penaltyPoints"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={penaltyForm.penaltyPoints}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "penaltyPoints",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="ex: 5"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="penaltyTargetType">Penalty to</Label>
+                          <Select
+                            id="penaltyTargetType"
+                            value={penaltyForm.targetType}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "targetType",
+                                event.target.value,
+                              )
+                            }
+                          >
+                            <option value="club">Club</option>
+                            <option value="official">Official of club</option>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="penaltyFirstName">First name</Label>
+                          <Input
+                            id="penaltyFirstName"
+                            value={penaltyForm.firstName}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "firstName",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="penaltyLastName">Last name</Label>
+                          <Input
+                            id="penaltyLastName"
+                            value={penaltyForm.lastName}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "lastName",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="penaltyLicenseNumber">
+                            License number
+                          </Label>
+                          <Input
+                            id="penaltyLicenseNumber"
+                            value={penaltyForm.licenseNumber}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "licenseNumber",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="penaltyRole">Role</Label>
+                          <Input
+                            id="penaltyRole"
+                            value={penaltyForm.role}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "role",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </div>
+
+                        <div className="space-y-2 sm:col-span-2 lg:col-span-3">
+                          <Label htmlFor="penaltyObservations">
+                            Observations
+                          </Label>
+                          <Input
+                            id="penaltyObservations"
+                            value={penaltyForm.observations}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "observations",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          onClick={submitCompetitionPenalty}
+                          disabled={savingCompetitionPenalty}
+                        >
+                          {savingCompetitionPenalty
+                            ? "Saving..."
+                            : "Save penalty"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={loadCompetitionPenalties}
+                          disabled={loadingCompetitionPenalties}
+                        >
+                          {loadingCompetitionPenalties
+                            ? "Refreshing..."
+                            : "Refresh penalties"}
+                        </Button>
+                      </div>
+
+                      <div className="mt-3 overflow-x-auto rounded border border-rose-100 bg-white">
+                        <table className="min-w-full text-xs">
+                          <thead className="bg-rose-50 text-slate-700">
+                            <tr>
+                              <th className="px-2 py-2 text-left">Club</th>
+                              <th className="px-2 py-2 text-left">Category</th>
+                              <th className="px-2 py-2 text-left">Penalty</th>
+                              <th className="px-2 py-2 text-left">To</th>
+                              <th className="px-2 py-2 text-left">Person</th>
+                              <th className="px-2 py-2 text-left">License</th>
+                              <th className="px-2 py-2 text-left">Role</th>
+                              <th className="px-2 py-2 text-left">Obs</th>
+                              <th className="px-2 py-2 text-left">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {competitionPenalties.map((penalty) => {
+                              const clubLabel = penalty?.club
+                                ? `${penalty.club.code ? `${penalty.club.code} - ` : ""}${penalty.club.name || penalty.club.nameAr || "-"}`
+                                : "-";
+                              const categoryLabel =
+                                penalty?.category?.titles?.en ||
+                                penalty?.category?.abbreviation ||
+                                "-";
+                              const personName =
+                                `${penalty?.firstName || ""} ${penalty?.lastName || ""}`.trim();
+
+                              return (
+                                <tr
+                                  key={penalty._id}
+                                  className="border-t border-slate-100"
+                                >
+                                  <td className="px-2 py-1.5">{clubLabel}</td>
+                                  <td className="px-2 py-1.5">
+                                    {categoryLabel}
+                                  </td>
+                                  <td className="px-2 py-1.5 font-semibold text-rose-700">
+                                    -{Number(penalty.penaltyPoints || 0)}
+                                  </td>
+                                  <td className="px-2 py-1.5 capitalize">
+                                    {penalty.targetType || "club"}
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    {personName || "-"}
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    {penalty.licenseNumber || "-"}
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    {penalty.role || "-"}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-slate-500">
+                                    {penalty.observations || "-"}
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() =>
+                                        deleteCompetitionPenalty(penalty._id)
+                                      }
+                                      disabled={
+                                        deletingPenaltyId === penalty._id
+                                      }
+                                    >
+                                      {deletingPenaltyId === penalty._id
+                                        ? "Deleting..."
+                                        : "Delete"}
+                                    </Button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {competitionPenalties.length === 0 && (
+                              <tr>
+                                <td
+                                  className="px-2 py-4 text-center text-slate-500"
+                                  colSpan={9}
+                                >
+                                  {loadingCompetitionPenalties
+                                    ? "Loading penalties..."
+                                    : "No penalties saved yet."}
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
                 )}
               </section>
             </div>
@@ -11187,6 +12782,17 @@ const CompetitionRaces = () => {
                     title="Export Start List PDF"
                   >
                     📄 Start List
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={exportJuryStartListPDF}
+                    disabled={!sortedRaces.length}
+                    title="Export Jury Start List PDF"
+                  >
+                    ✍️ Jury Start List
                   </Button>
                   <Button
                     type="button"
