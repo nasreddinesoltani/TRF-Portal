@@ -169,6 +169,7 @@ const CompetitionRegistration = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [selectedBoatClassId, setSelectedBoatClassId] = useState("");
   const [selectedJourneyIndex, setSelectedJourneyIndex] = useState("");
+  const [entriesJourneyFilter, setEntriesJourneyFilter] = useState("");
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [selectedCrew, setSelectedCrew] = useState([]);
   const [entryNotes, setEntryNotes] = useState("");
@@ -296,6 +297,10 @@ const CompetitionRegistration = () => {
         if (resolvedClubId) {
           params.set("clubId", resolvedClubId);
         }
+        // Pass journey filter to backend so entries are scoped
+        if (entriesJourneyFilter) {
+          params.set("journeyIndex", entriesJourneyFilter);
+        }
         const response = await fetch(
           `${API_BASE_URL}/api/competitions/${competitionId}/registration${
             params.size ? `?${params.toString()}` : ""
@@ -331,7 +336,7 @@ const CompetitionRegistration = () => {
         }
       }
     },
-    [competitionId, resolvedClubId, token],
+    [competitionId, entriesJourneyFilter, resolvedClubId, token],
   );
 
   const summaryCanSubmit = permissions?.canSubmit === true;
@@ -357,6 +362,10 @@ const CompetitionRegistration = () => {
       }
       if (resolvedClubId) {
         params.set("clubId", resolvedClubId);
+      }
+      // Pass journey index so "already registered" check is journey-scoped
+      if (selectedJourneyIndex) {
+        params.set("journeyIndex", selectedJourneyIndex);
       }
       const response = await fetch(
         `${API_BASE_URL}/api/competitions/${competitionId}/registration/eligible?${params.toString()}`,
@@ -386,6 +395,7 @@ const CompetitionRegistration = () => {
     isClubManager,
     resolvedClubId,
     selectedCategoryId,
+    selectedJourneyIndex,
     summaryCanSubmit,
     token,
   ]);
@@ -408,6 +418,14 @@ const CompetitionRegistration = () => {
   useEffect(() => {
     loadEligibleAthletes();
   }, [loadEligibleAthletes]);
+
+  // Auto-sync: when user selects a journey in the registration form,
+  // update the entries filter to show entries for that journey
+  useEffect(() => {
+    if (selectedJourneyIndex) {
+      setEntriesJourneyFilter(selectedJourneyIndex);
+    }
+  }, [selectedJourneyIndex]);
 
   useEffect(() => {
     setSelectedAthlete(null);
@@ -486,6 +504,24 @@ const CompetitionRegistration = () => {
       { pending: 0, approved: 0, rejected: 0, withdrawn: 0 },
     );
   }, [entries]);
+
+  // Per-journey breakdown for sidebar display
+  const perJourneyBreakdown = useMemo(() => {
+    if (competition?.competitionType !== "championship") return [];
+    const journeyMap = new Map();
+    for (const entry of entries) {
+      const jIdx = entry.journeyIndex || 0;
+      if (!journeyMap.has(jIdx)) {
+        journeyMap.set(jIdx, { pending: 0, approved: 0, rejected: 0, withdrawn: 0, total: 0 });
+      }
+      const bucket = journeyMap.get(jIdx);
+      bucket[entry.status || "unknown"] = (bucket[entry.status || "unknown"] || 0) + 1;
+      bucket.total += 1;
+    }
+    return Array.from(journeyMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([jIdx, counts]) => ({ journeyIndex: jIdx, ...counts }));
+  }, [competition?.competitionType, entries]);
 
   const handleClubChange = useCallback(
     (event) => {
@@ -704,6 +740,7 @@ const CompetitionRegistration = () => {
       setSavingEntry(false);
     }
   }, [
+    competition,
     competitionId,
     entryNotes,
     isClubManager,
@@ -715,6 +752,7 @@ const CompetitionRegistration = () => {
     requiredCrewSize,
     selectedBoatClassId,
     selectedCategoryId,
+    selectedJourneyIndex,
     summaryCanSubmit,
     token,
   ]);
@@ -776,6 +814,50 @@ const CompetitionRegistration = () => {
         await loadSummary(false);
       } catch (error) {
         console.error("Failed to withdraw entry", error);
+        toast.error(error.message);
+      } finally {
+        setActionEntryId(null);
+      }
+    },
+    [
+      competitionId,
+      loadSummary,
+      summaryCanManageEntries,
+      summaryCanWithdraw,
+      token,
+    ],
+  );
+
+  const handleUnwithdrawEntry = useCallback(
+    async (entryId) => {
+      if (!summaryCanWithdraw && !summaryCanManageEntries) return;
+      if (
+        !window.confirm(
+          "Are you sure you want to restore this withdrawn entry?",
+        )
+      ) {
+        return;
+      }
+
+      setActionEntryId(entryId);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/competitions/${competitionId}/registration/${entryId}/unwithdraw`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.message || "Failed to restore entry");
+        }
+        toast.success("Entry restored");
+        await loadSummary(false);
+      } catch (error) {
+        console.error("Failed to restore entry", error);
         toast.error(error.message);
       } finally {
         setActionEntryId(null);
@@ -1022,6 +1104,38 @@ const CompetitionRegistration = () => {
         field: "boatClass",
         valueAccessor: (field, data) => data?.boatClass?.code || "",
       },
+    );
+
+    // Journey column — only for championship competitions with stages
+    if (
+      competition?.competitionType === "championship" &&
+      competition?.stages?.length > 0
+    ) {
+      columnList.push({
+        headerText: "Journey",
+        width: 110,
+        field: "journeyIndex",
+        textAlign: "Center",
+        template: (entry) => {
+          const jIdx = entry?.journeyIndex;
+          if (!jIdx) {
+            return <span className="text-xs text-slate-400">—</span>;
+          }
+          const stage = competition.stages.find(
+            (st, sIdx) => (st.order ?? sIdx + 1) === jIdx,
+          );
+          return (
+            <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+              J{jIdx}{stage?.name ? ` · ${stage.name}` : ""}
+            </span>
+          );
+        },
+        valueAccessor: (field, data) =>
+          data?.journeyIndex ? `Journey ${data.journeyIndex}` : "",
+      });
+    }
+
+    columnList.push(
       {
         headerText: "Status",
         width: 160,
@@ -1115,23 +1229,34 @@ const CompetitionRegistration = () => {
           const now = new Date();
           const isBeforeDeadline = !closeAt || now <= closeAt;
 
-          if (
-            (summaryCanWithdraw || summaryCanManageEntries) &&
-            (entry?.status !== "withdrawn" || isBeforeDeadline)
-          ) {
-            const label = isBeforeDeadline ? "Delete" : "Withdraw";
+          if (summaryCanWithdraw || summaryCanManageEntries) {
+            if (entry?.status === "withdrawn") {
+              buttons.push(
+                <Button
+                  key="unwithdraw"
+                  type="button"
+                  variant="secondary"
+                  disabled={isProcessing}
+                  onClick={() => handleUnwithdrawEntry(entry.id)}
+                >
+                  {isProcessing ? "Working..." : "Undo Withdraw"}
+                </Button>,
+              );
+            } else {
+              const label = isBeforeDeadline ? "Delete" : "Withdraw";
 
-            buttons.push(
-              <Button
-                key="withdraw"
-                type="button"
-                variant="destructive"
-                disabled={isProcessing}
-                onClick={() => handleWithdrawEntry(entry.id)}
-              >
-                {isProcessing ? "Working..." : label}
-              </Button>,
-            );
+              buttons.push(
+                <Button
+                  key="withdraw"
+                  type="button"
+                  variant="destructive"
+                  disabled={isProcessing}
+                  onClick={() => handleWithdrawEntry(entry.id)}
+                >
+                  {isProcessing ? "Working..." : label}
+                </Button>,
+              );
+            }
           }
 
           if (!buttons.length) {
@@ -1148,6 +1273,7 @@ const CompetitionRegistration = () => {
     actionEntryId,
     club?.id,
     competition,
+    handleUnwithdrawEntry,
     handleUpdateStatus,
     handleWithdrawEntry,
     summaryCanManageEntries,
@@ -1269,6 +1395,27 @@ const CompetitionRegistration = () => {
               ) : null}
             </div>
           ) : null}
+          {competition?.competitionType === "championship" &&
+            competition?.stages?.length > 0 && (
+              <Select
+                value={entriesJourneyFilter}
+                onChange={(e) => setEntriesJourneyFilter(e.target.value)}
+                className="w-48"
+              >
+                <option value="">All journeys</option>
+                {competition.stages.map((stage, sIdx) => {
+                  const jIndex =
+                    stage.order !== undefined && stage.order !== null
+                      ? stage.order
+                      : sIdx + 1;
+                  return (
+                    <option key={`hdr-j-${sIdx}`} value={jIndex}>
+                      Journey {jIndex} – {stage.name}
+                    </option>
+                  );
+                })}
+              </Select>
+            )}
           <Button type="button" variant="ghost" onClick={() => navigate(-1)}>
             Back
           </Button>
@@ -1280,7 +1427,7 @@ const CompetitionRegistration = () => {
           Loading registration workspace…
         </div>
       ) : summary ? (
-        <div className="grid gap-6 xl:grid-cols-[2fr,1fr]">
+        <div className="grid gap-6 xl:grid-cols-[5fr,3fr]">
           <section className="space-y-6">
             {summaryCanSubmit ? (
               <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1302,10 +1449,59 @@ const CompetitionRegistration = () => {
                 <div
                   className={`grid gap-3 ${
                     competition?.competitionType === "championship"
-                      ? "md:grid-cols-[minmax(200px,1fr),minmax(200px,1fr),minmax(180px,1fr)] xl:grid-cols-[minmax(200px,1fr),minmax(200px,1fr),minmax(180px,1fr),minmax(200px,1fr)]"
+                      ? "md:grid-cols-[minmax(180px,1fr),minmax(200px,1fr),minmax(200px,1fr)] xl:grid-cols-[minmax(180px,1fr),minmax(200px,1fr),minmax(200px,1fr),minmax(200px,1fr)]"
                       : "md:grid-cols-[minmax(240px,1fr),minmax(220px,1fr)] xl:grid-cols-[minmax(240px,1fr),minmax(240px,1fr),minmax(200px,1fr)]"
                   }`}
                 >
+                  {competition?.competitionType === "championship" && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Journey
+                      </label>
+                      <Select
+                        value={selectedJourneyIndex || ""}
+                        onChange={(event) =>
+                          setSelectedJourneyIndex(event.target.value)
+                        }
+                      >
+                        <option value="">Select a journey</option>
+                        {competition?.stages &&
+                        competition.stages.length > 0 ? (
+                          competition.stages.map((stage, sIdx) => {
+                            const jIndex =
+                              stage.order !== undefined && stage.order !== null
+                                ? stage.order
+                                : sIdx + 1;
+
+                            const now = new Date();
+                            const isOpen =
+                              (!stage.registrationOpenDate ||
+                                now > new Date(stage.registrationOpenDate)) &&
+                              (!stage.registrationCloseDate ||
+                                now < new Date(stage.registrationCloseDate));
+
+                            return (
+                              <option
+                                key={`stage-${sIdx}`}
+                                value={jIndex}
+                                disabled={!isOpen && !roleCanManageEntries}
+                              >
+                                Journey {jIndex} - {stage.name}{" "}
+                                {!isOpen && !roleCanManageEntries
+                                  ? "(Closed)"
+                                  : ""}
+                              </option>
+                            );
+                          })
+                        ) : (
+                          <option value="" disabled>
+                            No journeys configured
+                          </option>
+                        )}
+                      </Select>
+                    </div>
+                  )}
+
                   <div className="space-y-1">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Category
@@ -1370,55 +1566,6 @@ const CompetitionRegistration = () => {
                       ))}
                     </Select>
                   </div>
-
-                  {competition?.competitionType === "championship" && (
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Journey
-                      </label>
-                      <Select
-                        value={selectedJourneyIndex || ""}
-                        onChange={(event) =>
-                          setSelectedJourneyIndex(event.target.value)
-                        }
-                      >
-                        <option value="">Select a journey</option>
-                        {competition?.stages &&
-                        competition.stages.length > 0 ? (
-                          competition.stages.map((stage, sIdx) => {
-                            const jIndex =
-                              stage.order !== undefined && stage.order !== null
-                                ? stage.order
-                                : sIdx + 1;
-
-                            const now = new Date();
-                            const isOpen =
-                              (!stage.registrationOpenDate ||
-                                now > new Date(stage.registrationOpenDate)) &&
-                              (!stage.registrationCloseDate ||
-                                now < new Date(stage.registrationCloseDate));
-
-                            return (
-                              <option
-                                key={`stage-${sIdx}`}
-                                value={jIndex}
-                                disabled={!isOpen && !roleCanManageEntries}
-                              >
-                                Journey {jIndex} - {stage.name}{" "}
-                                {!isOpen && !roleCanManageEntries
-                                  ? "(Closed)"
-                                  : ""}
-                              </option>
-                            );
-                          })
-                        ) : (
-                          <option value="" disabled>
-                            No journeys configured
-                          </option>
-                        )}
-                      </Select>
-                    </div>
-                  )}
 
                   <div className="space-y-1">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1686,9 +1833,35 @@ const CompetitionRegistration = () => {
                   </h2>
                   <span className="text-xs text-slate-500">
                     {entries.length} total
+                    {entriesJourneyFilter
+                      ? ` (Journey ${entriesJourneyFilter})`
+                      : ""}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  {competition?.competitionType === "championship" &&
+                    competition?.stages?.length > 0 && (
+                      <Select
+                        value={entriesJourneyFilter}
+                        onChange={(e) =>
+                          setEntriesJourneyFilter(e.target.value)
+                        }
+                        className="w-44 text-xs"
+                      >
+                        <option value="">All journeys</option>
+                        {competition.stages.map((stage, sIdx) => {
+                          const jIndex =
+                            stage.order !== undefined && stage.order !== null
+                              ? stage.order
+                              : sIdx + 1;
+                          return (
+                            <option key={`jf-${sIdx}`} value={jIndex}>
+                              Journey {jIndex} – {stage.name}
+                            </option>
+                          );
+                        })}
+                      </Select>
+                    )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -1822,6 +1995,9 @@ const CompetitionRegistration = () => {
             <div className="space-y-3">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
                 Entry status overview
+                {entriesJourneyFilter
+                  ? ` (Journey ${entriesJourneyFilter})`
+                  : ""}
               </h3>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {Object.entries(entryStatusCounts).map(([status, count]) => {
@@ -1846,6 +2022,73 @@ const CompetitionRegistration = () => {
                 })}
               </div>
             </div>
+
+            {/* Per-journey breakdown — only for championship competitions */}
+            {competition?.competitionType === "championship" &&
+              !entriesJourneyFilter &&
+              perJourneyBreakdown.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                    Entries per journey
+                  </h3>
+                  <div className="overflow-hidden rounded-lg border border-slate-200">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-500">
+                          <th className="px-3 py-2 text-left font-semibold">Journey</th>
+                          <th className="px-2 py-2 text-center font-semibold">Total</th>
+                          <th className="px-2 py-2 text-center font-semibold text-amber-600">Pend</th>
+                          <th className="px-2 py-2 text-center font-semibold text-emerald-600">Appr</th>
+                          <th className="px-2 py-2 text-center font-semibold text-rose-600">Rej</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {perJourneyBreakdown.map((row) => {
+                          const stage = competition?.stages?.find(
+                            (st, sIdx) =>
+                              (st.order ?? sIdx + 1) === row.journeyIndex,
+                          );
+                          return (
+                            <tr
+                              key={row.journeyIndex}
+                              className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                              onClick={() =>
+                                setEntriesJourneyFilter(
+                                  String(row.journeyIndex),
+                                )
+                              }
+                              title={`Click to filter Journey ${row.journeyIndex}`}
+                            >
+                              <td className="px-3 py-2 font-medium text-slate-800">
+                                {row.journeyIndex
+                                  ? `J${row.journeyIndex}`
+                                  : "—"}
+                                {stage?.name ? (
+                                  <span className="ml-1 text-slate-400">
+                                    {stage.name}
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td className="px-2 py-2 text-center font-semibold text-slate-900">
+                                {row.total}
+                              </td>
+                              <td className="px-2 py-2 text-center text-amber-600">
+                                {row.pending || 0}
+                              </td>
+                              <td className="px-2 py-2 text-center text-emerald-600">
+                                {row.approved || 0}
+                              </td>
+                              <td className="px-2 py-2 text-center text-rose-600">
+                                {row.rejected || 0}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
             <div className="space-y-3">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">

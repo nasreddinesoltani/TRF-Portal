@@ -4,8 +4,10 @@ import {
   getRegistrationSummary,
   listEligibleAthletes,
   createCompetitionEntries,
+  restoreEntryFromRaceLane,
   updateEntryStatus,
   withdrawEntry,
+  unwithdrawEntry,
   deleteEntry,
   updateEntry,
 } from "../Controllers/competitionRegistrationController.js";
@@ -16,49 +18,63 @@ router.get(
   "/",
   protect,
   allowRoles("admin", "jury_president", "club_manager"),
-  getRegistrationSummary
+  getRegistrationSummary,
 );
 
 router.get(
   "/eligible",
   protect,
   allowRoles("admin", "jury_president", "club_manager"),
-  listEligibleAthletes
+  listEligibleAthletes,
 );
 
 router.post(
   "/",
   protect,
   allowRoles("admin", "jury_president", "club_manager"),
-  createCompetitionEntries
+  createCompetitionEntries,
+);
+
+router.post(
+  "/restore-lane",
+  protect,
+  allowRoles("admin", "jury_president", "club_manager"),
+  restoreEntryFromRaceLane,
 );
 
 router.patch(
   "/:entryId/status",
   protect,
   allowRoles("admin", "jury_president"),
-  updateEntryStatus
+  updateEntryStatus,
 );
 
 router.put(
   "/:entryId",
   protect,
   allowRoles("admin", "jury_president"),
-  updateEntry
+  updateEntry,
 );
 
 router.post(
   "/:entryId/withdraw",
   protect,
   allowRoles("admin", "jury_president", "club_manager"),
-  withdrawEntry
+  withdrawEntry,
+);
+
+router.post(
+  "/:entryId/unwithdraw",
+  protect,
+  allowRoles("admin", "jury_president", "club_manager"),
+  unwithdrawEntry,
 );
 
 router.delete(
   "/:entryId",
   protect,
   allowRoles("admin", "jury_president"),
-  deleteEntry
+  deleteEntry,
 );
 
 export default router;

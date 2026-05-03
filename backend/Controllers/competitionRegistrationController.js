@@ -186,6 +186,87 @@ const markRaceLanesWithdrawn = async (competitionId, entry, userId) => {
   return { matched, updated };
 };
 
+const restoreRaceLanesFromWithdrawn = async (competitionId, entry, userId) => {
+  const entryKey = buildEntryAssignmentKey(entry);
+  if (!entryKey) {
+    return { matched: 0, updated: 0 };
+  }
+
+  const races = await CompetitionRace.find({ competition: competitionId });
+  let matched = 0;
+  let updated = 0;
+
+  for (const race of races) {
+    let raceChanged = false;
+    race.lanes = (race.lanes || []).map((lane) => {
+      const laneKey = buildLaneAssignmentKey(race, lane);
+      if (laneKey !== entryKey) {
+        return lane;
+      }
+
+      matched += 1;
+      const nextLane = {
+        ...lane.toObject?.(),
+        ...lane,
+      };
+      let laneChanged = false;
+
+      if ((nextLane.registrationStatus || "").toLowerCase() === "withdrawn") {
+        nextLane.registrationStatus = null;
+        laneChanged = true;
+      }
+
+      const existingResult = nextLane.result || {};
+      if ((existingResult.status || "").toLowerCase() === "withdrawn") {
+        nextLane.result = {
+          ...existingResult,
+          status: "ok",
+          finishPosition: undefined,
+          elapsedMs: undefined,
+          notes:
+            existingResult.notes === "Withdrawn"
+              ? undefined
+              : existingResult.notes,
+        };
+        laneChanged = true;
+      }
+
+      if (!laneChanged) {
+        return lane;
+      }
+
+      raceChanged = true;
+      updated += 1;
+      return nextLane;
+    });
+
+    if (raceChanged) {
+      race.markModified("lanes");
+      if (userId) {
+        race.updatedBy = userId;
+      }
+      await race.save();
+    }
+  }
+
+  return { matched, updated };
+};
+
+const resolveRestoredEntryStatus = (entry) => {
+  const statusBeforeWithdraw =
+    entry?.metadata?.get?.("statusBeforeWithdraw") ||
+    entry?.metadata?.statusBeforeWithdraw;
+
+  if (
+    COMPETITION_ENTRY_STATUSES.includes(statusBeforeWithdraw) &&
+    statusBeforeWithdraw !== "withdrawn"
+  ) {
+    return statusBeforeWithdraw;
+  }
+
+  return "pending";
+};
+
 const serializeCategory = (category) => {
   if (!category) {
     return null;
@@ -666,6 +747,14 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
     entryQuery.club = clubContext.clubId;
   }
 
+  // Optional journey filtering
+  const requestedJourney = req.query.journeyIndex
+    ? Number(req.query.journeyIndex)
+    : null;
+  if (requestedJourney && Number.isFinite(requestedJourney)) {
+    entryQuery.journeyIndex = requestedJourney;
+  }
+
   const entries = await CompetitionEntry.find(entryQuery)
     .sort({ createdAt: 1 })
     .populate([
@@ -796,13 +885,24 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
         )
       : null;
 
+  // Accept optional journeyIndex so the "already registered" check is scoped
+  const requestedJourney = req.query.journeyIndex
+    ? Number(req.query.journeyIndex)
+    : null;
+
   const entryQuery = {
     competition: competition._id,
     status: { $ne: "withdrawn" },
   };
 
+  // When a journey is specified, only consider entries for THAT journey
+  // so athletes registered for a different journey still appear as eligible
+  if (requestedJourney && Number.isFinite(requestedJourney)) {
+    entryQuery.journeyIndex = requestedJourney;
+  }
+
   const existingEntries = await CompetitionEntry.find(entryQuery)
-    .select("athlete crew status category")
+    .select("athlete crew status category journeyIndex")
     .lean();
 
   const existingEntryMap = new Map();
@@ -1627,6 +1727,16 @@ export const withdrawEntry = asyncHandler(async (req, res) => {
     return res.json({ entry: serializeEntry(entry) });
   }
 
+  const previousStatus =
+    COMPETITION_ENTRY_STATUSES.includes(entry.status) &&
+    entry.status !== "withdrawn"
+      ? entry.status
+      : "pending";
+  if (!entry.metadata || typeof entry.metadata.set !== "function") {
+    entry.metadata = new Map();
+  }
+  entry.metadata.set("statusBeforeWithdraw", previousStatus);
+
   entry.status = "withdrawn";
   entry.reviewedBy = req.user.id;
   entry.reviewedAt = new Date();
@@ -1643,6 +1753,217 @@ export const withdrawEntry = asyncHandler(async (req, res) => {
   await populateEntryDoc(entry);
 
   return res.json({ entry: serializeEntry(entry), raceLaneSync: laneSync });
+});
+
+export const unwithdrawEntry = asyncHandler(async (req, res) => {
+  const { competitionId, entryId } = req.params;
+
+  const competition = await Competition.findById(competitionId).lean();
+  if (!competition) {
+    return res.status(404).json({ message: "Competition not found" });
+  }
+
+  const entry = await CompetitionEntry.findOne({
+    _id: toObjectId(entryId),
+    competition: competition._id,
+  });
+
+  if (!entry) {
+    return res.status(404).json({ message: "Entry not found" });
+  }
+
+  const role = req.user?.role;
+  const isClubManager = roleIsClubManager(role);
+  const isOfficial = hasManagementPrivileges(role);
+
+  if (isClubManager) {
+    if (entry.club?.toString() !== req.user?.clubId) {
+      return res
+        .status(403)
+        .json({ message: "You may only restore your club's entries" });
+    }
+  } else if (!isOfficial) {
+    return res
+      .status(403)
+      .json({ message: "You are not allowed to restore this entry" });
+  }
+
+  if (entry.status !== "withdrawn") {
+    await populateEntryDoc(entry);
+    return res.json({ entry: serializeEntry(entry) });
+  }
+
+  const restoredStatus = resolveRestoredEntryStatus(entry);
+
+  entry.status = restoredStatus;
+  entry.reviewedBy = req.user.id;
+  entry.reviewedAt = new Date();
+  entry.reviewerNotes = isClubManager
+    ? "Withdrawal reverted by club"
+    : "Withdrawal reverted by official";
+  if (entry.metadata?.delete) {
+    entry.metadata.delete("statusBeforeWithdraw");
+  }
+
+  await entry.save();
+  const laneSync = await restoreRaceLanesFromWithdrawn(
+    competition._id,
+    entry,
+    req.user?.id,
+  );
+  await populateEntryDoc(entry);
+
+  return res.json({ entry: serializeEntry(entry), raceLaneSync: laneSync });
+});
+
+export const restoreEntryFromRaceLane = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const { raceId, lane } = req.body || {};
+
+  const competition = await Competition.findById(competitionId).lean();
+  if (!competition) {
+    return res.status(404).json({ message: "Competition not found" });
+  }
+
+  const role = req.user?.role;
+  const isClubManager = roleIsClubManager(role);
+  const isOfficial = hasManagementPrivileges(role);
+  if (!isClubManager && !isOfficial) {
+    return res
+      .status(403)
+      .json({ message: "You are not allowed to restore lane entries" });
+  }
+
+  const raceObjectId = toObjectId(raceId);
+  if (!raceObjectId) {
+    return res.status(400).json({ message: "Invalid race identifier" });
+  }
+
+  const laneNumber = Number(lane);
+  if (!Number.isInteger(laneNumber) || laneNumber < 1) {
+    return res.status(400).json({ message: "Invalid lane number" });
+  }
+
+  const race = await CompetitionRace.findOne({
+    _id: raceObjectId,
+    competition: competition._id,
+  });
+
+  if (!race) {
+    return res.status(404).json({ message: "Race not found" });
+  }
+
+  const raceLane = (race.lanes || []).find(
+    (currentLane) => Number(currentLane?.lane) === laneNumber,
+  );
+  if (!raceLane) {
+    return res.status(404).json({ message: "Lane not found" });
+  }
+
+  const crewIds = toSortedUniqueIds(
+    Array.isArray(raceLane?.crew)
+      ? raceLane.crew.map((member) => member?.toString?.()).filter(Boolean)
+      : [],
+  );
+  const athleteId = crewIds.length
+    ? null
+    : raceLane?.athlete?.toString?.() || null;
+
+  if (!athleteId && crewIds.length === 0) {
+    return res.status(400).json({ message: "Lane has no assigned competitor" });
+  }
+
+  const clubId = raceLane?.club?.toString?.() || null;
+  const categoryId =
+    raceLane?.category?.toString?.() || race?.category?.toString?.() || null;
+  const boatClassId =
+    raceLane?.boatClass?.toString?.() || race?.boatClass?.toString?.() || null;
+
+  if (!clubId || !categoryId) {
+    return res
+      .status(400)
+      .json({ message: "Lane is missing required event context" });
+  }
+
+  if (isClubManager && clubId !== req.user?.clubId) {
+    return res
+      .status(403)
+      .json({ message: "You may only restore lanes for your club" });
+  }
+
+  const laneAssignmentKey = buildAssignmentKey({
+    categoryId,
+    boatClassId,
+    clubId,
+    athleteId,
+    crewIds,
+  });
+  if (!laneAssignmentKey) {
+    return res.status(400).json({ message: "Could not derive assignment key" });
+  }
+
+  const candidateEntries = await CompetitionEntry.find({
+    competition: competition._id,
+    club: clubId,
+    category: categoryId,
+    ...(boatClassId
+      ? { boatClass: boatClassId }
+      : { boatClass: { $in: [null, undefined] } }),
+  });
+
+  let matchingEntry = candidateEntries.find(
+    (entry) => buildEntryAssignmentKey(entry) === laneAssignmentKey,
+  );
+
+  let created = false;
+  if (!matchingEntry) {
+    matchingEntry = new CompetitionEntry({
+      competition: competition._id,
+      club: clubId,
+      athlete: athleteId || undefined,
+      crew: crewIds,
+      category: categoryId,
+      boatClass: boatClassId || undefined,
+      journeyIndex: race?.journeyIndex || undefined,
+      crewNumber: raceLane?.crewNumber || undefined,
+      seed: raceLane?.seed || null,
+      notes: raceLane?.notes || "Restored from race lane",
+      status: "pending",
+      submittedBy: req.user?.id,
+      submittedAt: new Date(),
+      reviewerNotes: isClubManager
+        ? "Restored from race lane by club"
+        : "Restored from race lane by official",
+      reviewedBy: req.user?.id,
+      reviewedAt: new Date(),
+    });
+    await matchingEntry.save();
+    created = true;
+  } else if (matchingEntry.status === "withdrawn") {
+    matchingEntry.status = resolveRestoredEntryStatus(matchingEntry);
+    matchingEntry.reviewerNotes = isClubManager
+      ? "Withdrawal reverted by club"
+      : "Withdrawal reverted by official";
+    matchingEntry.reviewedBy = req.user?.id;
+    matchingEntry.reviewedAt = new Date();
+    if (matchingEntry.metadata?.delete) {
+      matchingEntry.metadata.delete("statusBeforeWithdraw");
+    }
+    await matchingEntry.save();
+  }
+
+  const laneSync = await restoreRaceLanesFromWithdrawn(
+    competition._id,
+    matchingEntry,
+    req.user?.id,
+  );
+  await populateEntryDoc(matchingEntry);
+
+  return res.json({
+    entry: serializeEntry(matchingEntry),
+    created,
+    raceLaneSync: laneSync,
+  });
 });
 
 export const updateEntry = asyncHandler(async (req, res) => {

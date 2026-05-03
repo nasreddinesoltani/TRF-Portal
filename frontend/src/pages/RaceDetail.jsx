@@ -504,6 +504,7 @@ const RaceDetail = () => {
   const [resultsForm, setResultsForm] = useState({});
   const [timeErrors, setTimeErrors] = useState({});
   const [registrationEntries, setRegistrationEntries] = useState([]);
+  const [restoringEntryId, setRestoringEntryId] = useState("");
 
   const fetchData = useCallback(async () => {
     if (!token || !competitionId || !raceId) return;
@@ -685,6 +686,38 @@ const RaceDetail = () => {
     return keys;
   }, [registrationEntries]);
 
+  const withdrawnEntryByAssignmentKey = useMemo(() => {
+    const entryMap = new Map();
+
+    registrationEntries.forEach((entry) => {
+      if ((entry?.status || "").toLowerCase() !== "withdrawn") {
+        return;
+      }
+
+      const categoryId = toDocumentId(entry?.category);
+      const boatClassId = toDocumentId(entry?.boatClass);
+      const clubId = toDocumentId(entry?.club);
+      const crewIds = toSortedUniqueIds(
+        (entry?.crew || []).map((member) => toDocumentId(member)),
+      );
+      const athleteId = crewIds.length ? null : toDocumentId(entry?.athlete);
+
+      const key = buildAssignmentKey({
+        categoryId,
+        boatClassId,
+        clubId,
+        athleteId,
+        crewIds,
+      });
+
+      if (key && !entryMap.has(key)) {
+        entryMap.set(key, entry);
+      }
+    });
+
+    return entryMap;
+  }, [registrationEntries]);
+
   const activeAssignmentKeys = useMemo(() => {
     const keys = new Set();
 
@@ -787,12 +820,115 @@ const RaceDetail = () => {
     ],
   );
 
+  const getWithdrawnEntryForLane = useCallback(
+    (lane) => {
+      if (!lane) {
+        return null;
+      }
+
+      const categoryId =
+        toDocumentId(lane?.category) || toDocumentId(race?.category);
+      const boatClassId =
+        toDocumentId(lane?.boatClass) || toDocumentId(race?.boatClass);
+      const clubId = toDocumentId(lane?.club);
+      const crewIds = toSortedUniqueIds(
+        (lane?.crew || []).map((member) => toDocumentId(member)),
+      );
+      const athleteId = crewIds.length ? null : toDocumentId(lane?.athlete);
+
+      const key = buildAssignmentKey({
+        categoryId,
+        boatClassId,
+        clubId,
+        athleteId,
+        crewIds,
+      });
+
+      if (!key) {
+        return null;
+      }
+
+      return withdrawnEntryByAssignmentKey.get(key) || null;
+    },
+    [withdrawnEntryByAssignmentKey, race?.category, race?.boatClass],
+  );
+
   const handleResultChange = (laneNum, field, value) => {
     setResultsForm((prev) => ({
       ...prev,
       [laneNum]: { ...prev[laneNum], [field]: value },
     }));
   };
+
+  const handleRestoreWithdrawnLane = useCallback(
+    async (lane, entryId = null) => {
+      if (!token || !competitionId) {
+        return;
+      }
+
+      const laneNumber = Number(lane?.lane);
+      const hasLaneNumber = Number.isInteger(laneNumber) && laneNumber > 0;
+      if (!entryId && !hasLaneNumber) {
+        toast.error("Unable to restore this lane");
+        return;
+      }
+
+      const restoreActionKey = entryId || `lane-${laneNumber}`;
+
+      const proceed = window.confirm(
+        "Restore this withdrawn entry back to active status?",
+      );
+      if (!proceed) {
+        return;
+      }
+
+      setRestoringEntryId(restoreActionKey);
+      try {
+        let response;
+
+        if (entryId) {
+          response = await fetch(
+            `${API_BASE_URL}/api/competitions/${competitionId}/registration/${entryId}/unwithdraw`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            },
+          );
+        } else {
+          response = await fetch(
+            `${API_BASE_URL}/api/competitions/${competitionId}/registration/restore-lane`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                raceId,
+                lane: laneNumber,
+              }),
+            },
+          );
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.message || "Failed to restore entry");
+        }
+
+        toast.success("Entry restored from withdrawn status");
+        await fetchData();
+      } catch (error) {
+        console.error("Failed to restore withdrawn entry", error);
+        toast.error(error.message || "Failed to restore entry");
+      } finally {
+        setRestoringEntryId("");
+      }
+    },
+    [competitionId, fetchData, raceId, token],
+  );
 
   const saveResults = async (markCompleted = true) => {
     if (!token || !competitionId || !raceId) return;
@@ -1782,6 +1918,13 @@ const RaceDetail = () => {
                   <div className="space-y-4">
                     {race?.lanes?.map((lane) => {
                       const laneWithdrawn = isLaneWithdrawn(lane);
+                      const withdrawnEntry = laneWithdrawn
+                        ? getWithdrawnEntryForLane(lane)
+                        : null;
+                      const restoreActionKey =
+                        withdrawnEntry?.id || `lane-${Number(lane?.lane)}`;
+                      const canUndoWithdraw =
+                        isAdmin && laneWithdrawn && Number(lane?.lane) > 0;
 
                       return (
                         <div
@@ -1815,6 +1958,26 @@ const RaceDetail = () => {
                                   <Badge className="h-5 border-rose-200 bg-rose-100 px-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100">
                                     Withdrawn
                                   </Badge>
+                                )}
+                                {canUndoWithdraw && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-5 border-emerald-300 px-2 text-[10px] font-bold text-emerald-700 hover:bg-emerald-50"
+                                    onClick={() =>
+                                      handleRestoreWithdrawnLane(
+                                        lane,
+                                        withdrawnEntry?.id || null,
+                                      )
+                                    }
+                                    disabled={
+                                      restoringEntryId === restoreActionKey
+                                    }
+                                  >
+                                    {restoringEntryId === restoreActionKey
+                                      ? "Restoring..."
+                                      : "Undo WD"}
+                                  </Button>
                                 )}
                               </div>
                             </div>
@@ -1933,6 +2096,13 @@ const RaceDetail = () => {
                 <div className="space-y-3">
                   {sortedLanes.map((lane, index) => {
                     const laneWithdrawn = isLaneWithdrawn(lane);
+                    const withdrawnEntry = laneWithdrawn
+                      ? getWithdrawnEntryForLane(lane)
+                      : null;
+                    const restoreActionKey =
+                      withdrawnEntry?.id || `lane-${Number(lane?.lane)}`;
+                    const canUndoWithdraw =
+                      isAdmin && laneWithdrawn && Number(lane?.lane) > 0;
                     const status = lane.result?.status || "ok";
                     const effectivePos =
                       status === "dnf"
@@ -1991,6 +2161,24 @@ const RaceDetail = () => {
                               <Badge className="h-5 border-rose-200 bg-rose-100 px-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100">
                                 Withdrawn
                               </Badge>
+                            )}
+                            {canUndoWithdraw && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-5 border-emerald-300 px-2 text-[10px] font-bold text-emerald-700 hover:bg-emerald-50"
+                                onClick={() =>
+                                  handleRestoreWithdrawnLane(
+                                    lane,
+                                    withdrawnEntry?.id || null,
+                                  )
+                                }
+                                disabled={restoringEntryId === restoreActionKey}
+                              >
+                                {restoringEntryId === restoreActionKey
+                                  ? "Restoring..."
+                                  : "Undo WD"}
+                              </Button>
                             )}
                           </div>
                         </div>

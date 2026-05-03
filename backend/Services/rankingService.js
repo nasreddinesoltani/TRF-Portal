@@ -293,8 +293,35 @@ export async function buildCompetitionRanking(
     });
   }
 
+  // For category-based rankings, merge PARA races into equivalent non-PARA
+  // age/gender categories (ranking-only behavior; does not alter category data).
+  const needsParaCategoryNormalization =
+    (config.groupBy === "category" || config.groupBy === "category_gender") &&
+    filteredRaces.some((race) => Boolean(race?.category?.isPara));
+
+  let groupingCategories = [];
+  if (needsParaCategoryNormalization) {
+    const categoryTypes = [
+      ...new Set(
+        filteredRaces.map((race) => race?.category?.type).filter(Boolean),
+      ),
+    ];
+
+    const categoryFilter = {
+      isActive: true,
+      isPara: { $ne: true },
+    };
+    if (categoryTypes.length > 0) {
+      categoryFilter.type = { $in: categoryTypes };
+    }
+
+    groupingCategories = await Category.find(categoryFilter)
+      .select("_id type abbreviation gender minAge maxAge titles isPara")
+      .lean();
+  }
+
   // Group races based on configuration
-  const groups = groupRaces(filteredRaces, config.groupBy);
+  const groups = groupRaces(filteredRaces, config.groupBy, groupingCategories);
 
   let penaltiesByCategoryClub = new Map();
   if (includePenalties) {
@@ -408,21 +435,216 @@ export async function buildCompetitionRanking(
  * @param {string} groupBy - Grouping method
  * @returns {object} Grouped races
  */
-function groupRaces(races, groupBy) {
+function isSecondaryAdultCategory(category) {
+  const abbr = (category?.abbreviation || "").toLowerCase();
+  const titleEn = (category?.titles?.en || "").toLowerCase();
+
+  if (
+    abbr === "bm" ||
+    abbr === "bw" ||
+    abbr === "bmix" ||
+    titleEn.includes("under 23") ||
+    titleEn.includes("u23")
+  ) {
+    return true;
+  }
+
+  if (
+    titleEn.includes("master") ||
+    abbr.includes("27") ||
+    abbr.includes("35") ||
+    abbr.includes("43") ||
+    abbr.includes("50")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isSeniorCategory(category) {
+  const abbr = (category?.abbreviation || "").toLowerCase();
+  const titleEn = (category?.titles?.en || "").toLowerCase();
+
+  return (
+    abbr === "m" ||
+    abbr === "w" ||
+    abbr === "sm" ||
+    abbr === "sw" ||
+    abbr === "smix" ||
+    (titleEn.includes("senior") && !titleEn.includes("master"))
+  );
+}
+
+function pickMostSpecificCategory(categories) {
+  if (!Array.isArray(categories) || categories.length === 0) {
+    return null;
+  }
+
+  let bestMatch = null;
+
+  for (const category of categories) {
+    const minAge = Number.isFinite(category?.minAge)
+      ? category.minAge
+      : -Infinity;
+    const maxAge = Number.isFinite(category?.maxAge)
+      ? category.maxAge
+      : Infinity;
+
+    if (!bestMatch) {
+      bestMatch = category;
+      continue;
+    }
+
+    const bestMin = Number.isFinite(bestMatch?.minAge)
+      ? bestMatch.minAge
+      : -Infinity;
+    const bestMax = Number.isFinite(bestMatch?.maxAge)
+      ? bestMatch.maxAge
+      : Infinity;
+
+    if (minAge > bestMin) {
+      bestMatch = category;
+      continue;
+    }
+
+    if (minAge === bestMin && maxAge > bestMax) {
+      bestMatch = category;
+      continue;
+    }
+
+    if (minAge === bestMin && maxAge === bestMax) {
+      const currentLabel = (
+        category?.abbreviation ||
+        category?.titles?.en ||
+        ""
+      ).toString();
+      const bestLabel = (
+        bestMatch?.abbreviation ||
+        bestMatch?.titles?.en ||
+        ""
+      ).toString();
+
+      if (currentLabel.localeCompare(bestLabel) < 0) {
+        bestMatch = category;
+      }
+    }
+  }
+
+  return bestMatch;
+}
+
+function pickEquivalentNonParaCategory(categories, ageProbe) {
+  if (!Array.isArray(categories) || categories.length === 0) {
+    return null;
+  }
+
+  const matching = categories.filter((category) => {
+    const minAge = Number.isFinite(category?.minAge)
+      ? category.minAge
+      : -Infinity;
+    const maxAge = Number.isFinite(category?.maxAge)
+      ? category.maxAge
+      : Infinity;
+    return ageProbe >= minAge && ageProbe <= maxAge;
+  });
+
+  if (matching.length === 0) {
+    return null;
+  }
+
+  if (ageProbe >= 19) {
+    const primarySenior = matching.find(
+      (category) =>
+        isSeniorCategory(category) && !isSecondaryAdultCategory(category),
+    );
+    if (primarySenior) {
+      return primarySenior;
+    }
+
+    const primaryCategories = matching.filter(
+      (category) => !isSecondaryAdultCategory(category),
+    );
+    if (primaryCategories.length > 0) {
+      return pickMostSpecificCategory(primaryCategories);
+    }
+  }
+
+  return pickMostSpecificCategory(matching);
+}
+
+function buildNonParaCategoryLookup(categories = []) {
+  const lookup = new Map();
+
+  for (const category of categories) {
+    if (!category || category.isPara) {
+      continue;
+    }
+
+    const type = category.type || "national";
+    const gender = category.gender || "mixed";
+    const key = `${type}::${gender}`;
+
+    if (!lookup.has(key)) {
+      lookup.set(key, []);
+    }
+    lookup.get(key).push(category);
+  }
+
+  return lookup;
+}
+
+function resolveGroupingCategoryForRace(category, nonParaCategoryLookup) {
+  if (!category || !category.isPara) {
+    return category;
+  }
+
+  const categoryType = category.type || "national";
+  const categoryGender = category.gender || "mixed";
+  const lookupKey = `${categoryType}::${categoryGender}`;
+  const candidates = nonParaCategoryLookup.get(lookupKey) || [];
+
+  if (candidates.length === 0) {
+    return category;
+  }
+
+  const ageProbe = Number.isFinite(category.minAge)
+    ? category.minAge
+    : Number.isFinite(category.maxAge)
+      ? category.maxAge
+      : null;
+
+  if (ageProbe === null) {
+    return category;
+  }
+
+  return pickEquivalentNonParaCategory(candidates, ageProbe) || category;
+}
+
+function groupRaces(races, groupBy, groupingCategories = []) {
   const groups = {};
+  const nonParaCategoryLookup = buildNonParaCategoryLookup(groupingCategories);
 
   for (const race of races) {
+    const groupingCategory = resolveGroupingCategoryForRace(
+      race.category,
+      nonParaCategoryLookup,
+    );
+
     let groupKey;
 
     switch (groupBy) {
       case "gender":
         // Group by category gender (Men's Cup, Women's Cup)
-        groupKey = race.category?.gender || "unknown";
+        groupKey =
+          groupingCategory?.gender || race.category?.gender || "unknown";
         break;
 
       case "category":
         // Group by category abbreviation (Senior, Junior, etc.)
         groupKey =
+          groupingCategory?.abbreviation ||
+          groupingCategory?._id?.toString() ||
           race.category?.abbreviation ||
           race.category?._id?.toString() ||
           "unknown";
@@ -436,8 +658,9 @@ function groupRaces(races, groupBy) {
       case "category_gender":
       default:
         // Group by category + gender combination
-        const cat = race.category?.abbreviation || "?";
-        const gen = race.category?.gender || "?";
+        const cat =
+          groupingCategory?.abbreviation || race.category?.abbreviation || "?";
+        const gen = groupingCategory?.gender || race.category?.gender || "?";
         groupKey = `${cat}_${gen}`;
         break;
     }
@@ -446,8 +669,8 @@ function groupRaces(races, groupBy) {
       groups[groupKey] = {
         races: [],
         metadata: {
-          gender: race.category?.gender,
-          category: race.category,
+          gender: groupingCategory?.gender || race.category?.gender,
+          category: groupingCategory || race.category,
           groupKey,
         },
       };
