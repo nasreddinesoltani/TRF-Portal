@@ -22,6 +22,68 @@ const REGISTRATION_STATUS_LABELS = {
   closed: "Closed",
 };
 
+const parseDate = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const computeRegistrationStatus = (competition, journeyIndex = null) => {
+  if (!competition) {
+    return "not_open";
+  }
+
+  const requestedJourney = Number(journeyIndex);
+  if (
+    Number.isFinite(requestedJourney) &&
+    Array.isArray(competition.stages) &&
+    competition.stages.length > 0
+  ) {
+    const stage = competition.stages.find(
+      (item, index) => (item.order ?? index + 1) === requestedJourney,
+    );
+
+    if (stage) {
+      const stageOpenAt = parseDate(stage.registrationOpenDate);
+      const stageCloseAt = parseDate(stage.registrationCloseDate);
+      const now = new Date();
+
+      if (stageOpenAt || stageCloseAt) {
+        if (stageOpenAt && now < stageOpenAt) {
+          return "not_open";
+        }
+
+        if (stageCloseAt && now > stageCloseAt) {
+          return "closed";
+        }
+
+        return "open";
+      }
+    }
+  }
+
+  const openAt = parseDate(competition.registrationWindow?.openAt);
+  const closeAt = parseDate(competition.registrationWindow?.closeAt);
+  const now = new Date();
+
+  if (openAt || closeAt) {
+    if (openAt && now < openAt) {
+      return "not_open";
+    }
+
+    if (closeAt && now > closeAt) {
+      return "closed";
+    }
+
+    return "open";
+  }
+
+  return competition.registrationStatus || "not_open";
+};
+
 const ENTRY_STATUS_META = {
   pending: {
     label: "Pending review",
@@ -343,6 +405,34 @@ const CompetitionRegistration = () => {
   const summaryCanWithdraw = permissions?.canWithdraw === true;
   const summaryCanManageEntries = permissions?.canManageEntries === true;
 
+  useEffect(() => {
+    if (!competitionId || !token) {
+      return undefined;
+    }
+
+    const openAt = parseDate(competition?.registrationWindow?.openAt);
+    const closeAt = parseDate(competition?.registrationWindow?.closeAt);
+    const upcomingTransitions = [openAt, closeAt].filter(
+      (date) => date && date > new Date(),
+    );
+
+    const fallbackRefreshMs = 5 * 60 * 1000;
+    const nextRefreshMs = upcomingTransitions.length
+      ? Math.max(
+          Math.min(...upcomingTransitions.map((date) => date.getTime())) -
+            Date.now() +
+            1000,
+          1000,
+        )
+      : fallbackRefreshMs;
+
+    const timeoutId = setTimeout(() => {
+      void loadSummary(false);
+    }, nextRefreshMs);
+
+    return () => clearTimeout(timeoutId);
+  }, [competition, competitionId, loadSummary, token]);
+
   const loadEligibleAthletes = useCallback(async () => {
     if (!competitionId || !token || !selectedCategoryId || !summaryCanSubmit) {
       setEligibleAthletes([]);
@@ -426,6 +516,13 @@ const CompetitionRegistration = () => {
       setEntriesJourneyFilter(selectedJourneyIndex);
     }
   }, [selectedJourneyIndex]);
+
+  // Keep the form journey selection in sync when the header filter changes
+  useEffect(() => {
+    if (entriesJourneyFilter) {
+      setSelectedJourneyIndex(entriesJourneyFilter);
+    }
+  }, [entriesJourneyFilter]);
 
   useEffect(() => {
     setSelectedAthlete(null);
@@ -512,10 +609,17 @@ const CompetitionRegistration = () => {
     for (const entry of entries) {
       const jIdx = entry.journeyIndex || 0;
       if (!journeyMap.has(jIdx)) {
-        journeyMap.set(jIdx, { pending: 0, approved: 0, rejected: 0, withdrawn: 0, total: 0 });
+        journeyMap.set(jIdx, {
+          pending: 0,
+          approved: 0,
+          rejected: 0,
+          withdrawn: 0,
+          total: 0,
+        });
       }
       const bucket = journeyMap.get(jIdx);
-      bucket[entry.status || "unknown"] = (bucket[entry.status || "unknown"] || 0) + 1;
+      bucket[entry.status || "unknown"] =
+        (bucket[entry.status || "unknown"] || 0) + 1;
       bucket.total += 1;
     }
     return Array.from(journeyMap.entries())
@@ -1126,7 +1230,8 @@ const CompetitionRegistration = () => {
           );
           return (
             <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
-              J{jIdx}{stage?.name ? ` · ${stage.name}` : ""}
+              J{jIdx}
+              {stage?.name ? ` · ${stage.name}` : ""}
             </span>
           );
         },
@@ -1355,7 +1460,10 @@ const CompetitionRegistration = () => {
     [renderAthleteSummary, boatClassMap, selectedBoatClassId],
   );
 
-  const registrationStatus = competition?.registrationStatus || "not_open";
+  const registrationStatus = computeRegistrationStatus(
+    competition,
+    entriesJourneyFilter || selectedJourneyIndex,
+  );
   const registrationLabel =
     REGISTRATION_STATUS_LABELS[registrationStatus] || registrationStatus;
 
@@ -1458,47 +1566,15 @@ const CompetitionRegistration = () => {
                       <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                         Journey
                       </label>
-                      <Select
-                        value={selectedJourneyIndex || ""}
-                        onChange={(event) =>
-                          setSelectedJourneyIndex(event.target.value)
-                        }
-                      >
-                        <option value="">Select a journey</option>
-                        {competition?.stages &&
-                        competition.stages.length > 0 ? (
-                          competition.stages.map((stage, sIdx) => {
-                            const jIndex =
-                              stage.order !== undefined && stage.order !== null
-                                ? stage.order
-                                : sIdx + 1;
-
-                            const now = new Date();
-                            const isOpen =
-                              (!stage.registrationOpenDate ||
-                                now > new Date(stage.registrationOpenDate)) &&
-                              (!stage.registrationCloseDate ||
-                                now < new Date(stage.registrationCloseDate));
-
-                            return (
-                              <option
-                                key={`stage-${sIdx}`}
-                                value={jIndex}
-                                disabled={!isOpen && !roleCanManageEntries}
-                              >
-                                Journey {jIndex} - {stage.name}{" "}
-                                {!isOpen && !roleCanManageEntries
-                                  ? "(Closed)"
-                                  : ""}
-                              </option>
-                            );
-                          })
-                        ) : (
-                          <option value="" disabled>
-                            No journeys configured
-                          </option>
-                        )}
-                      </Select>
+                      {entriesJourneyFilter ? (
+                        <div className="px-3 py-2 rounded-md border border-slate-200 bg-white text-sm text-slate-800">
+                          {`Journey ${entriesJourneyFilter}`}
+                        </div>
+                      ) : (
+                        <div className="px-3 py-2 rounded-md border border-slate-200 bg-slate-50 text-sm text-slate-500">
+                          Select a journey using the dropdown at the top
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1840,27 +1916,9 @@ const CompetitionRegistration = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   {competition?.competitionType === "championship" &&
-                    competition?.stages?.length > 0 && (
-                      <Select
-                        value={entriesJourneyFilter}
-                        onChange={(e) =>
-                          setEntriesJourneyFilter(e.target.value)
-                        }
-                        className="w-44 text-xs"
-                      >
-                        <option value="">All journeys</option>
-                        {competition.stages.map((stage, sIdx) => {
-                          const jIndex =
-                            stage.order !== undefined && stage.order !== null
-                              ? stage.order
-                              : sIdx + 1;
-                          return (
-                            <option key={`jf-${sIdx}`} value={jIndex}>
-                              Journey {jIndex} – {stage.name}
-                            </option>
-                          );
-                        })}
-                      </Select>
+                    competition?.stages?.length > 0 &&
+                    entriesJourneyFilter && (
+                      <div className="text-xs text-slate-500">{`Journey ${entriesJourneyFilter}`}</div>
                     )}
                   <Button
                     size="sm"
@@ -2035,11 +2093,21 @@ const CompetitionRegistration = () => {
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-slate-50 text-slate-500">
-                          <th className="px-3 py-2 text-left font-semibold">Journey</th>
-                          <th className="px-2 py-2 text-center font-semibold">Total</th>
-                          <th className="px-2 py-2 text-center font-semibold text-amber-600">Pend</th>
-                          <th className="px-2 py-2 text-center font-semibold text-emerald-600">Appr</th>
-                          <th className="px-2 py-2 text-center font-semibold text-rose-600">Rej</th>
+                          <th className="px-3 py-2 text-left font-semibold">
+                            Journey
+                          </th>
+                          <th className="px-2 py-2 text-center font-semibold">
+                            Total
+                          </th>
+                          <th className="px-2 py-2 text-center font-semibold text-amber-600">
+                            Pend
+                          </th>
+                          <th className="px-2 py-2 text-center font-semibold text-emerald-600">
+                            Appr
+                          </th>
+                          <th className="px-2 py-2 text-center font-semibold text-rose-600">
+                            Rej
+                          </th>
                         </tr>
                       </thead>
                       <tbody>

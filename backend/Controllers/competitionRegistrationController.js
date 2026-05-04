@@ -9,6 +9,7 @@ import Club from "../Models/clubModel.js";
 import Category from "../Models/categoryModel.js";
 import BoatClass from "../Models/boatClassModel.js";
 import CompetitionRace from "../Models/competitionRaceModel.js";
+import { computeCompetitionRegistrationStatus } from "../Services/registrationStatusService.js";
 
 const toObjectId = (value) => {
   if (!value) {
@@ -23,36 +24,15 @@ const toObjectId = (value) => {
   return null;
 };
 
-const resolveEffectiveRegistrationStatus = (competition) => {
-  if (!competition) return "not_open";
-  const { registrationStatus, registrationWindow } = competition;
-
-  // If explicitly closed, it overrides everything
-  if (registrationStatus === "closed") {
-    return "closed";
-  }
-
-  // If explicitly open, it overrides window checks (e.g. extended manually)
-  if (registrationStatus === "open") {
-    return "open";
-  }
-
-  // If status is 'not_open' (default), check if we are in the window
-  if (registrationWindow?.openAt && registrationWindow?.closeAt) {
-    const now = new Date();
-    const openAt = new Date(registrationWindow.openAt);
-    const closeAt = new Date(registrationWindow.closeAt);
-
-    if (now >= openAt && now <= closeAt) {
-      return "open";
-    }
-
-    if (now > closeAt) {
-      return "closed";
-    }
-  }
-
-  return registrationStatus;
+const resolveEffectiveRegistrationStatus = (
+  competition,
+  journeyIndex = null,
+) => {
+  return computeCompetitionRegistrationStatus(
+    competition,
+    new Date(),
+    journeyIndex,
+  );
 };
 
 const roleIsAdmin = (role) => role === "admin";
@@ -397,7 +377,17 @@ const fetchCompetition = async (competitionId) => {
       path: "allowedBoatClasses",
       select: "code names type seats crewSize",
     })
-    .lean();
+    .lean()
+    .then((competition) => {
+      if (!competition) {
+        return competition;
+      }
+
+      return {
+        ...competition,
+        registrationStatus: computeCompetitionRegistrationStatus(competition),
+      };
+    });
 };
 
 const resolveClubContext = async (req, { requireClub = false } = {}) => {
@@ -806,7 +796,10 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
     ? competition.allowedBoatClasses.map(serializeBoatClass)
     : [];
 
-  const effectiveStatus = resolveEffectiveRegistrationStatus(competition);
+  const effectiveStatus = resolveEffectiveRegistrationStatus(
+    competition,
+    requestedJourney,
+  );
 
   const canSubmit =
     effectiveStatus === "open" &&
@@ -1250,13 +1243,40 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       .status(403)
       .json({ message: "You are not allowed to register athletes" });
   }
-
   // Admins and jury presidents can bypass registration window checks
-  const effectiveStatus = resolveEffectiveRegistrationStatus(competition);
-  if (effectiveStatus !== "open" && !hasManagementPrivileges(role)) {
-    return res
-      .status(400)
-      .json({ message: "Registration is not open for this competition" });
+  // Determine requested journey indexes from payload so we validate per-journey
+  const requestedJourneyIndexes = Array.isArray(entries)
+    ? Array.from(
+        new Set(
+          entries
+            .map((e) => (e && e.journeyIndex ? Number(e.journeyIndex) : null))
+            .filter((v) => Number.isFinite(v)),
+        ),
+      )
+    : [];
+
+  if (!requestedJourneyIndexes.length) {
+    // No specific journey requested: use competition-level effective status
+    const effectiveStatus = resolveEffectiveRegistrationStatus(competition);
+    if (effectiveStatus !== "open" && !hasManagementPrivileges(role)) {
+      return res
+        .status(400)
+        .json({ message: "Registration is not open for this competition" });
+    }
+  } else if (!hasManagementPrivileges(role)) {
+    // Validate each requested journey is open
+    for (const jIndex of requestedJourneyIndexes) {
+      const status = computeCompetitionRegistrationStatus(
+        competition,
+        new Date(),
+        jIndex,
+      );
+      if (status !== "open") {
+        return res.status(400).json({
+          message: `Registration for journey ${jIndex} is not open`,
+        });
+      }
+    }
   }
 
   let clubContext;

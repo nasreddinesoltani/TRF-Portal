@@ -8,6 +8,10 @@ import Competition, {
   RESULTS_STATUSES,
   STAGE_TYPES,
 } from "../Models/competitionModel.js";
+import {
+  computeCompetitionRegistrationStatus,
+  syncCompetitionRegistrationStatus,
+} from "../Services/registrationStatusService.js";
 
 const parseDate = (value) => {
   if (!value) {
@@ -343,6 +347,12 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
     payload.registrationStatus = registrationStatus;
   }
 
+  payload.registrationStatus = computeCompetitionRegistrationStatus({
+    registrationStatus: payload.registrationStatus,
+    registrationWindow:
+      payload.registrationWindow ?? existingCompetition?.registrationWindow,
+  });
+
   if (resultsStatus !== undefined && RESULTS_STATUSES.includes(resultsStatus)) {
     payload.resultsStatus = resultsStatus;
   }
@@ -455,7 +465,12 @@ export const listCompetitions = asyncHandler(async (req, res) => {
     .limit(limitValue)
     .lean();
 
-  res.json(competitions);
+  const competitionsWithStatus = competitions.map((competition) => ({
+    ...competition,
+    registrationStatus: computeCompetitionRegistrationStatus(competition),
+  }));
+
+  res.json(competitionsWithStatus);
 });
 
 export const getCompetitionById = asyncHandler(async (req, res) => {
@@ -473,7 +488,10 @@ export const getCompetitionById = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Competition not found" });
   }
 
-  res.json(competition);
+  res.json({
+    ...competition,
+    registrationStatus: computeCompetitionRegistrationStatus(competition),
+  });
 });
 
 export const createCompetition = asyncHandler(async (req, res) => {
@@ -510,6 +528,19 @@ export const updateCompetition = asyncHandler(async (req, res) => {
     });
 
     Object.assign(competition, payload);
+    // Debug: log registration window and computed next status when updating
+    try {
+      const next = computeCompetitionRegistrationStatus(competition);
+      console.log(
+        `Updating competition ${competition._id.toString()} registrationWindow=`,
+        competition.registrationWindow,
+        `computedRegistrationStatus=`,
+        next,
+      );
+    } catch (err) {
+      console.error("Failed computing registration status during update", err);
+    }
+    syncCompetitionRegistrationStatus(competition);
     await competition.save();
 
     res.json({
@@ -537,6 +568,22 @@ export const updateCompetitionStatus = asyncHandler(async (req, res) => {
 
   try {
     applyStatusUpdates(competition, req.body || {});
+    // Debug: log registration window and computed next status when updating status
+    try {
+      const next = computeCompetitionRegistrationStatus(competition);
+      console.log(
+        `Updating competition status ${competition._id.toString()} registrationWindow=`,
+        competition.registrationWindow,
+        `computedRegistrationStatus=`,
+        next,
+      );
+    } catch (err) {
+      console.error(
+        "Failed computing registration status during status update",
+        err,
+      );
+    }
+    syncCompetitionRegistrationStatus(competition);
     competition.updatedBy = req.user?.id || competition.updatedBy;
     await competition.save();
 

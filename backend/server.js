@@ -19,6 +19,9 @@ import competitionRaceRoutes from "./Routes/competitionRaceRoutes.js";
 import competitionRegistrationRoutes from "./Routes/competitionRegistrationRoutes.js";
 import rankingRoutes from "./Routes/rankingRoutes.js";
 import beachSprintRoutes from "./Routes/beachSprintRoutes.js";
+import mongoose from "mongoose";
+import { syncAllCompetitionRegistrationStatuses } from "./Services/registrationStatusService.js";
+import Competition from "./Models/competitionModel.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,6 +48,40 @@ app.use((req, res, next) => {
 
 connectDB(); // Connect to the database
 
+const startCompetitionRegistrationStatusSync = () => {
+  const syncIntervalMs =
+    Number(process.env.REGISTRATION_STATUS_SYNC_INTERVAL_MS) || 5 * 60 * 1000;
+
+  const runSync = async () => {
+    try {
+      const result = await syncAllCompetitionRegistrationStatuses();
+      if (result.updatedCount > 0) {
+        console.log(
+          `Synced ${result.updatedCount}/${result.scannedCount} competition registration statuses`,
+        );
+      }
+    } catch (error) {
+      console.error("Failed to sync competition registration statuses", error);
+    }
+  };
+
+  const scheduleSync = () => {
+    void runSync();
+    setInterval(() => {
+      void runSync();
+    }, syncIntervalMs);
+  };
+
+  if (mongoose.connection.readyState === 1) {
+    scheduleSync();
+    return;
+  }
+
+  mongoose.connection.once("open", scheduleSync);
+};
+
+startCompetitionRegistrationStatusSync();
+
 // Test route
 app.get("/api/test", (req, res) => {
   res.json({ message: "Backend is working!" });
@@ -57,6 +94,40 @@ app.get("/api/health", (req, res) => {
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
   });
+});
+
+// Temporary debug route to check computed registration status (no auth required)
+app.get("/api/debug/registration-status/:competitionId", async (req, res) => {
+  try {
+    const competition = await Competition.findById(
+      req.params.competitionId,
+    ).lean();
+    if (!competition) {
+      return res.status(404).json({ message: "Competition not found" });
+    }
+
+    const { computeCompetitionRegistrationStatus } =
+      await import("./Services/registrationStatusService.js");
+    const computedStatus = computeCompetitionRegistrationStatus(competition);
+
+    res.json({
+      competitionId: competition._id.toString(),
+      code: competition.code,
+      registrationWindow: competition.registrationWindow || {},
+      storedRegistrationStatus: competition.registrationStatus,
+      computedRegistrationStatus: computedStatus,
+      now: new Date().toISOString(),
+      noteIfMismatch:
+        competition.registrationStatus !== computedStatus
+          ? "MISMATCH: stored != computed"
+          : "OK",
+    });
+  } catch (error) {
+    console.error("Debug endpoint error:", error);
+    res
+      .status(500)
+      .json({ message: "Error", error: error.message || String(error) });
+  }
 });
 
 app.use("/api/users", protect, userRoutes);
