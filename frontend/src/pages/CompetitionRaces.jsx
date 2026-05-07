@@ -4716,6 +4716,8 @@ const CompetitionRaces = () => {
               clubCode: clubCodeValue,
               seed,
               notes: "",
+              journeyIndex:
+                globalJourneyFilter || autoGenState.journeyIndex || 1,
             };
 
             if (finalCrew && finalCrew.length > 0) {
@@ -5107,7 +5109,8 @@ const CompetitionRaces = () => {
       const catId = autoGenState.category;
       const catData = registrationStats.byCategory.find((c) => c.id === catId);
       if (catData && Array.isArray(catData.entries)) {
-        const targetJourney = Number(autoGenState.journeyIndex) || 1;
+        const targetJourney =
+          Number(globalJourneyFilter || autoGenState.journeyIndex) || 1;
         const validEntries = catData.entries.filter((e) => {
           const eJourney = e.journeyIndex ? Number(e.journeyIndex) : 1;
           // Support competitions without journeys (classic) by showing all or matching Journey 1
@@ -5197,6 +5200,7 @@ const CompetitionRaces = () => {
     entries,
     autoGenState.boatClass,
     autoGenState.category,
+    globalJourneyFilter,
     registrationStats,
     dbEntryOverrides,
   ]);
@@ -5454,6 +5458,11 @@ const CompetitionRaces = () => {
               boatClassId: autoGenState.boatClass,
               notes: e.notes,
               seed: e.seed,
+              journeyIndex:
+                e.journeyIndex ||
+                globalJourneyFilter ||
+                autoGenState.journeyIndex ||
+                1,
             })),
             clubId: cId, // Pass clubId so backend resolves context
             bypassEligibility: true, // Allow admins to bypass eligibility rules (e.g. Master in Senior)
@@ -5728,7 +5737,11 @@ const CompetitionRaces = () => {
   }, [
     autoGenState,
     competitionDocumentId,
+    competition,
     entries,
+    globalJourneyFilter,
+    races,
+    relevantEntries,
     requiredCrewSize,
     loadRaces,
     loadRegistrationSummary,
@@ -11704,6 +11717,7 @@ const CompetitionRaces = () => {
                 category: race.category,
                 seed: lane.seed,
                 crewNumber: lane.crewNumber,
+                journeyIndex: race.journeyIndex || race.order || 1,
                 notes: lane.notes || "",
               });
             }
