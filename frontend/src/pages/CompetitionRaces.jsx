@@ -2562,6 +2562,7 @@ const CompetitionRaces = () => {
     order: "",
     startTime: "",
     eventGroupId: "",
+    distance: "",
   });
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [pendingManualCrew, setPendingManualCrew] = useState([]);
@@ -3476,6 +3477,7 @@ const CompetitionRaces = () => {
           order: "",
           startTime: "",
           eventGroupId: "",
+          distance: "",
         });
         return;
       }
@@ -3485,6 +3487,7 @@ const CompetitionRaces = () => {
         order: race?.order != null ? String(race.order) : "",
         startTime: formatDateTimeLocalValue(race?.startTime),
         eventGroupId: race?.eventGroupId || "",
+        distance: race?.distance != null ? String(race.distance) : "",
       });
     },
     [formatDateTimeLocalValue, races],
@@ -3533,6 +3536,7 @@ const CompetitionRaces = () => {
             order: orderValue,
             startTime: scheduleState.startTime,
             eventGroupId: scheduleState.eventGroupId?.trim() || undefined,
+            distance: scheduleState.distance ? Number(scheduleState.distance) : undefined,
           }),
         },
       );
@@ -6191,15 +6195,7 @@ const CompetitionRaces = () => {
           headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
         }
 
-        // Use event date instead of generation date
-        const eventDateStr = competition?.startDate
-          ? new Date(competition.startDate).toLocaleDateString("en-GB", {
-              weekday: "short",
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })
-          : dateStr;
+        // Event location information
 
         // Location (safe string extraction)
         const compLocation = String(
@@ -6345,6 +6341,14 @@ const CompetitionRaces = () => {
           doc.text(competitionTitle, center, yPos, { align: "center" });
 
           // Location left, date right (9pt normal) on same line
+          const raceDate = race.startTime || competition?.startDate || new Date();
+          const eventDateStr = new Date(raceDate).toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          });
+
           doc.setFontSize(9);
           doc.setFont(fontName, "normal");
           doc.text(compLocation, leftMargin, yPos);
@@ -6851,15 +6855,6 @@ const CompetitionRaces = () => {
           headerHeight = pageWidth / (imgProps.width / imgProps.height) + 3 + 8;
         }
 
-        const eventDateStr = competition?.startDate
-          ? new Date(competition.startDate).toLocaleDateString("en-GB", {
-              weekday: "short",
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })
-          : dateStr;
-
         const compLocation = String(
           competition?.location?.name ||
             competition?.venue?.name ||
@@ -6992,6 +6987,14 @@ const CompetitionRaces = () => {
           doc.setFont(fontName, "bold");
           doc.setTextColor(0, 0, 0);
           doc.text(competitionTitle, center, yPos, { align: "center" });
+
+          const raceDate = race.startTime || competition?.startDate || new Date();
+          const eventDateStr = new Date(raceDate).toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          });
 
           doc.setFontSize(9);
           doc.setFont(fontName, "normal");
@@ -7498,15 +7501,7 @@ const CompetitionRaces = () => {
           ? boatClasses.find((item) => toDocumentId(item) === boatClassId)
           : null;
 
-        // Use event date instead of generation date
-        const eventDateStr = competition?.startDate
-          ? new Date(competition.startDate).toLocaleDateString("en-GB", {
-              weekday: "short",
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })
-          : dateStr;
+        // Event location information
 
         // Location (safe string extraction)
         const compLocation = String(
@@ -7622,6 +7617,14 @@ const CompetitionRaces = () => {
           competition?.code ||
           "Competition";
         doc.text(competitionTitle, center, yPos, { align: "center" });
+
+        const raceDate = race.startTime || competition?.startDate || new Date();
+        const eventDateStr = new Date(raceDate).toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
 
         doc.setFontSize(9);
         doc.setFont(fontName, "normal");
@@ -13625,6 +13628,19 @@ const CompetitionRaces = () => {
                             name="startTime"
                             type="datetime-local"
                             value={scheduleState.startTime}
+                            onChange={handleScheduleFieldChange}
+                            disabled={!scheduleState.raceId}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="scheduleDistance">Distance (m)</Label>
+                          <Input
+                            id="scheduleDistance"
+                            name="distance"
+                            type="number"
+                            min="0"
+                            placeholder="ex: 2000"
+                            value={scheduleState.distance}
                             onChange={handleScheduleFieldChange}
                             disabled={!scheduleState.raceId}
                           />
