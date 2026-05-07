@@ -8219,8 +8219,18 @@ const CompetitionRaces = () => {
       const asOfLabel = formatAsOfLabel();
 
       // Use event date instead of generation date
-      const eventDateStr = competition?.startDate
-        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+      const selectedStage = globalJourneyFilter
+        ? competition?.stages?.find(
+            (s) => String(s.order) === String(globalJourneyFilter),
+          )
+        : null;
+      const effectiveDate =
+        selectedStage?.date ||
+        selectedStage?.startDate ||
+        competition?.startDate;
+
+      const eventDateStr = effectiveDate
+        ? new Date(effectiveDate).toLocaleDateString("en-GB", {
             weekday: "short",
             day: "numeric",
             month: "short",
@@ -9145,8 +9155,18 @@ const CompetitionRaces = () => {
         month: "short",
         year: "numeric",
       });
-      const eventDateStr = competition?.startDate
-        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+      const selectedStage = globalJourneyFilter
+        ? competition?.stages?.find(
+            (s) => String(s.order) === String(globalJourneyFilter),
+          )
+        : null;
+      const effectiveDate =
+        selectedStage?.date ||
+        selectedStage?.startDate ||
+        competition?.startDate;
+
+      const eventDateStr = effectiveDate
+        ? new Date(effectiveDate).toLocaleDateString("en-GB", {
             weekday: "short",
             day: "numeric",
             month: "short",
@@ -9542,8 +9562,18 @@ const CompetitionRaces = () => {
         month: "short",
         year: "numeric",
       });
-      const eventDateStr = competition?.startDate
-        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+      const selectedStage = globalJourneyFilter
+        ? competition?.stages?.find(
+            (s) => String(s.order) === String(globalJourneyFilter),
+          )
+        : null;
+      const effectiveDate =
+        selectedStage?.date ||
+        selectedStage?.startDate ||
+        competition?.startDate;
+
+      const eventDateStr = effectiveDate
+        ? new Date(effectiveDate).toLocaleDateString("en-GB", {
             weekday: "short",
             day: "numeric",
             month: "short",
@@ -10225,8 +10255,18 @@ const CompetitionRaces = () => {
         month: "short",
         year: "numeric",
       });
-      const eventDateStr = competition?.startDate
-        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+      const selectedStage = globalJourneyFilter
+        ? competition?.stages?.find(
+            (s) => String(s.order) === String(globalJourneyFilter),
+          )
+        : null;
+      const effectiveDate =
+        selectedStage?.date ||
+        selectedStage?.startDate ||
+        competition?.startDate;
+
+      const eventDateStr = effectiveDate
+        ? new Date(effectiveDate).toLocaleDateString("en-GB", {
             weekday: "short",
             day: "numeric",
             month: "short",
@@ -11089,8 +11129,18 @@ const CompetitionRaces = () => {
         month: "short",
         year: "numeric",
       });
-      const eventDateStr = competition?.startDate
-        ? new Date(competition.startDate).toLocaleDateString("en-GB", {
+      const selectedStage = globalJourneyFilter
+        ? competition?.stages?.find(
+            (s) => String(s.order) === String(globalJourneyFilter),
+          )
+        : null;
+      const effectiveDate =
+        selectedStage?.date ||
+        selectedStage?.startDate ||
+        competition?.startDate;
+
+      const eventDateStr = effectiveDate
+        ? new Date(effectiveDate).toLocaleDateString("en-GB", {
             weekday: "short",
             day: "numeric",
             month: "short",
@@ -13596,12 +13646,26 @@ const CompetitionRaces = () => {
                               return null;
                             }
 
+                            const category = categories.find(
+                              (c) => toDocumentId(c) === toDocumentId(race.category),
+                            );
+                            const boatClass = boatClasses.find(
+                              (b) => toDocumentId(b) === toDocumentId(race.boatClass),
+                            );
+                            const eventCode = generateRaceCode(category, boatClass) || "-";
+                            const startTimeStr = race.startTime
+                              ? new Date(race.startTime).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "";
+
                             return (
                               <option
                                 key={raceId || `schedule-race-${raceIndex}`}
                                 value={raceId}
                               >
-                                {race.name || `Race ${race.order}`}
+                                {race.order}. {eventCode} - {race.name || "Race"} {startTimeStr ? `(${startTimeStr})` : ""}
                               </option>
                             );
                           })}
