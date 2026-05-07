@@ -20,11 +20,38 @@ import {
   publishAllReadyOfficialResults,
   listCompetitionPenalties,
   createCompetitionPenalty,
+  updateCompetitionPenalty,
   deleteCompetitionPenalty,
+  backfillSourceRaceMetadata,
 } from "../Controllers/competitionRaceController.js";
 import { protect, allowRoles } from "../Middleware/authMiddleware.js";
 
 const router = express.Router({ mergeParams: true });
+
+// Env-protected backfill trigger (no JWT required)
+// Call with header: 'x-backfill-secret: <secret>' where <secret> === process.env.BACKFILL_SECRET
+router.post(
+  "/admin/backfill-source-races/trigger-secret",
+  async (req, res, next) => {
+    try {
+      const secret =
+        req.headers["x-backfill-secret"] || req.headers["x-backfill_secret"];
+      if (!process.env.BACKFILL_SECRET) {
+        return res
+          .status(500)
+          .json({ message: "Server misconfigured: BACKFILL_SECRET not set" });
+      }
+      if (!secret || secret !== process.env.BACKFILL_SECRET) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // forward to controller handler
+      return backfillSourceRaceMetadata(req, res, next);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 router.use(protect);
 
@@ -78,7 +105,13 @@ router
 
 router
   .route("/penalties/:penaltyId")
+  .patch(allowRoles("admin", "jury_president"), updateCompetitionPenalty)
   .delete(allowRoles("admin", "jury_president"), deleteCompetitionPenalty);
+
+// Admin backfill endpoint
+router
+  .route("/admin/backfill-source-races")
+  .post(protect, allowRoles("admin"), backfillSourceRaceMetadata);
 
 router
   .route("/auto-generate")

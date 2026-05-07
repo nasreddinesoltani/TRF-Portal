@@ -329,17 +329,22 @@ export async function buildCompetitionRanking(
       competition: competitionId,
       isActive: true,
     })
-      .select("club category penaltyPoints")
+      .select("club category journeyIndex penaltyPoints")
       .lean();
 
     penaltiesByCategoryClub = penalties.reduce((acc, penalty) => {
       const categoryId = penalty?.category?.toString?.();
       const clubId = penalty?.club?.toString?.();
+      const journeyIndex = penalty?.journeyIndex;
       const points = Number(penalty?.penaltyPoints);
       if (!categoryId || !clubId || !Number.isFinite(points) || points <= 0) {
         return acc;
       }
-      const key = `${categoryId}::${clubId}`;
+      const key = `${categoryId}::${clubId}::${
+        Number.isFinite(Number(journeyIndex)) && Number(journeyIndex) > 0
+          ? `J${Number(journeyIndex)}`
+          : "ALL"
+      }`;
       acc.set(key, (acc.get(key) || 0) + points);
       return acc;
     }, new Map());
@@ -370,10 +375,26 @@ export async function buildCompetitionRanking(
           return;
         }
 
-        const penaltyKey = `${categoryId}::${entry.entityId}`;
-        const penaltyPoints = Number(
-          penaltiesByCategoryClub.get(penaltyKey) || 0,
+        const journeyKeys = new Set(
+          (entry.raceResults || [])
+            .map((raceResult) => Number(raceResult?.journeyIndex) || 1)
+            .filter((journey) => Number.isFinite(journey) && journey > 0),
         );
+
+        let penaltyPoints = Number(
+          penaltiesByCategoryClub.get(
+            `${categoryId}::${entry.entityId}::ALL`,
+          ) || 0,
+        );
+
+        for (const journey of journeyKeys) {
+          penaltyPoints += Number(
+            penaltiesByCategoryClub.get(
+              `${categoryId}::${entry.entityId}::J${journey}`,
+            ) || 0,
+          );
+        }
+
         entry.penaltyPoints = penaltyPoints;
         entry.totalPoints = entry.basePoints - penaltyPoints;
       });

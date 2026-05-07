@@ -1938,6 +1938,16 @@ const RaceInfoView = ({
                   return aTime - bTime;
                 });
 
+                // Detect if this is a combined race (multiple original races)
+                const originalRaceIds = new Set(
+                  sortedLanes
+                    .map((l) => l.sourceRaceId || l._originalRaceId)
+                    .filter(Boolean),
+                );
+                const isCombinedRace =
+                  originalRaceIds.size > 1 ||
+                  (originalRaceIds.size === 0 && lanes.length > 0);
+
                 // Find the winning time (first place)
                 const winningTime = sortedLanes.find(
                   (l) =>
@@ -2013,6 +2023,17 @@ const RaceInfoView = ({
                       : null;
                   const deltaStr = deltaMs ? formatDeltaSeconds(deltaMs) : null;
 
+                  // For combined races, show the race order with the lane number
+                  const sourceRaceOrder =
+                    Number(lane.sourceRaceOrder) ||
+                    Number(lane.originalRaceOrder) ||
+                    Number(lane._originalRaceOrder) ||
+                    null;
+                  const laneDisplay =
+                    isCombinedRace && sourceRaceOrder
+                      ? `${lane.lane} (R${sourceRaceOrder})`
+                      : lane.lane;
+
                   return (
                     <tr
                       key={lane.lane}
@@ -2041,7 +2062,7 @@ const RaceInfoView = ({
                           {position || "-"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-medium">{lane.lane}</td>
+                      <td className="px-4 py-3 font-medium">{laneDisplay}</td>
                       <td className="px-4 py-3">
                         <span className="font-semibold">{clubCode}</span>
                         {clubName && clubCode !== clubName && (
@@ -2567,6 +2588,7 @@ const CompetitionRaces = () => {
     useState(false);
   const [savingCompetitionPenalty, setSavingCompetitionPenalty] =
     useState(false);
+  const [editingPenaltyId, setEditingPenaltyId] = useState("");
   const [deletingPenaltyId, setDeletingPenaltyId] = useState("");
   const [penaltyClubOptions, setPenaltyClubOptions] = useState([]);
   const [loadingPenaltyClubOptions, setLoadingPenaltyClubOptions] =
@@ -2574,6 +2596,7 @@ const CompetitionRaces = () => {
   const [penaltyForm, setPenaltyForm] = useState({
     club: "",
     category: "",
+    journeyIndex: "",
     penaltyPoints: "",
     targetType: "club",
     firstName: "",
@@ -2646,6 +2669,24 @@ const CompetitionRaces = () => {
       allowedSet.has(toDocumentId(boatClass)),
     );
   }, [boatClasses, competition]);
+
+  const journeyOptions = useMemo(() => {
+    if (!competition?.stages?.length) {
+      return [];
+    }
+
+    return competition.stages.map((stage, index) => {
+      const journeyValue =
+        stage.order !== undefined && stage.order !== null
+          ? stage.order
+          : index + 1;
+
+      return {
+        value: String(journeyValue),
+        label: stage.name || `Journey ${journeyValue}`,
+      };
+    });
+  }, [competition]);
 
   const eventNumberMap = useMemo(() => {
     const map = new Map();
@@ -3524,14 +3565,18 @@ const CompetitionRaces = () => {
 
     setLoadingOfficialResultGroups(true);
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/groups`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+      const params = new URLSearchParams();
+      if (globalJourneyFilter) {
+        params.append("journeyIndex", globalJourneyFilter);
+      }
+      const queryString = params.toString();
+      const url = `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/groups${queryString ? `?${queryString}` : ""}`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
         },
-      );
+      });
 
       const payload = await response.json().catch(() => []);
       if (!response.ok) {
@@ -3561,7 +3606,12 @@ const CompetitionRaces = () => {
     } finally {
       setLoadingOfficialResultGroups(false);
     }
-  }, [competitionDocumentId, selectedOfficialGroupId, token]);
+  }, [
+    competitionDocumentId,
+    globalJourneyFilter,
+    selectedOfficialGroupId,
+    token,
+  ]);
 
   const loadOfficialPreview = useCallback(async () => {
     if (!token || !competitionDocumentId || !selectedOfficialGroupId) {
@@ -3917,8 +3967,13 @@ const CompetitionRaces = () => {
 
     setLoadingCompetitionPenalties(true);
     try {
+      const params = new URLSearchParams();
+      if (globalJourneyFilter) {
+        params.append("journeyIndex", globalJourneyFilter);
+      }
+
       const response = await fetch(
-        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/penalties`,
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/penalties${params.toString() ? `?${params.toString()}` : ""}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -3948,6 +4003,7 @@ const CompetitionRaces = () => {
     authLoading,
     canManageRaceSchedule,
     competitionDocumentId,
+    globalJourneyFilter,
     handleUnauthorized,
     token,
   ]);
@@ -3963,6 +4019,7 @@ const CompetitionRaces = () => {
     setPenaltyForm({
       club: "",
       category: "",
+      journeyIndex: globalJourneyFilter || "",
       penaltyPoints: "",
       targetType: "club",
       firstName: "",
@@ -3970,6 +4027,29 @@ const CompetitionRaces = () => {
       licenseNumber: "",
       role: "",
       observations: "",
+    });
+    setEditingPenaltyId("");
+  }, [globalJourneyFilter]);
+
+  const startEditPenalty = useCallback((penalty) => {
+    setEditingPenaltyId(toDocumentId(penalty) || "");
+    setPenaltyForm({
+      club: toDocumentId(penalty?.club) || "",
+      category: toDocumentId(penalty?.category) || "",
+      journeyIndex:
+        penalty?.journeyIndex !== undefined && penalty?.journeyIndex !== null
+          ? String(penalty.journeyIndex)
+          : "",
+      penaltyPoints:
+        penalty?.penaltyPoints !== undefined && penalty?.penaltyPoints !== null
+          ? String(penalty.penaltyPoints)
+          : "",
+      targetType: penalty?.targetType || "club",
+      firstName: penalty?.firstName || "",
+      lastName: penalty?.lastName || "",
+      licenseNumber: penalty?.licenseNumber || "",
+      role: penalty?.role || "",
+      observations: penalty?.observations || "",
     });
   }, []);
 
@@ -3989,27 +4069,43 @@ const CompetitionRaces = () => {
       return;
     }
 
+    const journeyIndex =
+      penaltyForm.journeyIndex === ""
+        ? undefined
+        : Number(penaltyForm.journeyIndex);
+    if (
+      penaltyForm.journeyIndex !== undefined &&
+      penaltyForm.journeyIndex !== "" &&
+      (!Number.isFinite(journeyIndex) || journeyIndex <= 0)
+    ) {
+      toast.error("Journey must be a positive number");
+      return;
+    }
+
     setSavingCompetitionPenalty(true);
     try {
+      const penaltyPayload = {
+        club: penaltyForm.club,
+        category: penaltyForm.category || undefined,
+        journeyIndex,
+        penaltyPoints,
+        targetType: penaltyForm.targetType || "club",
+        firstName: penaltyForm.firstName || undefined,
+        lastName: penaltyForm.lastName || undefined,
+        licenseNumber: penaltyForm.licenseNumber || undefined,
+        role: penaltyForm.role || undefined,
+        observations: penaltyForm.observations || undefined,
+      };
+
       const response = await fetch(
-        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/penalties`,
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/penalties${editingPenaltyId ? `/${editingPenaltyId}` : ""}`,
         {
-          method: "POST",
+          method: editingPenaltyId ? "PATCH" : "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            club: penaltyForm.club,
-            category: penaltyForm.category || undefined,
-            penaltyPoints,
-            targetType: penaltyForm.targetType || "club",
-            firstName: penaltyForm.firstName || undefined,
-            lastName: penaltyForm.lastName || undefined,
-            licenseNumber: penaltyForm.licenseNumber || undefined,
-            role: penaltyForm.role || undefined,
-            observations: penaltyForm.observations || undefined,
-          }),
+          body: JSON.stringify(penaltyPayload),
         },
       );
 
@@ -4018,7 +4114,7 @@ const CompetitionRaces = () => {
         throw new Error(payload.message || "Failed to save penalty");
       }
 
-      toast.success("Penalty saved");
+      toast.success(editingPenaltyId ? "Penalty updated" : "Penalty saved");
       resetPenaltyForm();
       await loadCompetitionPenalties();
     } catch (error) {
@@ -4029,6 +4125,7 @@ const CompetitionRaces = () => {
     }
   }, [
     competitionDocumentId,
+    editingPenaltyId,
     loadCompetitionPenalties,
     penaltyForm,
     resetPenaltyForm,
@@ -4080,7 +4177,13 @@ const CompetitionRaces = () => {
       return;
     }
     loadOfficialResultGroups();
-  }, [competitionDocumentId, loadOfficialResultGroups, races, token]);
+  }, [
+    competitionDocumentId,
+    globalJourneyFilter,
+    loadOfficialResultGroups,
+    races,
+    token,
+  ]);
 
   useEffect(() => {
     loadOfficialPreview();
@@ -4092,7 +4195,12 @@ const CompetitionRaces = () => {
     }
     loadPenaltyClubOptions();
     loadCompetitionPenalties();
-  }, [canManageRaceSchedule, loadCompetitionPenalties, loadPenaltyClubOptions]);
+  }, [
+    canManageRaceSchedule,
+    globalJourneyFilter,
+    loadCompetitionPenalties,
+    loadPenaltyClubOptions,
+  ]);
 
   const handleAddEntry = useCallback(
     async (athlete) => {
@@ -5985,6 +6093,8 @@ const CompetitionRaces = () => {
             lanes: [...(race.lanes || [])].map((l) => ({
               ...l,
               _originalRaceId: raceId,
+              sourceRaceId: raceId,
+              sourceRaceOrder: race.order,
             })),
           });
         } else {
@@ -5993,6 +6103,8 @@ const CompetitionRaces = () => {
             ...(race.lanes || []).map((l) => ({
               ...l,
               _originalRaceId: raceId,
+              sourceRaceId: raceId,
+              sourceRaceOrder: race.order,
             })),
           );
           if (race.order && (!existing.order || race.order < existing.order)) {
@@ -6119,7 +6231,9 @@ const CompetitionRaces = () => {
           // --- AGGREGATE ORIGINAL RACE INFO ---
           const distinctOrigIds = Array.from(
             new Set(
-              (race.lanes || []).map((l) => l._originalRaceId).filter(Boolean),
+              (race.lanes || [])
+                .map((l) => l.sourceRaceId || l._originalRaceId)
+                .filter(Boolean),
             ),
           );
           const allOrigRaces = distinctOrigIds.length
@@ -6772,7 +6886,9 @@ const CompetitionRaces = () => {
 
           const distinctOrigIds = Array.from(
             new Set(
-              (race.lanes || []).map((l) => l._originalRaceId).filter(Boolean),
+              (race.lanes || [])
+                .map((l) => l.sourceRaceId || l._originalRaceId)
+                .filter(Boolean),
             ),
           );
           const allOrigRaces = distinctOrigIds.length
@@ -7395,7 +7511,9 @@ const CompetitionRaces = () => {
         // --- AGGREGATE ORIGINAL RACE INFO ---
         const distinctOrigIds = Array.from(
           new Set(
-            (race.lanes || []).map((l) => l._originalRaceId).filter(Boolean),
+            (race.lanes || [])
+              .map((l) => l.sourceRaceId || l._originalRaceId)
+              .filter(Boolean),
           ),
         );
         const allOrigRaces = distinctOrigIds.length
@@ -7673,6 +7791,15 @@ const CompetitionRaces = () => {
 
         // Build table data (matching RaceDetail)
         const deltaMap = new Map();
+
+        // Detect if this is a combined race
+        const originalRaceIds = new Set(
+          sortedLanes
+            .map((l) => l.sourceRaceId || l._originalRaceId)
+            .filter(Boolean),
+        );
+        const isCombinedRace = originalRaceIds.size > 1;
+
         const tableBody = sortedLanes.map((lane, rowIdx) => {
           const clubCode =
             lane.club?.code ||
@@ -7733,7 +7860,18 @@ const CompetitionRaces = () => {
               .join("\n");
           }
 
-          return [pos, rowIdx + 1, clubDisplay, athleteName, timeStr, points];
+          const sourceRaceOrder =
+            Number(lane.sourceRaceOrder) ||
+            Number(lane.originalRaceOrder) ||
+            Number(lane._originalRaceOrder) ||
+            null;
+
+          const laneDisplay =
+            isCombinedRace && sourceRaceOrder
+              ? `${lane.lane} (R${sourceRaceOrder})`
+              : lane.lane;
+
+          return [pos, laneDisplay, clubDisplay, athleteName, timeStr, points];
         });
 
         autoTable(doc, {
@@ -7980,6 +8118,8 @@ const CompetitionRaces = () => {
           lanes: (race.lanes || []).filter(isAssignedLane).map((l) => ({
             ...l,
             _originalRaceId: raceId,
+            sourceRaceId: raceId,
+            sourceRaceOrder: race.order,
           })),
         });
       } else {
@@ -7988,6 +8128,8 @@ const CompetitionRaces = () => {
           ...(race.lanes || []).filter(isAssignedLane).map((l) => ({
             ...l,
             _originalRaceId: raceId,
+            sourceRaceId: raceId,
+            sourceRaceOrder: race.order,
           })),
         );
 
@@ -8163,7 +8305,9 @@ const CompetitionRaces = () => {
         // --- AGGREGATE ORIGINAL RACE INFO ---
         const distinctOrigIds = Array.from(
           new Set(
-            (race.lanes || []).map((l) => l._originalRaceId).filter(Boolean),
+            (race.lanes || [])
+              .map((l) => l.sourceRaceId || l._originalRaceId)
+              .filter(Boolean),
           ),
         );
         const allOrigRaces = distinctOrigIds.length
@@ -8440,6 +8584,14 @@ const CompetitionRaces = () => {
         const winningTime = rankedOkLanes[0]?.result?.elapsedMs;
         const dnfEffectivePosition = rankedOkLanes.length + 1;
 
+        // Detect if this is a combined race
+        const originalRaceIds = new Set(
+          sortedLanes
+            .map((l) => l.sourceRaceId || l._originalRaceId)
+            .filter(Boolean),
+        );
+        const isCombinedRace = originalRaceIds.size > 1;
+
         // Build table data (matching RaceDetail)
         const deltaMap = new Map();
         const tableBody = sortedLanes.map((lane, rowIdx) => {
@@ -8504,7 +8656,18 @@ const CompetitionRaces = () => {
               .join("\n");
           }
 
-          return [pos, rowIdx + 1, clubDisplay, athleteName, timeStr, points];
+          const sourceRaceOrder =
+            Number(lane.sourceRaceOrder) ||
+            Number(lane.originalRaceOrder) ||
+            Number(lane._originalRaceOrder) ||
+            null;
+
+          const laneDisplay =
+            isCombinedRace && sourceRaceOrder
+              ? `${lane.lane} (R${sourceRaceOrder})`
+              : lane.lane;
+
+          return [pos, laneDisplay, clubDisplay, athleteName, timeStr, points];
         });
 
         autoTable(doc, {
@@ -12895,6 +13058,27 @@ const CompetitionRaces = () => {
                         </div>
 
                         <div className="space-y-2">
+                          <Label htmlFor="penaltyJourney">Journey</Label>
+                          <Select
+                            id="penaltyJourney"
+                            value={penaltyForm.journeyIndex || ""}
+                            onChange={(event) =>
+                              handlePenaltyFieldChange(
+                                "journeyIndex",
+                                event.target.value,
+                              )
+                            }
+                          >
+                            <option value="">All journeys</option>
+                            {journeyOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
                           <Label htmlFor="penaltyPoints">
                             Penalty points *
                           </Label>
@@ -13014,7 +13198,9 @@ const CompetitionRaces = () => {
                         >
                           {savingCompetitionPenalty
                             ? "Saving..."
-                            : "Save penalty"}
+                            : editingPenaltyId
+                              ? "Update penalty"
+                              : "Save penalty"}
                         </Button>
                         <Button
                           type="button"
@@ -13026,6 +13212,15 @@ const CompetitionRaces = () => {
                             ? "Refreshing..."
                             : "Refresh penalties"}
                         </Button>
+                        {editingPenaltyId && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={resetPenaltyForm}
+                          >
+                            Cancel edit
+                          </Button>
+                        )}
                       </div>
 
                       <div className="mt-3 overflow-x-auto rounded border border-rose-100 bg-white">
@@ -13034,6 +13229,7 @@ const CompetitionRaces = () => {
                             <tr>
                               <th className="px-2 py-2 text-left">Club</th>
                               <th className="px-2 py-2 text-left">Category</th>
+                              <th className="px-2 py-2 text-left">Journey</th>
                               <th className="px-2 py-2 text-left">Penalty</th>
                               <th className="px-2 py-2 text-left">To</th>
                               <th className="px-2 py-2 text-left">Person</th>
@@ -13054,6 +13250,15 @@ const CompetitionRaces = () => {
                                   penalty?.category?.titles?.en ||
                                   penalty?.category?.abbreviation ||
                                   "-";
+                                const journeyLabel =
+                                  journeyOptions.find(
+                                    (option) =>
+                                      option.value ===
+                                      String(penalty?.journeyIndex || ""),
+                                  )?.label ||
+                                  (penalty?.journeyIndex
+                                    ? `Journey ${penalty.journeyIndex}`
+                                    : "All journeys");
                                 const personName =
                                   `${penalty?.firstName || ""} ${penalty?.lastName || ""}`.trim();
 
@@ -13065,6 +13270,9 @@ const CompetitionRaces = () => {
                                     <td className="px-2 py-1.5">{clubLabel}</td>
                                     <td className="px-2 py-1.5">
                                       {categoryLabel}
+                                    </td>
+                                    <td className="px-2 py-1.5">
+                                      {journeyLabel}
                                     </td>
                                     <td className="px-2 py-1.5 font-semibold text-rose-700">
                                       -{Number(penalty.penaltyPoints || 0)}
@@ -13085,23 +13293,37 @@ const CompetitionRaces = () => {
                                       {penalty.observations || "-"}
                                     </td>
                                     <td className="px-2 py-1.5">
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() =>
-                                          penaltyId &&
-                                          deleteCompetitionPenalty(penaltyId)
-                                        }
-                                        disabled={
-                                          !penaltyId ||
-                                          deletingPenaltyId === penaltyId
-                                        }
-                                      >
-                                        {deletingPenaltyId === penaltyId
-                                          ? "Deleting..."
-                                          : "Delete"}
-                                      </Button>
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() =>
+                                            penaltyId &&
+                                            startEditPenalty(penalty)
+                                          }
+                                          disabled={!penaltyId}
+                                        >
+                                          Edit
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() =>
+                                            penaltyId &&
+                                            deleteCompetitionPenalty(penaltyId)
+                                          }
+                                          disabled={
+                                            !penaltyId ||
+                                            deletingPenaltyId === penaltyId
+                                          }
+                                        >
+                                          {deletingPenaltyId === penaltyId
+                                            ? "Deleting..."
+                                            : "Delete"}
+                                        </Button>
+                                      </div>
                                     </td>
                                   </tr>
                                 );
@@ -13111,7 +13333,7 @@ const CompetitionRaces = () => {
                               <tr>
                                 <td
                                   className="px-2 py-4 text-center text-slate-500"
-                                  colSpan={9}
+                                  colSpan={10}
                                 >
                                   {loadingCompetitionPenalties
                                     ? "Loading penalties..."

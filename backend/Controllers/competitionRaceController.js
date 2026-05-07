@@ -1571,21 +1571,33 @@ const buildConsolidatedEventEntries = (races, pointTable) => {
 
   for (const race of races) {
     for (const lane of race.lanes || []) {
-      const athleteId = lane?.athlete?._id || lane?.athlete;
-      if (!athleteId) {
-        continue;
-      }
+      // Use crew serialization logic. We must establish a uniform ID for the crew to map unique participants or crews
+      const rawCrew = lane.crew || [];
+      const primaryAthleteId = rawCrew[0]?._id || rawCrew[0];
+      const fallbackAthleteId = lane.athlete?._id || lane.athlete;
+      const crewKey =
+        rawCrew.length > 0
+          ? rawCrew.map((c) => c._id || c).join("-")
+          : fallbackAthleteId
+            ? fallbackAthleteId.toString()
+            : null;
+
+      if (!crewKey) continue;
 
       const result = lane.result || {};
       const status = result.status || "ok";
 
       const candidate = {
-        athleteId: athleteId.toString(),
-        athlete: lane.athlete,
+        athleteId: crewKey, // mapping key for crew
+        athlete: fallbackAthleteId || primaryAthleteId, // legacy fallback
+        crew: lane.crew,
+        crewNumber: lane.crewNumber,
         club: lane.club || null,
         lane: lane.lane,
-        sourceRaceId: race._id,
-        sourceRaceName: race.name || `Race ${race.order || ""}`.trim(),
+        sourceRaceId: lane.sourceRaceId || race._id,
+        sourceRaceName:
+          race.name ||
+          `Race ${lane.sourceRaceOrder || race.order || ""}`.trim(),
         status,
         elapsedMs:
           Number.isFinite(result.elapsedMs) && result.elapsedMs >= 0
@@ -1706,12 +1718,22 @@ const toOfficialEntryPayload = (entry) => {
 
 export const listOfficialResultGroups = asyncHandler(async (req, res) => {
   const { competitionId } = req.params;
+  const { journeyIndex } = req.query;
   const competition = await resolveCompetitionOrRespond(competitionId, res);
   if (!competition) {
     return;
   }
 
-  const races = await CompetitionRace.find({ competition: competition._id })
+  let query = { competition: competition._id };
+  if (
+    journeyIndex !== undefined &&
+    journeyIndex !== null &&
+    journeyIndex !== ""
+  ) {
+    query.journeyIndex = Number(journeyIndex);
+  }
+
+  const races = await CompetitionRace.find(query)
     .select(
       "_id category boatClass journeyIndex name order startTime status eventGroupId",
     )
@@ -2074,15 +2096,32 @@ export const unpublishOfficialEventResults = asyncHandler(async (req, res) => {
 
 export const listCompetitionPenalties = asyncHandler(async (req, res) => {
   const { competitionId } = req.params;
+  const { journeyIndex } = req.query;
   const competition = await resolveCompetitionOrRespond(competitionId, res);
   if (!competition) {
     return;
   }
 
-  const penalties = await CompetitionPenalty.find({
+  const query = {
     competition: competition._id,
     isActive: true,
-  })
+  };
+
+  if (
+    journeyIndex !== undefined &&
+    journeyIndex !== null &&
+    journeyIndex !== ""
+  ) {
+    const parsedJourneyIndex = Number(journeyIndex);
+    if (!Number.isFinite(parsedJourneyIndex) || parsedJourneyIndex <= 0) {
+      return res
+        .status(400)
+        .json({ message: "journeyIndex must be a positive number" });
+    }
+    query.journeyIndex = parsedJourneyIndex;
+  }
+
+  const penalties = await CompetitionPenalty.find(query)
     .populate({ path: "club", select: "name code nameAr" })
     .populate({ path: "category", select: "abbreviation titles gender" })
     .sort({ createdAt: -1 })
@@ -2100,10 +2139,28 @@ export const createCompetitionPenalty = asyncHandler(async (req, res) => {
 
   const clubId = toObjectId(req.body?.club);
   const categoryId = toObjectId(req.body?.category);
+  const journeyIndexRaw = req.body?.journeyIndex;
   const penaltyPoints = Number(req.body?.penaltyPoints);
+  const journeyIndex =
+    journeyIndexRaw === undefined ||
+    journeyIndexRaw === null ||
+    journeyIndexRaw === ""
+      ? null
+      : Number(journeyIndexRaw);
 
   if (!clubId) {
     return res.status(400).json({ message: "club is required" });
+  }
+  if (
+    journeyIndexRaw !== undefined &&
+    journeyIndexRaw !== null &&
+    journeyIndexRaw !== ""
+  ) {
+    if (!Number.isFinite(journeyIndex) || journeyIndex <= 0) {
+      return res
+        .status(400)
+        .json({ message: "journeyIndex must be a positive number" });
+    }
   }
   if (!Number.isFinite(penaltyPoints) || penaltyPoints <= 0) {
     return res
@@ -2115,6 +2172,7 @@ export const createCompetitionPenalty = asyncHandler(async (req, res) => {
     competition: competition._id,
     club: clubId,
     category: categoryId || undefined,
+    journeyIndex: Number.isFinite(journeyIndex) ? journeyIndex : undefined,
     penaltyPoints,
     targetType: req.body?.targetType === "official" ? "official" : "club",
     firstName: normaliseString(req.body?.firstName),
@@ -2133,6 +2191,99 @@ export const createCompetitionPenalty = asyncHandler(async (req, res) => {
     .lean();
 
   return res.status(201).json(hydrated);
+});
+
+export const updateCompetitionPenalty = asyncHandler(async (req, res) => {
+  const { competitionId, penaltyId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const updates = { updatedBy: req.user?.id };
+
+  if (req.body?.club !== undefined) {
+    const clubId = toObjectId(req.body?.club);
+    if (!clubId) {
+      return res.status(400).json({ message: "club is required" });
+    }
+    updates.club = clubId;
+  }
+
+  if (req.body?.category !== undefined) {
+    const categoryId = toObjectId(req.body?.category);
+    updates.category = categoryId || undefined;
+  }
+
+  if (req.body?.journeyIndex !== undefined) {
+    const journeyIndexRaw = req.body?.journeyIndex;
+    if (journeyIndexRaw === null || journeyIndexRaw === "") {
+      updates.$unset = { ...(updates.$unset || {}), journeyIndex: "" };
+    } else {
+      const journeyIndex = Number(journeyIndexRaw);
+      if (!Number.isFinite(journeyIndex) || journeyIndex <= 0) {
+        return res
+          .status(400)
+          .json({ message: "journeyIndex must be a positive number" });
+      }
+      updates.journeyIndex = journeyIndex;
+    }
+  }
+
+  if (req.body?.penaltyPoints !== undefined) {
+    const penaltyPoints = Number(req.body?.penaltyPoints);
+    if (!Number.isFinite(penaltyPoints) || penaltyPoints <= 0) {
+      return res
+        .status(400)
+        .json({ message: "penaltyPoints must be a positive number" });
+    }
+    updates.penaltyPoints = penaltyPoints;
+  }
+
+  if (req.body?.targetType !== undefined) {
+    updates.targetType =
+      req.body?.targetType === "official" ? "official" : "club";
+  }
+
+  if (req.body?.firstName !== undefined) {
+    updates.firstName = normaliseString(req.body?.firstName);
+  }
+  if (req.body?.lastName !== undefined) {
+    updates.lastName = normaliseString(req.body?.lastName);
+  }
+  if (req.body?.licenseNumber !== undefined) {
+    updates.licenseNumber = normaliseString(req.body?.licenseNumber);
+  }
+  if (req.body?.role !== undefined) {
+    updates.role = normaliseString(req.body?.role);
+  }
+  if (req.body?.observations !== undefined) {
+    updates.observations = normaliseString(req.body?.observations);
+  }
+
+  const { $unset, ...setUpdates } = updates;
+  const updateQuery = Object.keys($unset || {}).length
+    ? { $set: setUpdates, $unset }
+    : { $set: setUpdates };
+
+  const updated = await CompetitionPenalty.findOneAndUpdate(
+    {
+      _id: penaltyId,
+      competition: competition._id,
+      isActive: true,
+    },
+    updateQuery,
+    { new: true },
+  )
+    .populate({ path: "club", select: "name code nameAr" })
+    .populate({ path: "category", select: "abbreviation titles gender" })
+    .lean();
+
+  if (!updated) {
+    return res.status(404).json({ message: "Penalty not found" });
+  }
+
+  return res.json(updated);
 });
 
 export const deleteCompetitionPenalty = asyncHandler(async (req, res) => {
@@ -2381,17 +2532,21 @@ export const combineRaces = async (req, res) => {
       }
     }
 
-    let currentLane = 1;
-
     for (const race of races) {
+      const sourceRaceId = race._id;
+      const sourceRaceOrder = race.order || null;
+
       race.order = baseOrder;
       race.startTime = baseTime;
 
-      // Preserve existing lanes but remap their numbers
+      // Preserve original lane numbers per race (no renumbering)
+      // This allows duplicate lane numbers across races per competition rules
+      // Also track which original race each lane came from
       race.lanes.sort((a, b) => a.lane - b.lane);
-      for (let i = 0; i < race.lanes.length; i++) {
-        race.lanes[i].lane = currentLane++;
-      }
+      race.lanes.forEach((lane) => {
+        lane.sourceRaceId = sourceRaceId;
+        lane.sourceRaceOrder = sourceRaceOrder;
+      });
 
       await race.save();
     }
@@ -2407,3 +2562,43 @@ export const combineRaces = async (req, res) => {
       .json({ success: false, message: "Server error combining races." });
   }
 };
+
+// Admin: backfill source race metadata on existing races
+export const backfillSourceRaceMetadata = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) return;
+
+  const races = await CompetitionRace.find({
+    competition: competitionId,
+  }).exec();
+  let updatedCount = 0;
+
+  for (const race of races) {
+    let modified = false;
+    const raceId = race._id;
+    const raceOrder = race.order || null;
+
+    if (!Array.isArray(race.lanes)) continue;
+
+    for (let i = 0; i < race.lanes.length; i++) {
+      const lane = race.lanes[i];
+      if (!lane) continue;
+      if (!lane.sourceRaceId) {
+        lane.sourceRaceId = raceId;
+        modified = true;
+      }
+      if (!lane.sourceRaceOrder && raceOrder != null) {
+        lane.sourceRaceOrder = raceOrder;
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      await race.save();
+      updatedCount++;
+    }
+  }
+
+  return res.json({ success: true, updatedRaces: updatedCount });
+});

@@ -86,6 +86,14 @@ const laneAssignmentSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    sourceRaceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CompetitionRace",
+    },
+    sourceRaceOrder: {
+      type: Number,
+      min: 1,
+    },
     result: {
       type: laneResultSchema,
       default: undefined,

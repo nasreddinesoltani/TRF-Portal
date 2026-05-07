@@ -19,6 +19,11 @@ const competitionPenaltySchema = new mongoose.Schema(
       ref: "Category",
       index: true,
     },
+    journeyIndex: {
+      type: Number,
+      min: 1,
+      index: true,
+    },
     penaltyPoints: {
       type: Number,
       required: true,
@@ -69,7 +74,7 @@ const competitionPenaltySchema = new mongoose.Schema(
 );
 
 competitionPenaltySchema.index(
-  { competition: 1, club: 1, category: 1, isActive: 1 },
+  { competition: 1, journeyIndex: 1, club: 1, category: 1, isActive: 1 },
   { name: "competition_penalty_lookup" },
 );
 
