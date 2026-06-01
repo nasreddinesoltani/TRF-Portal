@@ -202,6 +202,13 @@ const annotateRacesWithRegistrationStatus = (
             return lane;
           }
 
+          // Preserve hors_course status — never overwrite with withdrawn
+          if (
+            String(lane?.result?.status || "").toLowerCase() === "hors_course"
+          ) {
+            return lane;
+          }
+
           const explicitWithdrawn =
             String(lane?.registrationStatus || "").toLowerCase() ===
               "withdrawn" ||
@@ -1477,6 +1484,7 @@ const STATUS_PRIORITY = {
   dns: 3,
   abs: 4,
   dsq: 5,
+  hors_course: 6,
 };
 
 const getEffectiveEventGroupId = (race) => {
@@ -1571,6 +1579,10 @@ const buildConsolidatedEventEntries = (races, pointTable) => {
 
   for (const race of races) {
     for (const lane of race.lanes || []) {
+      // Hors-course athletes participate but are excluded from ranking/points
+      const laneStatus = (lane.result?.status || "ok").toLowerCase();
+      if (laneStatus === "hors_course") continue;
+
       // Use crew serialization logic. We must establish a uniform ID for the crew to map unique participants or crews
       const rawCrew = lane.crew || [];
       const primaryAthleteId = rawCrew[0]?._id || rawCrew[0];

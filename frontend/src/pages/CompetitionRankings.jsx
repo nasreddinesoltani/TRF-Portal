@@ -1291,7 +1291,7 @@ export default function CompetitionRankings() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <button
-            onClick={() => navigate(`/competitions/${competitionId}/races`)}
+            onClick={() => navigate(-1)}
             className="text-blue-600 hover:text-blue-800 text-sm mb-2 inline-flex items-center gap-1"
           >
             ← Back to Races

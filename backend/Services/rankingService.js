@@ -93,8 +93,9 @@ export function calculateLanePoints(
     case "dns":
     case "dsq":
     case "abs":
+    case "hors_course":
     default:
-      // No points for DNS, DSQ, ABS
+      // No points for DNS, DSQ, ABS, or Hors Course
       result.points = 0;
       break;
   }
@@ -113,6 +114,9 @@ export function analyzeRaceContext(race) {
   let dnfCount = 0;
 
   for (const lane of race.lanes || []) {
+    // Hors-course athletes are invisible to race context
+    if (lane.result?.status === "hors_course") continue;
+
     if (lane.result?.status === "ok" && lane.result?.finishPosition) {
       totalOkFinishers++;
       lastFinisherPosition = Math.max(
@@ -124,11 +128,16 @@ export function analyzeRaceContext(race) {
     }
   }
 
+  // Exclude hors_course lanes from total participant count
+  const hcCount = (race.lanes || []).filter(
+    (l) => l.result?.status === "hors_course",
+  ).length;
+
   return {
     totalOkFinishers,
     lastFinisherPosition,
     dnfCount,
-    totalParticipants: (race.lanes || []).length,
+    totalParticipants: (race.lanes || []).length - hcCount,
   };
 }
 
@@ -798,7 +807,7 @@ function resolveBetterMergedCandidate(current, candidate) {
     : Number.MAX_SAFE_INTEGER;
   if (candidatePos < currentPos) return candidate;
 
-  const statusPriority = { ok: 1, dnf: 2, dns: 3, abs: 4, dsq: 5 };
+  const statusPriority = { ok: 1, dnf: 2, dns: 3, abs: 4, dsq: 5, hors_course: 6 };
   const currentStatus = statusPriority[current.status] || 99;
   const candidateStatus = statusPriority[candidate.status] || 99;
   if (candidateStatus < currentStatus) return candidate;
@@ -811,6 +820,10 @@ function buildMergedEventCandidates(races, entityType) {
 
   for (const race of races) {
     for (const lane of race.lanes || []) {
+      // Hors-course athletes are excluded from ranking pipeline
+      const laneStatus = (lane.result?.status || "ok").toLowerCase();
+      if (laneStatus === "hors_course") continue;
+
       const competitorKeys = getLaneCompetitorKeys(lane, race, entityType);
       if (!competitorKeys.length) continue;
 

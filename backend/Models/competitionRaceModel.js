@@ -13,6 +13,8 @@ export const RACE_STATUSES = [
 // dnf - Did Not Finish (started but didn't complete)
 // dsq - Disqualified
 // abs - Absent (did not show up at all)
+// hors_course - Out of race (participates and time is recorded, but excluded
+//               from ranking, points, and position calculations)
 export const LANE_RESULT_STATUSES = [
   "ok",
   "dns",
@@ -20,6 +22,7 @@ export const LANE_RESULT_STATUSES = [
   "dsq",
   "abs",
   "withdrawn",
+  "hors_course",
 ];
 
 const laneResultSchema = new mongoose.Schema(

@@ -37,7 +37,7 @@ const officialResultEntrySchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["ok", "dns", "dnf", "dsq", "abs"],
+      enum: ["ok", "dns", "dnf", "dsq", "abs", "hors_course"],
       default: "ok",
     },
     elapsedMs: {

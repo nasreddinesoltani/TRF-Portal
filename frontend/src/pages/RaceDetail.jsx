@@ -446,6 +446,7 @@ const calculatePoints = (position, rankingSystem = null) => {
 
 const LANE_RESULT_STATUS_OPTIONS = [
   { value: "ok", label: "OK" },
+  { value: "hors_course", label: "HC" },
   { value: "withdrawn", label: "WD" },
   { value: "dns", label: "DNS" },
   { value: "dnf", label: "DNF" },
@@ -609,7 +610,7 @@ const RaceDetail = () => {
       }
     } catch (err) {
       toast.error(err.message);
-      navigate(`/competitions/${competitionId}/races`);
+      navigate(-1);
     } finally {
       setLoading(false);
     }
@@ -634,6 +635,7 @@ const RaceDetail = () => {
     const validEntries = [];
     Object.entries(resultsForm).forEach(([laneNum, data]) => {
       const ms = parseTimeToMs(data.elapsedTime);
+      // HC athletes are excluded from position calculation
       if (ms !== undefined && data.status === "ok") {
         validEntries.push({ lane: parseInt(laneNum, 10), ms });
       }
@@ -1276,7 +1278,7 @@ const RaceDetail = () => {
           const statusA = a.result?.status || "ok";
           const statusB = b.result?.status || "ok";
 
-          const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+          const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4, hors_course: 5 };
           const pA = priority[statusA] ?? 10;
           const pB = priority[statusB] ?? 10;
 
@@ -1348,20 +1350,25 @@ const RaceDetail = () => {
       }
 
       const status = lane.result?.status || "ok";
-      const effectivePos =
-        status === "dnf"
+      const isHC = status === "hors_course";
+      const effectivePos = isHC
+        ? null
+        : status === "dnf"
           ? lane.result?.finishPosition || lastFinisherPosition + 1
           : lane.result?.finishPosition;
-      const pos = effectivePos || "-";
-      const timeStr =
-        status !== "ok"
+      const pos = isHC ? "HC" : effectivePos || "-";
+      const timeStr = isHC
+        ? lane.result?.elapsedMs
+          ? formatElapsedTime(lane.result.elapsedMs)
+          : "HC"
+        : status !== "ok"
           ? status.toUpperCase()
           : formatElapsedTime(lane.result?.elapsedMs);
 
       if (
         status === "ok" &&
         lane.result?.elapsedMs &&
-        pos > 1 &&
+        effectivePos > 1 &&
         winnerElapsed
       ) {
         const deltaMs = lane.result.elapsedMs - winnerElapsed;
@@ -1369,9 +1376,13 @@ const RaceDetail = () => {
         if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
       }
 
+      // HC athletes get 0 points — they are out of the ranking
       const points =
-        (status === "ok" || status === "dnf") && pos > 0 && pos <= 8
-          ? calculatePoints(pos, activeRankingSystem)
+        !isHC &&
+        (status === "ok" || status === "dnf") &&
+        effectivePos > 0 &&
+        effectivePos <= 8
+          ? calculatePoints(effectivePos, activeRankingSystem)
           : 0;
 
       return [
@@ -1672,7 +1683,7 @@ const RaceDetail = () => {
       const statusA = a.result?.status || "ok";
       const statusB = b.result?.status || "ok";
 
-      const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+      const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4, hors_course: 5 };
       const pA = priority[statusA] ?? 10;
       const pB = priority[statusB] ?? 10;
 
@@ -1718,7 +1729,7 @@ const RaceDetail = () => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate(`/competitions/${competitionId}/races`)}
+              onClick={() => navigate(-1)}
               className="rounded-full"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -2104,33 +2115,40 @@ const RaceDetail = () => {
                     const canUndoWithdraw =
                       isAdmin && laneWithdrawn && Number(lane?.lane) > 0;
                     const status = lane.result?.status || "ok";
-                    const effectivePos =
-                      status === "dnf"
+                    const isHC = status === "hors_course";
+                    const effectivePos = isHC
+                      ? null
+                      : status === "dnf"
                         ? lane.result?.finishPosition ||
                           lastFinisherPosition + 1
                         : lane.result?.finishPosition;
-                    const isWinner = !laneWithdrawn && effectivePos === 1;
+                    const isWinner =
+                      !laneWithdrawn && !isHC && effectivePos === 1;
 
-                    // Fallback position for DNF if not explicitly stored
-                    const points = calculatePoints(
-                      effectivePos,
-                      activeRankingSystem,
-                    );
+                    // HC athletes get no points
+                    const points = isHC
+                      ? 0
+                      : calculatePoints(
+                          effectivePos,
+                          activeRankingSystem,
+                        );
 
                     return (
                       <div
                         key={lane.lane}
-                        className={`group relative flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition-all hover:shadow-md ${isWinner ? "ring-2 ring-indigo-500" : ""} ${laneWithdrawn ? "border border-rose-200 bg-rose-50/40" : ""}`}
+                        className={`group relative flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition-all hover:shadow-md ${isWinner ? "ring-2 ring-indigo-500" : ""} ${laneWithdrawn ? "border border-rose-200 bg-rose-50/40" : ""} ${isHC ? "border border-amber-200 bg-amber-50/40" : ""}`}
                       >
                         {/* Rank / Lane Indicator */}
                         <div className="flex flex-col items-center justify-center">
                           <span
-                            className={`flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black ${isWinner ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : "bg-slate-100 text-slate-400"}`}
+                            className={`flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black ${isWinner ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : isHC ? "bg-amber-100 text-amber-600" : "bg-slate-100 text-slate-400"}`}
                           >
                             {race?.status === "completed"
                               ? laneWithdrawn
                                 ? "WD"
-                                : effectivePos || "-"
+                                : isHC
+                                  ? "HC"
+                                  : effectivePos || "-"
                               : lane.lane}
                           </span>
                           <span className="mt-1 text-[10px] font-bold uppercase text-slate-400">
@@ -2162,6 +2180,11 @@ const RaceDetail = () => {
                                 Withdrawn
                               </Badge>
                             )}
+                            {isHC && (
+                              <Badge className="h-5 border-amber-200 bg-amber-100 px-2 text-[10px] font-bold text-amber-700 hover:bg-amber-100">
+                                Hors Course
+                              </Badge>
+                            )}
                             {canUndoWithdraw && (
                               <Button
                                 variant="outline"
@@ -2187,19 +2210,24 @@ const RaceDetail = () => {
                         <div className="flex flex-col items-end gap-1">
                           <div className="flex items-baseline gap-1 text-right">
                             <p
-                              className={`text-lg font-black tracking-tight ${laneWithdrawn ? "text-rose-700" : isWinner ? "text-indigo-600" : "text-slate-900"}`}
+                              className={`text-lg font-black tracking-tight ${laneWithdrawn ? "text-rose-700" : isHC ? "text-amber-600" : isWinner ? "text-indigo-600" : "text-slate-900"}`}
                             >
                               {laneWithdrawn
                                 ? "WD"
-                                : status !== "ok"
-                                  ? status.toUpperCase()
-                                  : lane.result?.elapsedMs
+                                : isHC
+                                  ? lane.result?.elapsedMs
                                     ? formatElapsedTime(lane.result.elapsedMs)
-                                    : "-"}
+                                    : "HC"
+                                  : status !== "ok"
+                                    ? status.toUpperCase()
+                                    : lane.result?.elapsedMs
+                                      ? formatElapsedTime(lane.result.elapsedMs)
+                                      : "-"}
                             </p>
                           </div>
                           {race.status === "completed" &&
                             !laneWithdrawn &&
+                            !isHC &&
                             (status === "ok" || status === "dnf") && (
                               <div className="flex items-center gap-2">
                                 {status === "ok" &&
@@ -2218,6 +2246,11 @@ const RaceDetail = () => {
                                 </Badge>
                               </div>
                             )}
+                          {race.status === "completed" && isHC && (
+                            <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-200 border-none font-bold">
+                              0 PTS
+                            </Badge>
+                          )}
                         </div>
 
                         <ChevronRight className="h-5 w-5 text-slate-300 transition-colors group-hover:text-indigo-400" />

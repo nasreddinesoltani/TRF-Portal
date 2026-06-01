@@ -5,7 +5,7 @@ import React, {
   useState,
   useRef,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/button";
@@ -2360,6 +2360,11 @@ const CompetitionRaces = () => {
   const { token, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { competitionId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Initialize filters from URL
+  const initialJourney = searchParams.get("journey") || "";
+  const initialSearch = searchParams.get("q") || "";
 
   const [competition, setCompetition] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -2371,7 +2376,8 @@ const CompetitionRaces = () => {
   const [loadingRegistration, setLoadingRegistration] = useState(false);
   const [registrationStats, setRegistrationStats] = useState(null);
   const [activeRankingSystem, setActiveRankingSystem] = useState(null);
-  const [globalJourneyFilter, setGlobalJourneyFilter] = useState("");
+  const [globalJourneyFilter, setGlobalJourneyFilter] =
+    useState(initialJourney);
   const initialDataLoadedRef = React.useRef(false);
   const unauthorizedRedirectedRef = React.useRef(false);
   const skipAutoFillAfterGenerateRef = useRef(false);
@@ -2392,7 +2398,37 @@ const CompetitionRaces = () => {
     [navigate],
   );
 
-  const [entrySearchTerm, setEntrySearchTerm] = useState("");
+  const [entrySearchTerm, setEntrySearchTerm] = useState(initialSearch);
+
+  // Sync state back to URL params
+  useEffect(() => {
+    const newParams = new URLSearchParams(searchParams);
+    let changed = false;
+
+    if (globalJourneyFilter) {
+      if (newParams.get("journey") !== globalJourneyFilter) {
+        newParams.set("journey", globalJourneyFilter);
+        changed = true;
+      }
+    } else if (newParams.has("journey")) {
+      newParams.delete("journey");
+      changed = true;
+    }
+
+    if (entrySearchTerm) {
+      if (newParams.get("q") !== entrySearchTerm) {
+        newParams.set("q", entrySearchTerm);
+        changed = true;
+      }
+    } else if (newParams.has("q")) {
+      newParams.delete("q");
+      changed = true;
+    }
+
+    if (changed) {
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [globalJourneyFilter, entrySearchTerm, setSearchParams, searchParams]);
   const [entrySearchResults, setEntrySearchResults] = useState([]);
   const [entrySearchLoading, setEntrySearchLoading] = useState(false);
   const [entrySearchError, setEntrySearchError] = useState(null);
@@ -7779,7 +7815,7 @@ const CompetitionRaces = () => {
         const sortedLanes = [...exportableLanes].sort((a, b) => {
           const statusA = a.result?.status || "ok";
           const statusB = b.result?.status || "ok";
-          const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+          const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4, hors_course: 5 };
           const pA = priority[statusA] ?? 10;
           const pB = priority[statusB] ?? 10;
           if (pA !== pB) return pA - pB;
@@ -7832,20 +7868,25 @@ const CompetitionRaces = () => {
           const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
 
           const status = lane.result?.status || "ok";
-          const effectivePos =
-            status === "dnf"
+          const isHC = status === "hors_course";
+          const effectivePos = isHC
+            ? null
+            : status === "dnf"
               ? lane.result?.finishPosition || lastFinisherPosition + 1
               : lane.result?.finishPosition;
-          const pos = effectivePos || "-";
-          let timeStr =
-            status !== "ok"
+          const pos = isHC ? "HC" : effectivePos || "-";
+          let timeStr = isHC
+            ? lane.result?.elapsedMs
+              ? formatElapsedTime(lane.result.elapsedMs)
+              : "HC"
+            : status !== "ok"
               ? status.toUpperCase()
               : formatElapsedTime(lane.result?.elapsedMs);
           // Store time delta for 2nd place and below (rendered separately)
           if (
             status === "ok" &&
             lane.result?.elapsedMs &&
-            pos > 1 &&
+            effectivePos > 1 &&
             winningTime
           ) {
             const deltaMs = lane.result.elapsedMs - winningTime;
@@ -7853,8 +7894,8 @@ const CompetitionRaces = () => {
             if (deltaStr) deltaMap.set(rowIdx, `+${deltaStr}`);
           }
           let points = 0;
-          if ((status === "ok" || status === "dnf") && pos > 0 && pos <= 8) {
-            points = calculatePoints(pos, activeRankingSystem);
+          if (!isHC && (status === "ok" || status === "dnf") && effectivePos > 0 && effectivePos <= 8) {
+            points = calculatePoints(effectivePos, activeRankingSystem);
           }
 
           if (athlete) {
@@ -8582,7 +8623,7 @@ const CompetitionRaces = () => {
           consolidatedPositionByLane.set(lane, index + 1);
         });
 
-        const statusPriority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4 };
+        const statusPriority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4, hors_course: 5 };
         const sortedLanes = allLanes.sort((a, b) => {
           const posA = consolidatedPositionByLane.get(a);
           const posB = consolidatedPositionByLane.get(b);
@@ -8636,19 +8677,24 @@ const CompetitionRaces = () => {
           const athlete = athleteId ? raceAthleteLookup.get(athleteId) : null;
 
           const status = lane.result?.status || "ok";
-          const consolidatedPos = consolidatedPositionByLane.get(lane);
-          const effectivePos =
-            status === "dnf" ? dnfEffectivePosition : consolidatedPos;
-          const pos = Number.isInteger(effectivePos) ? effectivePos : "-";
-          let timeStr =
-            status !== "ok"
+          const isHC = status === "hors_course";
+          const consolidatedPos = isHC ? null : consolidatedPositionByLane.get(lane);
+          const effectivePos = isHC
+            ? null
+            : status === "dnf" ? dnfEffectivePosition : consolidatedPos;
+          const pos = isHC ? "HC" : Number.isInteger(effectivePos) ? effectivePos : "-";
+          let timeStr = isHC
+            ? lane.result?.elapsedMs
+              ? formatElapsedTime(lane.result.elapsedMs)
+              : "HC"
+            : status !== "ok"
               ? status.toUpperCase()
               : formatElapsedTime(lane.result?.elapsedMs);
           // Store time delta for 2nd place and below (rendered separately)
           if (
             status === "ok" &&
             lane.result?.elapsedMs &&
-            pos > 1 &&
+            effectivePos > 1 &&
             winningTime
           ) {
             const deltaMs = lane.result.elapsedMs - winningTime;
@@ -8657,6 +8703,7 @@ const CompetitionRaces = () => {
           }
           let points = 0;
           if (
+            !isHC &&
             (status === "ok" || status === "dnf") &&
             Number.isInteger(effectivePos)
           ) {
@@ -13767,12 +13814,30 @@ const CompetitionRaces = () => {
                           return null;
                         }
 
+                        const category = categories.find(
+                          (c) =>
+                            toDocumentId(c) === toDocumentId(race.category),
+                        );
+                        const boatClass = boatClasses.find(
+                          (b) =>
+                            toDocumentId(b) === toDocumentId(race.boatClass),
+                        );
+                        const eventCode =
+                          generateRaceCode(category, boatClass) || "-";
+                        const startTimeStr = race.startTime
+                          ? new Date(race.startTime).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "";
+
                         return (
                           <option
                             key={raceId || `source-race-${raceIndex}`}
                             value={raceId}
                           >
-                            {race.name || `Race ${race.order}`}
+                            {race.order}. {eventCode} - {race.name || "Race"}{" "}
+                            {startTimeStr ? `(${startTimeStr})` : ""}
                           </option>
                         );
                       })}
@@ -13830,12 +13895,30 @@ const CompetitionRaces = () => {
                           return null;
                         }
 
+                        const category = categories.find(
+                          (c) =>
+                            toDocumentId(c) === toDocumentId(race.category),
+                        );
+                        const boatClass = boatClasses.find(
+                          (b) =>
+                            toDocumentId(b) === toDocumentId(race.boatClass),
+                        );
+                        const eventCode =
+                          generateRaceCode(category, boatClass) || "-";
+                        const startTimeStr = race.startTime
+                          ? new Date(race.startTime).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "";
+
                         return (
                           <option
                             key={raceId || `target-race-${raceIndex}`}
                             value={raceId}
                           >
-                            {race.name || `Race ${race.order}`}
+                            {race.order}. {eventCode} - {race.name || "Race"}{" "}
+                            {startTimeStr ? `(${startTimeStr})` : ""}
                           </option>
                         );
                       })}
