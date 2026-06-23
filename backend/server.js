@@ -19,6 +19,7 @@ import competitionRaceRoutes from "./Routes/competitionRaceRoutes.js";
 import competitionRegistrationRoutes from "./Routes/competitionRegistrationRoutes.js";
 import rankingRoutes from "./Routes/rankingRoutes.js";
 import beachSprintRoutes from "./Routes/beachSprintRoutes.js";
+import publicRoutes from "./Routes/publicRoutes.js";
 import mongoose from "mongoose";
 import { syncAllCompetitionRegistrationStatuses } from "./Services/registrationStatusService.js";
 import Competition from "./Models/competitionModel.js";
@@ -129,6 +130,9 @@ app.get("/api/debug/registration-status/:competitionId", async (req, res) => {
       .json({ message: "Error", error: error.message || String(error) });
   }
 });
+
+app.use("/api/public", publicRoutes);
+app.use("/api/public", (await import("./Routes/publicDebugRoutes.js")).default);
 
 app.use("/api/users", protect, userRoutes);
 app.use("/api/auth", authRoutes);

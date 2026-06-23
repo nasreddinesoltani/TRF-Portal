@@ -15,6 +15,7 @@ import Navbar from "./components/Navbar";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Register = lazy(() => import("./pages/Register"));
 const LoginPage = lazy(() => import("./pages/Login"));
+const PublicHome = lazy(() => import("./pages/PublicHome"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const ChangePassword = lazy(() => import("./pages/ChangePassword"));
 const CreateAthlete = lazy(() => import("./pages/CreateAthlete"));
@@ -37,6 +38,7 @@ const RankingSystemManagement = lazy(
 const BeachSprintCompetition = lazy(
   () => import("./pages/BeachSprintCompetition"),
 );
+const CompetitionDetail = lazy(() => import("./pages/CompetitionDetail"));
 const RaceDetail = lazy(() => import("./pages/RaceDetail"));
 
 function App() {
@@ -73,8 +75,10 @@ function App() {
         >
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<PublicHome />} />
+            <Route path="/competition/:id" element={<CompetitionDetail />} />
             <Route
-              path="/"
+              path="/dashboard"
               element={
                 <ProtectedRoute>
                   <Dashboard />

@@ -8,14 +8,14 @@ function Register() {
   const handleUserAdded = () => {
     // Navigate back to dashboard after successful registration
     setTimeout(() => {
-      navigate("/");
+      navigate("/dashboard");
     }, 2000);
   };
 
   return (
     <div className="min-h-screen bg-white p-6">
       <div className="mb-6">
-        <Button variant="outline" onClick={() => navigate("/")}>
+        <Button variant="outline" onClick={() => navigate("/dashboard")}>
           ← Back to Dashboard
         </Button>
       </div>

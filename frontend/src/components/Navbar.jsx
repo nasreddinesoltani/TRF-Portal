@@ -1,12 +1,14 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "./ui/button";
 import { toast } from "react-toastify";
+import "../public.css";
 
 export const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
+  const [isScrolled, setIsScrolled] = useState(false);
 
   const handleLogout = async () => {
     const result = await logout();
@@ -38,13 +40,26 @@ export const Navbar = () => {
     ? roleBadgeStyles[role] || "bg-slate-700 text-white"
     : null;
 
+  useEffect(() => {
+    if (isAuthenticated) return undefined;
+
+    const updateScrollState = () => {
+      setIsScrolled(window.scrollY > 12);
+    };
+
+    updateScrollState();
+    window.addEventListener("scroll", updateScrollState, { passive: true });
+
+    return () => window.removeEventListener("scroll", updateScrollState);
+  }, [isAuthenticated]);
+
   const navigationSections = useMemo(() => {
     const sections = [
       {
         key: "overview",
         label: "Overview",
         links: [
-          { key: "dashboard", label: "Dashboard", to: "/" },
+          { key: "dashboard", label: "Dashboard", to: "/dashboard" },
           { key: "analytics", label: "Analytics", to: "/analytics" },
         ],
       },
@@ -135,16 +150,56 @@ export const Navbar = () => {
       .map((section) => ({
         ...section,
         links: section.links.filter(
-          (link) => link.to && !link.hidden && matchesRole(link.roles)
+          (link) => link.to && !link.hidden && matchesRole(link.roles),
         ),
       }))
       .filter((section) => section.links.length > 0);
   }, [role, clubId]);
 
+  // ─── Public Navbar (Dark, Glassmorphism) ───
   if (!isAuthenticated) {
-    return null;
+    return (
+      <nav className={`pub-nav ${isScrolled ? "pub-nav--scrolled" : ""}`}>
+        <div className="pub-nav__inner">
+          <button
+            className="pub-nav__brand"
+            onClick={() => navigate("/")}
+            type="button"
+          >
+            <span className="pub-nav__brand-sub">TRF Portal</span>
+            <span className="pub-nav__brand-main">
+              Tunisian Rowing Federation
+            </span>
+          </button>
+          <div className="pub-nav__links">
+            <button className="pub-nav__link" onClick={() => navigate("/")}>
+              Home
+            </button>
+            <button
+              className="pub-nav__link"
+              onClick={() => navigate("/#events")}
+            >
+              Events
+            </button>
+            <button
+              className="pub-nav__link"
+              onClick={() => navigate("/#results")}
+            >
+              Results
+            </button>
+            <button
+              className="pub-nav__login"
+              onClick={() => navigate("/login")}
+            >
+              Admin Login
+            </button>
+          </div>
+        </div>
+      </nav>
+    );
   }
 
+  // ─── Admin Navbar (Authenticated) ───
   return (
     <nav className="border-b border-white/10 bg-slate-950 text-white shadow-lg">
       <div className="mx-auto w-full max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
@@ -152,7 +207,7 @@ export const Navbar = () => {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div
               className="flex cursor-pointer items-center gap-2"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/dashboard")}
             >
               <div className="flex flex-col">
                 <span className="text-xs uppercase tracking-[0.28em] text-white/50">

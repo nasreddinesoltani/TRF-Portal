@@ -31,7 +31,7 @@ import {
   ChevronRight,
   FlaskConical,
 } from "lucide-react";
-import { generateRaceCode, formatCategoryAbbreviation } from "../lib/rowing";
+import { generateRaceCode } from "../lib/rowing";
 import {
   buildStartListTableBody,
   sortStartListLanes,
@@ -150,6 +150,43 @@ const formatEventTitleWithBoatClass = (
       ? boatClass?.names?.ar || boatClass?.code
       : boatClass?.names?.en || boatClass?.code) || "";
   return [categoryTitle, boatClassTitle].filter(Boolean).join(" ").trim();
+};
+
+const getCategoryDisplayName = (category) => {
+  if (!category) return "Category";
+  return (
+    category?.titles?.en ||
+    category?.titles?.fr ||
+    category?.titles?.ar ||
+    category?.name ||
+    category?.abbreviation ||
+    category?.code ||
+    "Category"
+  );
+};
+
+const getBoatClassDisplayName = (boatClass) => {
+  if (!boatClass) return "Boat class";
+  return (
+    boatClass?.names?.en ||
+    boatClass?.names?.fr ||
+    boatClass?.names?.ar ||
+    boatClass?.name ||
+    boatClass?.code ||
+    "Boat class"
+  );
+};
+
+const getClubDisplayName = (club) => {
+  if (!club) return "Club";
+  return (
+    club?.name ||
+    club?.names?.en ||
+    club?.names?.fr ||
+    club?.nameAr ||
+    club?.code ||
+    "Club"
+  );
 };
 
 const formatAsOfLabel = (value = new Date()) =>
@@ -629,6 +666,19 @@ const RaceDetail = () => {
     const boatId = toDocumentId(race?.boatClass);
     return boatClasses.find((b) => toDocumentId(b) === boatId);
   }, [race, boatClasses]);
+
+  const raceEventTitle = useMemo(
+    () => formatEventTitleWithBoatClass(category, boatClass, "en"),
+    [category, boatClass],
+  );
+
+  const raceEventSubtitle = useMemo(
+    () =>
+      [getCategoryDisplayName(category), getBoatClassDisplayName(boatClass)]
+        .filter(Boolean)
+        .join(" · "),
+    [category, boatClass],
+  );
 
   const calculatedPositions = useMemo(() => {
     const positions = {};
@@ -1278,7 +1328,14 @@ const RaceDetail = () => {
           const statusA = a.result?.status || "ok";
           const statusB = b.result?.status || "ok";
 
-          const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4, hors_course: 5 };
+          const priority = {
+            ok: 0,
+            dnf: 1,
+            dns: 2,
+            abs: 3,
+            dsq: 4,
+            hors_course: 5,
+          };
           const pA = priority[statusA] ?? 10;
           const pB = priority[statusB] ?? 10;
 
@@ -1683,7 +1740,14 @@ const RaceDetail = () => {
       const statusA = a.result?.status || "ok";
       const statusB = b.result?.status || "ok";
 
-      const priority = { ok: 0, dnf: 1, dns: 2, abs: 3, dsq: 4, hors_course: 5 };
+      const priority = {
+        ok: 0,
+        dnf: 1,
+        dns: 2,
+        abs: 3,
+        dsq: 4,
+        hors_course: 5,
+      };
       const pA = priority[statusA] ?? 10;
       const pB = priority[statusB] ?? 10;
 
@@ -1749,8 +1813,11 @@ const RaceDetail = () => {
                 </Badge>
               </div>
               <h1 className="text-xl font-bold text-slate-900 line-clamp-1">
-                {category?.titles?.en} {boatClass?.names?.en}
+                {raceEventTitle || raceCode}
               </h1>
+              <p className="mt-1 text-sm text-slate-500 line-clamp-1">
+                {raceEventSubtitle}
+              </p>
             </div>
           </div>
 
@@ -1962,8 +2029,8 @@ const RaceDetail = () => {
                                   : formatAthleteName(lane.athlete)}
                               </span>
                               <div className="flex items-center gap-2">
-                                <span className="text-xs text-slate-500 uppercase">
-                                  {lane.club?.code}
+                                <span className="text-xs text-slate-500">
+                                  {getClubDisplayName(lane.club)}
                                 </span>
                                 {laneWithdrawn && (
                                   <Badge className="h-5 border-rose-200 bg-rose-100 px-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100">
@@ -2128,10 +2195,7 @@ const RaceDetail = () => {
                     // HC athletes get no points
                     const points = isHC
                       ? 0
-                      : calculatePoints(
-                          effectivePos,
-                          activeRankingSystem,
-                        );
+                      : calculatePoints(effectivePos, activeRankingSystem);
 
                     return (
                       <div
@@ -2173,7 +2237,7 @@ const RaceDetail = () => {
                               {lane.club?.code || "???"}
                             </Badge>
                             <span className="text-xs text-slate-500 truncate">
-                              {lane.club?.name}
+                              {getClubDisplayName(lane.club)}
                             </span>
                             {laneWithdrawn && (
                               <Badge className="h-5 border-rose-200 bg-rose-100 px-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100">

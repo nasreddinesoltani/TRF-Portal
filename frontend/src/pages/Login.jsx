@@ -37,7 +37,7 @@ export const LoginPage = () => {
       if (result.success) {
         toast.success("Login successful!");
         setTimeout(() => {
-          navigate("/");
+          navigate("/dashboard");
         }, 1000);
       } else {
         toast.error(result.error || "Login failed");
