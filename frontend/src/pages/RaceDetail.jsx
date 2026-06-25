@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useAuth } from "../contexts/AuthContext";
+import { useCountries } from "../hooks/useCountries";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Select } from "../components/ui/select";
@@ -55,7 +56,7 @@ const loadImage = (url) => {
       resolve(canvas.toDataURL("image/png"));
     };
     img.onerror = () => resolve(null);
-    img.src = url;
+    img.src = `${url}${url.includes("?") ? "&" : "?"}_cb=${Date.now()}`;
   });
 };
 
@@ -529,11 +530,34 @@ const RaceDetail = () => {
   const { competitionId, raceId } = useParams();
   const navigate = useNavigate();
   const { token, user } = useAuth();
+  const { getCountry, countryLabel, countryFlag } = useCountries();
   const isAdmin = user?.role === "admin" || user?.role === "jury_president";
+
+  // Resolve the lane's country through the full fallback chain so the UI
+  // shows the actual nation for foreign athletes instead of a "Foreign" label.
+  const resolveLaneCountry = useCallback(
+    (lane) => {
+      const candidates = [
+        lane?.representingNation,
+        lane?.athlete?.representingNation,
+        lane?.athlete?.nationalityCode,
+        lane?.crew?.[0]?.representingNation,
+        lane?.crew?.[0]?.nationalityCode,
+      ];
+      const first = candidates.find(
+        (item) => item !== undefined && item !== null && String(item).trim(),
+      );
+      const code = first ? String(first).trim() : "";
+      return code || null;
+    },
+    [],
+  );
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [competition, setCompetition] = useState(null);
+  const isInternational =
+    competition?.scope?.type && competition.scope.type !== "national";
   const [race, setRace] = useState(null);
   const [categories, setCategories] = useState([]);
   const [boatClasses, setBoatClasses] = useState([]);
@@ -1078,6 +1102,14 @@ const RaceDetail = () => {
       formatRaceCodeForHeader(generateRaceCode(category, boatClass), category);
 
     const showJourney = shouldShowJourney(competition, allOrigRaces);
+
+    // Phase / round is now driven by the race's `phase` field (e.g. "Final A",
+    // "Heat 1", "Semi-Final"). It is the single source of truth for the PDF
+    // phase label. Fall back to legacy journey-based logic only when no phase
+    // is set on the race.
+    const racePhase = String(pseudoRace?.phase || race?.phase || "")
+      .trim();
+
     const explicitNonFinalPhases = Array.from(
       new Set(
         allOrigRaces
@@ -1101,7 +1133,10 @@ const RaceDetail = () => {
       ) || null;
 
     let phaseStr = "Final";
-    if (explicitNonFinalPhases.length > 0) {
+    if (racePhase) {
+      // The race's explicit phase wins (e.g. "Final A", "Heat 1").
+      phaseStr = racePhase;
+    } else if (explicitNonFinalPhases.length > 0) {
       phaseStr = explicitNonFinalPhases.join(" / ");
     } else if (showJourney && journeyValues.length > 0) {
       const reachedConfiguredFinal =
@@ -1442,10 +1477,23 @@ const RaceDetail = () => {
           ? calculatePoints(effectivePos, activeRankingSystem)
           : 0;
 
+      const c = lane.representingNation || lane.athlete?.representingNation || lane.athlete?.nationalityCode || lane.crew?.[0]?.representingNation || lane.crew?.[0]?.nationalityCode;
+      const country = getCountry(c)?.iocCode || c || "-";
+      if (isInternational) {
+        // International results: medals-based, no club column, no points column.
+        return [
+          String(pos),
+          String(lane.lane || ""),
+          String(country),
+          String(athleteName),
+          String(timeStr),
+        ];
+      }
       return [
         String(pos),
         String(lane.lane || ""),
         String(clubCode),
+        String(country),
         String(athleteName),
         String(timeStr),
         String(points),
@@ -1481,15 +1529,74 @@ const RaceDetail = () => {
       sortLanes: false,
     });
 
-    const startListTableBody = fullStartListTableBody.map((row) =>
-      row.slice(0, 5),
+    const startListVisibleLanes = exportLanes.filter(
+      (l) => Boolean(l?.athlete) || (Array.isArray(l?.crew) && l.crew.length > 0),
     );
+    const startListTableBody = fullStartListTableBody.map((row, idx) => {
+      const c = startListVisibleLanes[idx]?.representingNation || startListVisibleLanes[idx]?.athlete?.representingNation || startListVisibleLanes[idx]?.athlete?.nationalityCode || startListVisibleLanes[idx]?.crew?.[0]?.representingNation || startListVisibleLanes[idx]?.crew?.[0]?.nationalityCode;
+      const country = getCountry(c)?.iocCode || c || "-";
+      if (isInternational) {
+        // International start list: [Lane, Country, Name, DOB] — no club, no license.
+        // row from buildStartListTableBody = [idx, club, name, license, dob, event]
+        return [row[0], String(country), row[2], row[4]];
+      }
+      // National: [Lane, Club, Country, Name, License, DOB]
+      return [row[0], row[1], String(country), ...row.slice(2, 5)];
+    });
+
+    // Table headers: differ between national and international
+    const resultsHead = isInternational
+      ? [["Rank", "Lane", "Country", "Name", "Time"]]
+      : [["Rank", "Lane", "Club", "Country", "Name", "Time", "Points"]];
+    const startListHead = isInternational
+      ? [["Lane", "Country", "Name", "DOB"]]
+      : [["Lane", "Club", "Country", "Name", "License", "DOB"]];
+
+    // Column styles for each table layout
+    const resultsColumnStyles = isInternational
+      ? {
+          0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
+          1: { cellWidth: 12 },
+          2: { cellWidth: 22, halign: "center", fontStyle: "bold" },
+          3: { cellWidth: 75, fontStyle: "bold" },
+          4: {
+            cellWidth: 26,
+            halign: "right",
+            fontStyle: "bold",
+            fontSize: 9,
+          },
+        }
+      : {
+          0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
+          1: { cellWidth: 12 },
+          2: { cellWidth: 25, fontStyle: "bold" },
+          3: { cellWidth: 18, halign: "center", fontStyle: "bold" },
+          4: { cellWidth: 70, fontStyle: "bold" },
+          5: {
+            cellWidth: 22,
+            halign: "right",
+            fontStyle: "bold",
+            fontSize: 9,
+          },
+          6: { cellWidth: 16, halign: "center", fontStyle: "bold" },
+        };
+    const startListColumnStyles = isInternational
+      ? {
+          0: { cellWidth: 15, halign: "center" },
+          1: { cellWidth: 22, halign: "center", fontStyle: "bold" },
+          2: { fontStyle: "bold" },
+          3: { cellWidth: 22 },
+        }
+      : {
+          0: { cellWidth: 15, halign: "center" },
+          1: { fontStyle: "bold" },
+          2: { cellWidth: 18, halign: "center", fontStyle: "bold" },
+          3: { fontStyle: "bold" },
+        };
 
     autoTable(doc, {
       startY: yPos,
-      head: isResults
-        ? [["Rank", "Lane", "Club", "Name", "Time", "Points"]]
-        : [["Lane", "Club", "Name", "License", "DOB"]],
+      head: isResults ? resultsHead : startListHead,
       body: isResults ? resultsTableBody : startListTableBody,
       theme: "plain",
       headStyles: {
@@ -1513,25 +1620,7 @@ const RaceDetail = () => {
             }),
         font: fontName,
       },
-      columnStyles: isResults
-        ? {
-            0: { cellWidth: 12, halign: "center", fontStyle: "bold" },
-            1: { cellWidth: 12 },
-            2: { cellWidth: 25, fontStyle: "bold" },
-            3: { cellWidth: 88, fontStyle: "bold" },
-            4: {
-              cellWidth: 22,
-              halign: "right",
-              fontStyle: "bold",
-              fontSize: 9,
-            },
-            5: { cellWidth: 16, halign: "center", fontStyle: "bold" },
-          }
-        : {
-            0: { cellWidth: 15, halign: "center" },
-            1: { fontStyle: "bold" },
-            2: { fontStyle: "bold" },
-          },
+      columnStyles: isResults ? resultsColumnStyles : startListColumnStyles,
       margin: {
         left: leftMargin,
         right: 14,
@@ -1550,7 +1639,7 @@ const RaceDetail = () => {
       },
       didDrawCell: isResults
         ? (data) => {
-            if (data.section === "body" && data.column.index === 4) {
+            if (data.section === "body" && data.column.index === 5) {
               const delta = deltaMap.get(data.row.index);
               if (delta) {
                 doc.setFontSize(7);
@@ -1616,57 +1705,105 @@ const RaceDetail = () => {
 
       // Legend on last page
       if (i === pageCount) {
-        const uniqueClubs = Array.from(
-          new Set(
-            pseudoRace.lanes.map((l) => toDocumentId(l.club)).filter(Boolean),
-          ),
-        )
-          .map(
-            (id) =>
-              pseudoRace.lanes.find((l) => toDocumentId(l.club) === id).club,
-          )
-          .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+        const lineHeight = 4;
 
-        if (uniqueClubs.length > 0) {
-          const lineHeight = 4;
-          const boxHeight = uniqueClubs.length * lineHeight + 7;
-          const legendY = pageHeight - 35 - boxHeight;
+        if (isInternational) {
+          const laneCountry = (l) =>
+            l?.representingNation ||
+            l?.athlete?.representingNation ||
+            l?.athlete?.nationalityCode ||
+            l?.crew?.[0]?.representingNation ||
+            l?.crew?.[0]?.nationalityCode;
 
-          doc.setDrawColor(0);
-          doc.setLineWidth(0.3);
-          doc.rect(leftMargin, legendY, 182, boxHeight);
+          const uniqueNations = Array.from(
+            new Set(
+              pseudoRace.lanes
+                .map(laneCountry)
+                .filter(Boolean),
+            ),
+          ).sort((a, b) => a.localeCompare(b));
 
-          doc.setFontSize(9);
-          doc.setFont(fontName, "bold");
-          doc.text("Legend:", leftMargin + 2, legendY + 5);
+          if (uniqueNations.length > 0) {
+            const boxHeight = uniqueNations.length * lineHeight + 7;
+            const legendY = pageHeight - 35 - boxHeight;
 
-          doc.setFontSize(8);
-          let clubY = legendY + 9;
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.rect(leftMargin, legendY, 182, boxHeight);
 
-          for (const club of uniqueClubs) {
-            const code = club.code || "---";
-            const frenchName =
-              club.name || club.names?.fr || club.names?.en || "";
-            const arabicName = club.nameAr || club.names?.ar || "";
-
+            doc.setFontSize(9);
             doc.setFont(fontName, "bold");
-            doc.text(code + ": ", leftMargin + 4, clubY);
+            doc.text("Legend:", leftMargin + 2, legendY + 5);
 
-            const codeWidth = doc.getTextWidth(code + ": ");
-            doc.setFont(fontName, "normal");
-            doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+            doc.setFontSize(8);
+            let nationY = legendY + 9;
 
-            if (arabicName && arabicFontName) {
-              const frenchWidth = doc.getTextWidth(frenchName);
-              doc.setFont(arabicFontName, "normal");
-              doc.text(
-                " : " + arabicName,
-                leftMargin + 4 + codeWidth + frenchWidth,
-                clubY,
-              );
+            for (const code of uniqueNations) {
+              const iocCode = getCountry(code)?.iocCode || code;
+              const name = countryLabel(code) || code;
+
+              doc.setFont(fontName, "bold");
+              doc.text(iocCode + ": ", leftMargin + 4, nationY);
+
+              const codeWidth = doc.getTextWidth(iocCode + ": ");
               doc.setFont(fontName, "normal");
+              doc.text(name, leftMargin + 4 + codeWidth, nationY);
+
+              nationY += lineHeight;
             }
-            clubY += lineHeight;
+          }
+        } else {
+          const uniqueClubs = Array.from(
+            new Set(
+              pseudoRace.lanes.map((l) => toDocumentId(l.club)).filter(Boolean),
+            ),
+          )
+            .map(
+              (id) =>
+                pseudoRace.lanes.find((l) => toDocumentId(l.club) === id).club,
+            )
+            .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+
+          if (uniqueClubs.length > 0) {
+            const boxHeight = uniqueClubs.length * lineHeight + 7;
+            const legendY = pageHeight - 35 - boxHeight;
+
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.rect(leftMargin, legendY, 182, boxHeight);
+
+            doc.setFontSize(9);
+            doc.setFont(fontName, "bold");
+            doc.text("Legend:", leftMargin + 2, legendY + 5);
+
+            doc.setFontSize(8);
+            let clubY = legendY + 9;
+
+            for (const club of uniqueClubs) {
+              const code = club.code || "---";
+              const frenchName =
+                club.name || club.names?.fr || club.names?.en || "";
+              const arabicName = club.nameAr || club.names?.ar || "";
+
+              doc.setFont(fontName, "bold");
+              doc.text(code + ": ", leftMargin + 4, clubY);
+
+              const codeWidth = doc.getTextWidth(code + ": ");
+              doc.setFont(fontName, "normal");
+              doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+
+              if (arabicName && arabicFontName) {
+                const frenchWidth = doc.getTextWidth(frenchName);
+                doc.setFont(arabicFontName, "normal");
+                doc.text(
+                  " : " + arabicName,
+                  leftMargin + 4 + codeWidth + frenchWidth,
+                  clubY,
+                );
+                doc.setFont(fontName, "normal");
+              }
+              clubY += lineHeight;
+            }
           }
         }
       }
@@ -2029,9 +2166,28 @@ const RaceDetail = () => {
                                   : formatAthleteName(lane.athlete)}
                               </span>
                               <div className="flex items-center gap-2">
-                                <span className="text-xs text-slate-500">
-                                  {getClubDisplayName(lane.club)}
-                                </span>
+                                {!isInternational && (
+                                  <span className="text-xs text-slate-500">
+                                    {getClubDisplayName(lane.club)}
+                                  </span>
+                                )}
+                                {(() => {
+                                  const nationCode = resolveLaneCountry(lane);
+                                  if (!nationCode) return null;
+                                  return (
+                                    <Badge
+                                      variant="outline"
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0 border-indigo-200 text-indigo-700 bg-indigo-50"
+                                    >
+                                      <img
+                                        src={countryFlag(nationCode)}
+                                        alt={nationCode}
+                                        className="inline-block w-[18px] h-[12px] align-text-bottom"
+                                      />
+                                      {countryLabel(nationCode) || nationCode}
+                                    </Badge>
+                                  );
+                                })()}
                                 {laneWithdrawn && (
                                   <Badge className="h-5 border-rose-200 bg-rose-100 px-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100">
                                     Withdrawn
@@ -2230,15 +2386,38 @@ const RaceDetail = () => {
                               : formatAthleteName(lane.athlete)}
                           </h4>
                           <div className="flex items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] font-bold px-1.5 py-0"
-                            >
-                              {lane.club?.code || "???"}
-                            </Badge>
-                            <span className="text-xs text-slate-500 truncate">
-                              {getClubDisplayName(lane.club)}
-                            </span>
+                            {!isInternational && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] font-bold px-1.5 py-0"
+                              >
+                                {lane.club?.code || "???"}
+                              </Badge>
+                            )}
+                            {(() => {
+                              const nationCode = resolveLaneCountry(lane);
+                              if (!nationCode) return null;
+                              return (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] font-bold px-1.5 py-0 border-indigo-200 text-indigo-700 bg-indigo-50"
+                                >
+                                  <img
+                                    src={countryFlag(nationCode)}
+                                    alt={nationCode}
+                                    className="inline-block w-[18px] h-[12px] align-text-bottom"
+                                  />
+                                  <span className="ml-1">
+                                    {countryLabel(nationCode) || nationCode}
+                                  </span>
+                                </Badge>
+                              );
+                            })()}
+                            {!isInternational && (
+                              <span className="text-xs text-slate-500 truncate">
+                                {getClubDisplayName(lane.club)}
+                              </span>
+                            )}
                             {laneWithdrawn && (
                               <Badge className="h-5 border-rose-200 bg-rose-100 px-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100">
                                 Withdrawn

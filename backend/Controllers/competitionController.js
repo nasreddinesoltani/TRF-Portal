@@ -2,8 +2,11 @@ import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import Competition, {
   COMPETITION_DISCIPLINES,
+  COMPETITION_SCOPES,
   COMPETITION_STATUSES,
   COMPETITION_TYPES,
+  FOREIGN_ELIGIBILITY_MODES,
+  PARTICIPATION_MODES,
   REGISTRATION_STATUSES,
   RESULTS_STATUSES,
   STAGE_TYPES,
@@ -157,6 +160,59 @@ const sanitiseStages = (stages = []) => {
     .filter(Boolean);
 };
 
+const sanitiseScope = (scope, existingScope) => {
+  // No scope in payload at all → keep existing (or default during create).
+  if (scope === undefined) {
+    return existingScope ? { ...existingScope } : undefined;
+  }
+
+  // Explicit null/empty clears international fields back to national defaults.
+  if (scope === null) {
+    return { type: "national" };
+  }
+
+  const raw = typeof scope === "object" ? scope : {};
+  const type = COMPETITION_SCOPES.includes(raw.type) ? raw.type : "national";
+
+  const sanitiseFederationList = (values) =>
+    Array.isArray(values)
+      ? values
+          .map((v) => (typeof v === "string" ? v.trim().toUpperCase() : ""))
+          .filter(Boolean)
+      : [];
+
+  const next = {
+    type,
+    organiserFederation:
+      typeof raw.organiserFederation === "string"
+        ? raw.organiserFederation.trim().toUpperCase() || undefined
+        : undefined,
+    hostFederation:
+      typeof raw.hostFederation === "string"
+        ? raw.hostFederation.trim().toUpperCase() || undefined
+        : undefined,
+    hostCountry:
+      typeof raw.hostCountry === "string"
+        ? raw.hostCountry.trim().toUpperCase() || undefined
+        : undefined,
+    participatingFederations: sanitiseFederationList(
+      raw.participatingFederations
+    ),
+    trfParticipates:
+      raw.trfParticipates === undefined ? true : Boolean(raw.trfParticipates),
+    participationMode: PARTICIPATION_MODES.includes(raw.participationMode)
+      ? raw.participationMode
+      : "by_club",
+    foreignEligibilityMode: FOREIGN_ELIGIBILITY_MODES.includes(
+      raw.foreignEligibilityMode
+    )
+      ? raw.foreignEligibilityMode
+      : "relaxed",
+  };
+
+  return next;
+};
+
 const buildCompetitionPayload = (body, userId, options = {}) => {
   const { allowPartial = false, existingCompetition = null } = options;
 
@@ -181,6 +237,7 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
     status,
     registrationStatus,
     resultsStatus,
+    scope,
   } = body;
 
   if (!allowPartial || code !== undefined) {
@@ -335,6 +392,27 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
     payload.notes = notes?.toString().trim() || undefined;
   }
 
+  if (scope !== undefined) {
+    const scopePayload = sanitiseScope(
+      scope,
+      existingCompetition?.scope?.toObject?.() ?? existingCompetition?.scope
+    );
+    if (scopePayload) {
+      // Cross-field validation for international competitions.
+      if (scopePayload.type !== "national") {
+        if (!scopePayload.hostCountry) {
+          throw new Error(
+            "International competitions require a host country (scope.hostCountry)"
+          );
+        }
+        if (scopePayload.type === "international_oaas") {
+          scopePayload.trfParticipates = false;
+        }
+      }
+      payload.scope = scopePayload;
+    }
+  }
+
   // Handle status fields with validation
   if (status !== undefined && COMPETITION_STATUSES.includes(status)) {
     payload.status = status;
@@ -414,6 +492,7 @@ export const listCompetitions = asyncHandler(async (req, res) => {
     status,
     search,
     includeArchived,
+    scope,
     limit = 50,
   } = req.query;
 
@@ -424,6 +503,19 @@ export const listCompetitions = asyncHandler(async (req, res) => {
       return res.status(400).json({ message: "Unsupported discipline" });
     }
     filters.discipline = discipline;
+  }
+
+  // Scope filter: accepts a specific scope type, or "international" (any
+  // non-national scope) / "national" (only national).
+  if (scope) {
+    const trimmed = scope.trim();
+    if (COMPETITION_SCOPES.includes(trimmed)) {
+      filters["scope.type"] = trimmed;
+    } else if (trimmed.toLowerCase() === "international") {
+      filters["scope.type"] = { $ne: "national" };
+    } else if (trimmed.toLowerCase() === "national") {
+      filters["scope.type"] = "national";
+    }
   }
 
   if (season) {

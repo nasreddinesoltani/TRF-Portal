@@ -1,6 +1,6 @@
 import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
-import Competition from "../Models/competitionModel.js";
+import Competition, { isInternationalScope } from "../Models/competitionModel.js";
 import CompetitionEntry, {
   COMPETITION_ENTRY_STATUSES,
 } from "../Models/competitionEntryModel.js";
@@ -10,6 +10,15 @@ import Category from "../Models/categoryModel.js";
 import BoatClass from "../Models/boatClassModel.js";
 import CompetitionRace from "../Models/competitionRaceModel.js";
 import { computeCompetitionRegistrationStatus } from "../Services/registrationStatusService.js";
+
+// --- International competition support ---
+// Returns "national" or "international" based on competition scope.
+// Every existing competition defaults to "national" (scope.type defaults).
+const resolveEligibilityMode = (competition) =>
+  isInternationalScope(competition?.scope?.type) ? "international" : "national";
+
+// Whether an athlete is considered "foreign" for eligibility purposes.
+const isForeignAthlete = (athlete) => Boolean(athlete?.isForeign);
 
 const toObjectId = (value) => {
   if (!value) {
@@ -358,6 +367,9 @@ const serializeEntry = (entry) => {
     journeyIndex: entry.journeyIndex || null,
     crewNumber: entry.crewNumber ?? null,
     seed: entry.seed || null,
+    representingType: entry.representingType || null,
+    representingNation: entry.representingNation || null,
+    documentType: entry.documentType || null,
     submittedBy: serializeUser(entry.submittedBy),
     reviewedBy: serializeUser(entry.reviewedBy),
   };
@@ -466,7 +478,7 @@ const ensureMembershipForClub = (athlete, clubId, competitionSeason) => {
   return true;
 };
 
-const findSeasonAssignment = (athlete, season) => {
+const findSeasonAssignment = (athlete, season, type = "national") => {
   if (
     !Array.isArray(athlete.categoryAssignments) ||
     !athlete.categoryAssignments.length
@@ -474,10 +486,11 @@ const findSeasonAssignment = (athlete, season) => {
     return null;
   }
 
+  // Try exact match on type + season first.
   const exact = athlete.categoryAssignments.find(
     (assignment) =>
       assignment &&
-      assignment.type === "national" &&
+      assignment.type === type &&
       Number(assignment.season) === Number(season) &&
       assignment.category,
   );
@@ -486,15 +499,26 @@ const findSeasonAssignment = (athlete, season) => {
     return exact;
   }
 
-  // Fallback to latest known national assignment when exact season assignment is missing.
+  // Fallback to latest known assignment of the same type.
   const fallback = athlete.categoryAssignments
     .filter(
       (assignment) =>
-        assignment && assignment.type === "national" && assignment.category,
+        assignment && assignment.type === type && assignment.category,
     )
     .sort((a, b) => Number(b.season || 0) - Number(a.season || 0))[0];
 
-  return fallback || null;
+  if (fallback) {
+    return fallback;
+  }
+
+  // For international events, also try the national assignment as a last
+  // resort so a Tunisian athlete with only a national assignment can still
+  // be entered (strict club/license checks still apply elsewhere).
+  if (type === "international") {
+    return findSeasonAssignment(athlete, season, "national");
+  }
+
+  return null;
 };
 
 const athleteFitsCategory = (assignment, categoryDoc, allowUpCategory) => {
@@ -580,7 +604,7 @@ const computeAgeOnCutoff = (birthDate, season) => {
   return age >= 0 ? age : null;
 };
 
-const buildFallbackAssignment = (athlete, categoryDoc, season) => {
+const buildFallbackAssignment = (athlete, categoryDoc, season, type = "national") => {
   if (!athlete || !categoryDoc) {
     return null;
   }
@@ -612,7 +636,7 @@ const buildFallbackAssignment = (athlete, categoryDoc, season) => {
 
   return {
     season,
-    type: "national",
+    type,
     category: categoryDoc._id,
     abbreviation: categoryDoc.abbreviation || null,
     titles: categoryDoc.titles || {},
@@ -675,7 +699,7 @@ const populateEntryDoc = async (entryDoc) =>
     {
       path: "athlete",
       select:
-        "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships",
+        "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isForeign nationalityCode representingNation",
       populate: {
         path: "memberships.club",
         select: "name nameAr code type",
@@ -684,7 +708,7 @@ const populateEntryDoc = async (entryDoc) =>
     {
       path: "crew",
       select:
-        "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships",
+        "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isForeign nationalityCode representingNation",
       populate: {
         path: "memberships.club",
         select: "name nameAr code type",
@@ -745,6 +769,11 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
     entryQuery.journeyIndex = requestedJourney;
   }
 
+  // Optional representingType filter (international scope)
+  if (req.query.representingType) {
+    entryQuery.representingType = req.query.representingType;
+  }
+
   const entries = await CompetitionEntry.find(entryQuery)
     .sort({ createdAt: 1 })
     .populate([
@@ -755,7 +784,7 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
       {
         path: "athlete",
         select:
-          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships",
+          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isForeign nationalityCode representingNation",
         populate: {
           path: "memberships.club",
           select: "name nameAr code type",
@@ -764,7 +793,7 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
       {
         path: "crew",
         select:
-          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships",
+          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isForeign nationalityCode representingNation",
         populate: {
           path: "memberships.club",
           select: "name nameAr code type",
@@ -850,13 +879,20 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
       .json({ message: "You are not allowed to view eligible athletes" });
   }
 
+  const eligibilityMode = resolveEligibilityMode(competition);
+  const isInternational = eligibilityMode === "international";
+
   let clubContext;
   try {
     clubContext = await resolveClubContext(req, {
-      requireClub: true,
+      requireClub: !isInternational,
     });
   } catch (error) {
-    return res.status(400).json({ message: error.message });
+    if (isInternational) {
+      clubContext = { clubId: null, clubDoc: null };
+    } else {
+      return res.status(400).json({ message: error.message });
+    }
   }
 
   const categoryId = toObjectId(req.query.category);
@@ -895,7 +931,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
   }
 
   const existingEntries = await CompetitionEntry.find(entryQuery)
-    .select("athlete crew status category journeyIndex")
+    .select("athlete crew status category journeyIndex representingType representingNation documentType")
     .lean();
 
   const existingEntryMap = new Map();
@@ -928,17 +964,37 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
       .lean();
   }
 
-  // Build the athlete query with para filtering
-  const athleteQuery = {
-    licenseStatus: "active",
-    memberships: {
-      $elemMatch: {
-        club: clubContext.clubId,
-        status: "active",
-        season: competition.season,
-      },
-    },
-  };
+  // Build the athlete query based on eligibility mode
+  const athleteQuery = isInternational
+    ? {
+        $or: [
+          // Domestic path: athletes with active club membership
+          {
+            isForeign: { $ne: true },
+            licenseStatus: "active",
+            memberships: {
+              $elemMatch: {
+                club: clubContext.clubId,
+                status: "active",
+                season: competition.season,
+              },
+            },
+          },
+          // Foreign path: any foreign athlete (no membership/license required)
+          { isForeign: true, nationalityCode: { $exists: true, $ne: "" } },
+        ],
+      }
+    : {
+        // National: existing behaviour — club membership required
+        licenseStatus: "active",
+        memberships: {
+          $elemMatch: {
+            club: clubContext.clubId,
+            status: "active",
+            season: competition.season,
+          },
+        },
+      };
 
   // Filter by para status if a category is selected
   if (selectedCategoryDoc) {
@@ -948,7 +1004,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
 
   const athletes = await Athlete.find(athleteQuery)
     .select(
-      "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isPara",
+      "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isPara isForeign nationalityCode representingNation federationCode",
     )
     .limit(numericLimit)
     .sort({ lastName: 1, firstName: 1 })
@@ -960,7 +1016,8 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
   }
 
   athletes.forEach((athlete) => {
-    const assignment = findSeasonAssignment(athlete, competition.season);
+    const assignmentType = isInternational ? "international" : "national";
+    const assignment = findSeasonAssignment(athlete, competition.season, assignmentType);
     if (assignment?.category) {
       requestedCategories.add(assignment.category.toString());
     }
@@ -978,12 +1035,18 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
 
   const eligibleAthletes = athletes
     .map((athlete) => {
-      let assignment = findSeasonAssignment(athlete, competition.season);
+      const assignmentType = isInternational ? "international" : "national";
+      let assignment = findSeasonAssignment(athlete, competition.season, assignmentType);
+      // For international, fall back to national assignment as last resort
+      if (!assignment && isInternational) {
+        assignment = findSeasonAssignment(athlete, competition.season, "national");
+      }
       if (!assignment && selectedCategoryDoc) {
         assignment = buildFallbackAssignment(
           athlete,
           selectedCategoryDoc,
           competition.season,
+          assignmentType,
         );
       }
       if (!assignment) {
@@ -1016,6 +1079,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
       }
 
       if (
+        !isForeignAthlete(athlete) &&
         !ensureMembershipForClub(
           athlete,
           clubContext.clubId,
@@ -1039,13 +1103,17 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
               gender: assignment.gender || null,
             }
           : null,
-        existingEntry: existingEntry
-          ? {
-              id: existingEntry._id?.toString?.() || null,
-              status: existingEntry.status,
-              categoryId: existingEntry.category?.toString?.() || null,
-            }
-          : null,
+          existingEntry: existingEntry
+            ? {
+                id: existingEntry._id?.toString?.() || null,
+                status: existingEntry.status,
+                categoryId: existingEntry.category?.toString?.() || null,
+                journeyIndex: existingEntry.journeyIndex || null,
+                representingType: existingEntry.representingType || null,
+                representingNation: existingEntry.representingNation || null,
+                documentType: existingEntry.documentType || null,
+              }
+            : null,
         category: serializeCategory(categoryDoc),
       };
     })
@@ -1060,7 +1128,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
     if (debugAsObjectId) {
       debugAthleteDoc = await Athlete.findById(debugAsObjectId)
         .select(
-          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships licenseStatus isPara",
+          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships licenseStatus isPara isForeign nationalityCode representingNation federationCode",
         )
         .populate({
           path: "memberships.club",
@@ -1074,7 +1142,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
         licenseNumber: debugNeedle,
       })
         .select(
-          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships licenseStatus isPara",
+          "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships licenseStatus isPara isForeign nationalityCode representingNation federationCode",
         )
         .populate({
           path: "memberships.club",
@@ -1243,6 +1311,10 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       .status(403)
       .json({ message: "You are not allowed to register athletes" });
   }
+
+  const eligibilityMode = resolveEligibilityMode(competition);
+  const isInternational = eligibilityMode === "international";
+
   // Admins and jury presidents can bypass registration window checks
   // Determine requested journey indexes from payload so we validate per-journey
   const requestedJourneyIndexes = Array.isArray(entries)
@@ -1281,9 +1353,15 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
 
   let clubContext;
   try {
-    clubContext = await resolveClubContext(req, { requireClub: true });
+    clubContext = await resolveClubContext(req, {
+      requireClub: !isInternational,
+    });
   } catch (error) {
-    return res.status(400).json({ message: error.message });
+    if (isInternational) {
+      clubContext = { clubId: null, clubDoc: null };
+    } else {
+      return res.status(400).json({ message: error.message });
+    }
   }
 
   // Parse entries and normalize to crewIds
@@ -1308,6 +1386,9 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         typeof entry.notes === "string" && entry.notes.trim().length
           ? entry.notes.trim()
           : undefined,
+      representingType: entry.representingType || undefined,
+      representingNation: entry.representingNation || undefined,
+      documentType: entry.documentType || undefined,
     };
   });
 
@@ -1537,6 +1618,8 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       }
 
       if (
+        !isForeignAthlete(athlete) &&
+        !(isInternational && !clubContext.clubId) &&
         !ensureMembershipForClub(
           athlete,
           clubContext.clubId,
@@ -1548,29 +1631,35 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         });
       }
 
-      // Validate license status - athlete must have all documents approved
-      // BYPASS: If is a historical season, we allow admins to bypass document validation
-      const currentYear = new Date().getFullYear();
-      const isHistoricalSeason =
-        competition.season && competition.season < currentYear;
+      // Validate license status — skip for foreign athletes and international entries without club context
+      if (!isForeignAthlete(athlete) && !(isInternational && !clubContext.clubId)) {
+        const currentYear = new Date().getFullYear();
+        const isHistoricalSeason =
+          competition.season && competition.season < currentYear;
 
-      if (!isHistoricalSeason && athlete.licenseStatus !== "active") {
-        const issuesList =
-          Array.isArray(athlete.documentsIssues) &&
-          athlete.documentsIssues.length > 0
-            ? ` (${athlete.documentsIssues.join(", ")})`
-            : "";
-        return res.status(400).json({
-          message: `${athlete.firstName} ${athlete.lastName} does not have an active license - documents incomplete${issuesList}`,
-        });
+        if (!isHistoricalSeason && athlete.licenseStatus !== "active") {
+          const issuesList =
+            Array.isArray(athlete.documentsIssues) &&
+            athlete.documentsIssues.length > 0
+              ? ` (${athlete.documentsIssues.join(", ")})`
+              : "";
+          return res.status(400).json({
+            message: `${athlete.firstName} ${athlete.lastName} does not have an active license - documents incomplete${issuesList}`,
+          });
+        }
       }
 
-      let assignment = findSeasonAssignment(athlete, competition.season);
+      const assignmentType = isInternational ? "international" : "national";
+      let assignment = findSeasonAssignment(athlete, competition.season, assignmentType);
+      if (!assignment && isInternational) {
+        assignment = findSeasonAssignment(athlete, competition.season, "national");
+      }
       if (!assignment && categoryDoc) {
         assignment = buildFallbackAssignment(
           athlete,
           categoryDoc,
           competition.season,
+          assignmentType,
         );
       }
       if (!assignment) {
@@ -1626,6 +1715,9 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       notes: entry.notes,
       submittedBy: req.user.id,
       submittedAt: new Date(),
+      representingType: entry.representingType,
+      representingNation: entry.representingNation,
+      documentType: entry.documentType,
     });
     creations.push(creation.save());
 
@@ -1988,7 +2080,7 @@ export const restoreEntryFromRaceLane = asyncHandler(async (req, res) => {
 
 export const updateEntry = asyncHandler(async (req, res) => {
   const { competitionId, entryId } = req.params;
-  const { seed, notes, crewNumber } = req.body;
+  const { seed, notes, crewNumber, representingType, representingNation, documentType } = req.body;
 
   const role = req.user?.role;
   if (!hasManagementPrivileges(role)) {
@@ -2025,6 +2117,21 @@ export const updateEntry = asyncHandler(async (req, res) => {
 
   if (crewNumber !== undefined) {
     entry.crewNumber = Number(crewNumber);
+    updated = true;
+  }
+
+  if (representingType !== undefined) {
+    entry.representingType = representingType || undefined;
+    updated = true;
+  }
+
+  if (representingNation !== undefined) {
+    entry.representingNation = representingNation || undefined;
+    updated = true;
+  }
+
+  if (documentType !== undefined) {
+    entry.documentType = documentType || undefined;
     updated = true;
   }
 

@@ -19,6 +19,7 @@ import competitionRaceRoutes from "./Routes/competitionRaceRoutes.js";
 import competitionRegistrationRoutes from "./Routes/competitionRegistrationRoutes.js";
 import rankingRoutes from "./Routes/rankingRoutes.js";
 import beachSprintRoutes from "./Routes/beachSprintRoutes.js";
+import countryRoutes from "./Routes/countryRoutes.js";
 import publicRoutes from "./Routes/publicRoutes.js";
 import mongoose from "mongoose";
 import { syncAllCompetitionRegistrationStatuses } from "./Services/registrationStatusService.js";
@@ -150,6 +151,7 @@ app.use(
 app.use("/api/competitions", competitionRoutes);
 app.use("/api/rankings", rankingRoutes);
 app.use("/api/beach-sprint", beachSprintRoutes);
+app.use("/api/countries", countryRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

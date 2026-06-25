@@ -231,9 +231,9 @@ const pickBestFromList = (categories) => {
   return bestMatch;
 };
 
-const buildAssignmentPayload = (categoryDoc, seasonYear, age) => ({
+const buildAssignmentPayload = (categoryDoc, seasonYear, age, type = CATEGORY_TYPES.national) => ({
   season: seasonYear,
-  type: CATEGORY_TYPES.national,
+  type,
   category: categoryDoc?._id,
   abbreviation: categoryDoc?.abbreviation,
   gender: categoryDoc?.gender,
@@ -245,10 +245,16 @@ const buildAssignmentPayload = (categoryDoc, seasonYear, age) => ({
   ageOnCutoff: age,
 });
 
-export const ensureNationalCategoryForAthlete = async (
+/**
+ * Generic, type-parameterised category assignment.
+ * Used for both national and international assignments. The `type` argument
+ * selects which category pool to draw from and which assignment slot to fill.
+ */
+const ensureCategoryForAthlete = async (
   athlete,
   seasonYear,
   cache = {},
+  type = CATEGORY_TYPES.national,
 ) => {
   if (!athlete || !athlete.birthDate) {
     return false;
@@ -263,10 +269,7 @@ export const ensureNationalCategoryForAthlete = async (
     return false;
   }
 
-  const categories = await ensureCategoriesInCache(
-    cache,
-    CATEGORY_TYPES.national,
-  );
+  const categories = await ensureCategoriesInCache(cache, type);
   if (!categories.length) {
     return false;
   }
@@ -300,8 +303,7 @@ export const ensureNationalCategoryForAthlete = async (
   const category = pickMatchingCategory(categories, athlete.gender, age, athlete.isPara);
 
   const existingIndex = assignments.findIndex(
-    (entry) =>
-      entry.type === CATEGORY_TYPES.national && entry.season === seasonYear,
+    (entry) => entry.type === type && entry.season === seasonYear,
   );
 
   if (!category) {
@@ -320,7 +322,7 @@ export const ensureNationalCategoryForAthlete = async (
     return false;
   }
 
-  const payload = buildAssignmentPayload(category, seasonYear, age);
+  const payload = buildAssignmentPayload(category, seasonYear, age, type);
 
   const existing = existingIndex >= 0 ? assignments[existingIndex] : null;
   const isSameAssignment = existing
@@ -350,6 +352,18 @@ export const ensureNationalCategoryForAthlete = async (
 
   return false;
 };
+
+export const ensureNationalCategoryForAthlete = async (
+  athlete,
+  seasonYear,
+  cache = {},
+) => ensureCategoryForAthlete(athlete, seasonYear, cache, CATEGORY_TYPES.national);
+
+export const ensureInternationalCategoryForAthlete = async (
+  athlete,
+  seasonYear,
+  cache = {},
+) => ensureCategoryForAthlete(athlete, seasonYear, cache, CATEGORY_TYPES.international);
 
 export const ensureNationalCategoriesForAthletes = async (
   athletes,

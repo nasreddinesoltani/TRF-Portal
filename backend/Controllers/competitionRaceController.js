@@ -405,6 +405,14 @@ const sanitiseLanes = (lanes = [], discipline = "classic") => {
       lane.notes = laneCandidate.notes.toString().trim();
     }
 
+    if (laneCandidate.representingNation) {
+      lane.representingNation = laneCandidate.representingNation.toString().trim();
+    }
+
+    if (laneCandidate.representingType) {
+      lane.representingType = laneCandidate.representingType;
+    }
+
     if (laneCandidate.result) {
       const resultPayload = laneCandidate.result;
       const result = {};
@@ -481,6 +489,10 @@ const sanitiseRacePayload = (body, discipline = "classic") => {
 
   if (body.name !== undefined) {
     payload.name = body.name ? body.name.toString().trim() : undefined;
+  }
+
+  if (body.phase !== undefined) {
+    payload.phase = body.phase ? body.phase.toString().trim() : "";
   }
 
   if (body.order !== undefined) {
@@ -622,16 +634,31 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
       { crew: { $in: allInvolvedIds } },
     ],
   })
-    .select("athlete crew crewNumber")
+    .select("athlete crew crewNumber representingNation representingType")
     .lean();
 
   const crewNumberMap = new Map();
+  const representingMap = new Map();
   for (const ce of compEntries) {
-    if (ce.athlete) crewNumberMap.set(ce.athlete.toString(), ce.crewNumber);
+    if (ce.athlete) {
+      crewNumberMap.set(ce.athlete.toString(), ce.crewNumber);
+      if (ce.representingNation) {
+        representingMap.set(ce.athlete.toString(), {
+          representingNation: ce.representingNation,
+          representingType: ce.representingType,
+        });
+      }
+    }
     if (Array.isArray(ce.crew)) {
-      ce.crew.forEach((mid) =>
-        crewNumberMap.set(mid.toString(), ce.crewNumber),
-      );
+      ce.crew.forEach((mid) => {
+        crewNumberMap.set(mid.toString(), ce.crewNumber);
+        if (ce.representingNation) {
+          representingMap.set(mid.toString(), {
+            representingNation: ce.representingNation,
+            representingType: ce.representingType,
+          });
+        }
+      });
     }
   }
 
@@ -690,6 +717,10 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
 
     const isCrewEntry =
       Array.isArray(entry.crewIds) && entry.crewIds.length > 1;
+
+    const repKey = representative._id.toString();
+    const repData = representingMap.get(repKey) || {};
+
     return {
       athlete: athleteDoc,
       crew: crewDocs,
@@ -697,6 +728,8 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
       seed: entry.seed,
       notes: entry.notes,
       crewNumber: isCrewEntry ? crewNumber : undefined,
+      representingNation: repData.representingNation || null,
+      representingType: repData.representingType || null,
     };
   });
 
@@ -888,6 +921,8 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
         Array.isArray(entry.crew) && entry.crew.length > 1
           ? entry.crewNumber
           : undefined,
+      representingNation: entry.representingNation || undefined,
+      representingType: entry.representingType || undefined,
     }));
 
     const currentOrder = nextOrder + index;
@@ -911,6 +946,9 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
       journeyIndex: journeyValue,
       sessionLabel: normaliseString(sessionLabel),
       name: `${prefixLabel} ${index + 1}`, // Keep name as "Heat 1", "Heat 2" etc. relative to this batch
+      // Stamp the competitive round from the race prefix (e.g. "Heat" → phase "Heat").
+      // Falls back to empty when no explicit prefix was provided.
+      phase: normaliseString(racePrefix) || "",
       order: currentOrder,
       startTime: currentStartTime,
       distanceOverride: distance ? Number(distance) : undefined,
@@ -981,12 +1019,12 @@ export const listRaces = asyncHandler(async (req, res) => {
     .populate({
       path: "lanes.athlete",
       select:
-        "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender",
+        "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender isForeign nationalityCode representingNation",
     })
     .populate({
       path: "lanes.crew",
       select:
-        "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender",
+        "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender isForeign nationalityCode representingNation",
     })
     .populate({
       path: "lanes.club",
@@ -997,7 +1035,7 @@ export const listRaces = asyncHandler(async (req, res) => {
   const competitionEntries = await CompetitionEntry.find({
     competition: competition._id,
   })
-    .select("athlete crew club category boatClass status")
+    .select("athlete crew club category boatClass status representingNation representingType")
     .lean();
 
   const annotatedRaces = annotateRacesWithRegistrationStatus(
@@ -1030,12 +1068,12 @@ export const getRace = asyncHandler(async (req, res) => {
     .populate({
       path: "lanes.athlete",
       select:
-        "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender",
+        "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender isForeign nationalityCode representingNation",
     })
     .populate({
       path: "lanes.crew",
       select:
-        "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender",
+        "firstName lastName firstNameAr lastNameAr licenseNumber birthDate gender isForeign nationalityCode representingNation",
     })
     .populate({
       path: "lanes.club",
@@ -1050,7 +1088,7 @@ export const getRace = asyncHandler(async (req, res) => {
   const competitionEntries = await CompetitionEntry.find({
     competition: competition._id,
   })
-    .select("athlete crew club category boatClass status")
+    .select("athlete crew club category boatClass status representingNation representingType")
     .lean();
 
   const [annotatedRace] = annotateRacesWithRegistrationStatus(
@@ -1194,6 +1232,8 @@ const pickLaneAssignment = (lane, raceContext = null) => {
       seed: undefined,
       notes: undefined,
       result: undefined,
+      representingNation: undefined,
+      representingType: undefined,
     };
   }
   return {
@@ -1209,6 +1249,8 @@ const pickLaneAssignment = (lane, raceContext = null) => {
       lane.result && typeof lane.result === "object"
         ? (lane.result.toObject?.() ?? { ...lane.result })
         : undefined,
+    representingNation: lane.representingNation || undefined,
+    representingType: lane.representingType || undefined,
   };
 };
 
@@ -1222,6 +1264,8 @@ const assignLaneDetails = (lane, details) => {
   lane.seed = details.seed || undefined;
   lane.notes = details.notes || undefined;
   lane.result = details.result || undefined;
+  lane.representingNation = details.representingNation || undefined;
+  lane.representingType = details.representingType || undefined;
 };
 
 const lanePayloadHasCompetitor = (payload) => {
@@ -1618,6 +1662,8 @@ const buildConsolidatedEventEntries = (races, pointTable) => {
         finishPosition: Number.isInteger(result.finishPosition)
           ? result.finishPosition
           : undefined,
+        representingNation: lane.representingNation || undefined,
+        representingType: lane.representingType || undefined,
       };
 
       athleteMap.set(
@@ -1694,7 +1740,7 @@ const fetchRacesForEventGroup = async (competitionId, eventGroupId) => {
     .populate({ path: "boatClass", select: "code names" })
     .populate({
       path: "lanes.athlete",
-      select: "firstName lastName firstNameAr lastNameAr licenseNumber",
+      select: "firstName lastName firstNameAr lastNameAr licenseNumber isForeign nationalityCode representingNation",
     })
     .populate({ path: "lanes.club", select: "name nameAr code" });
 
@@ -1725,6 +1771,8 @@ const toOfficialEntryPayload = (entry) => {
     finishPosition: entry.finishPosition,
     rank: entry.rank || undefined,
     points: entry.points || 0,
+    representingNation: entry.representingNation || undefined,
+    representingType: entry.representingType || undefined,
   };
 };
 
@@ -2385,6 +2433,7 @@ export const computeCompetitionRankings = asyncHandler(async (req, res) => {
         finishPosition: result.finishPosition,
         elapsedMs: isTimed ? result.elapsedMs : undefined,
         status,
+        representingNation: lane.representingNation || undefined,
       });
 
       if (race.category) {
@@ -2442,7 +2491,7 @@ export const computeCompetitionRankings = asyncHandler(async (req, res) => {
       },
     })
       .select(
-        "firstName lastName firstNameAr lastNameAr licenseNumber club memberships",
+        "firstName lastName firstNameAr lastNameAr licenseNumber club memberships isForeign nationalityCode representingNation",
       )
       .lean();
     for (const athlete of athletes) {
@@ -2481,6 +2530,7 @@ export const computeCompetitionRankings = asyncHandler(async (req, res) => {
         journeyIndex: entry.journeyIndex,
         boatClassCode: boatClass?.code,
         boatClassLabel: boatClass?.names?.en,
+        representingNation: entry.representingNation || undefined,
       };
       return payload;
     });

@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import clsx from "clsx";
 import { toast } from "react-toastify";
 import { useAuth } from "../contexts/AuthContext";
+import { useCountries } from "../hooks/useCountries";
 import { Button } from "../components/ui/button";
 import { DataGrid } from "../components/DataGrid";
 import { Input } from "../components/ui/input";
@@ -199,6 +200,7 @@ const getAthleteDisplayName = (athlete) => {
 
 const CompetitionRegistration = () => {
   const { token, user } = useAuth();
+  const { getCountry, countryLabel, countryFlag } = useCountries();
   const navigate = useNavigate();
   const { competitionId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -235,6 +237,9 @@ const CompetitionRegistration = () => {
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [selectedCrew, setSelectedCrew] = useState([]);
   const [entryNotes, setEntryNotes] = useState("");
+  const [representingType, setRepresentingType] = useState("");
+  const [representingNation, setRepresentingNation] = useState("");
+  const [documentType, setDocumentType] = useState("");
 
   const [eligibleAthletes, setEligibleAthletes] = useState([]);
   const [loadingEligible, setLoadingEligible] = useState(false);
@@ -797,6 +802,8 @@ const CompetitionRegistration = () => {
     }
 
     const trimmedNotes = entryNotes.trim();
+    const isInternational =
+      competition?.scope?.type && competition.scope.type !== "national";
     const payload = {
       entries: [
         {
@@ -809,6 +816,13 @@ const CompetitionRegistration = () => {
               ? selectedJourneyIndex
               : undefined,
           notes: trimmedNotes || undefined,
+          ...(isInternational
+            ? {
+                representingType: representingType || undefined,
+                representingNation: representingNation || undefined,
+                documentType: documentType || undefined,
+              }
+            : {}),
         },
       ],
       ...(isClubManager ? {} : { clubId: resolvedClubId }),
@@ -1161,7 +1175,9 @@ const CompetitionRegistration = () => {
       },
     ];
 
-    if (!club?.id) {
+    const isInternational =
+      competition?.scope?.type && competition.scope.type !== "national";
+    if (!club?.id && !isInternational) {
       columnList.push({
         headerText: "Club",
         width: 180,
@@ -1209,6 +1225,41 @@ const CompetitionRegistration = () => {
         valueAccessor: (field, data) => data?.boatClass?.code || "",
       },
     );
+
+    // Nation column — only for international scope
+    if (
+      competition?.scope?.type &&
+      competition.scope.type !== "national"
+    ) {
+      columnList.push({
+        headerText: "Country",
+        width: 100,
+        field: "representingNation",
+        textAlign: "Center",
+        template: (entry) => {
+          const nation = entry?.representingNation;
+          const type = entry?.representingType;
+          if (!nation && !type) {
+            return <span className="text-xs text-slate-400">—</span>;
+          }
+          return (
+            <div className="text-center">
+              <span className="inline-flex items-center gap-1 text-sm font-semibold text-slate-700 justify-center">
+                <img src={countryFlag(nation)} alt={nation || ""} className="inline-block w-[18px] h-[12px] align-text-bottom" />
+                <span>{countryLabel(nation) || nation || "—"}</span>
+              </span>
+              {type ? (
+                <p className="text-xs text-slate-500 capitalize">{type}</p>
+              ) : null}
+            </div>
+          );
+        },
+        valueAccessor: (field, data) =>
+          data?.representingNation
+            ? `${data.representingNation}${data.representingType ? ` (${data.representingType})` : ""}`
+            : "",
+      });
+    }
 
     // Journey column — only for championship competitions with stages
     if (
@@ -1435,6 +1486,26 @@ const CompetitionRegistration = () => {
           <span className="capitalize">{row?.athlete?.gender}</span>
         ),
       },
+      ...(competition?.scope?.type && competition.scope.type !== "national"
+        ? [
+            {
+              field: "athlete.nationalityCode",
+              headerText: "Country",
+              width: 70,
+              textAlign: "Center",
+              template: (row) => {
+                const athlete = row?.athlete;
+                const code = athlete?.isForeign ? athlete.nationalityCode : "TUN";
+                return (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium" title={code}>
+                    <img src={countryFlag(code)} alt={code || ""} className="inline-block w-[18px] h-[12px] align-text-bottom" />
+                    <span>{countryLabel(code) || code}</span>
+                  </span>
+                );
+              },
+            },
+          ]
+        : []),
       {
         field: "assignment.ageOnCutoff",
         headerText: "Age",
@@ -1457,7 +1528,7 @@ const CompetitionRegistration = () => {
         },
       },
     ],
-    [renderAthleteSummary, boatClassMap, selectedBoatClassId],
+    [renderAthleteSummary, boatClassMap, selectedBoatClassId, competition],
   );
 
   const registrationStatus = computeRegistrationStatus(
@@ -1840,6 +1911,76 @@ const CompetitionRegistration = () => {
                         )}
                       </div>
 
+                      {competition?.scope?.type &&
+                        competition.scope.type !== "national" && (
+                          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-600">
+                              International Entry Info
+                            </p>
+                            <div className="grid gap-3 md:grid-cols-3">
+                              <div>
+                                <label className="text-xs font-medium text-slate-600">
+                                  Representing type
+                                </label>
+                                <select
+                                  value={representingType}
+                                  onChange={(e) =>
+                                    setRepresentingType(e.target.value)
+                                  }
+                                  className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                                >
+                                  <option value="">
+                                    {competition.scope.participationMode ===
+                                    "by_nation"
+                                      ? "Country"
+                                      : competition.scope.participationMode ===
+                                          "individual"
+                                        ? "Individual"
+                                        : "Select"}
+                                  </option>
+                                  <option value="club">Club</option>
+                                  <option value="nation">Country</option>
+                                  <option value="individual">
+                                    Individual
+                                  </option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-xs font-medium text-slate-600">
+                                  Representing country (Alpha-3)
+                                </label>
+                                <input
+                                  value={representingNation}
+                                  onChange={(e) =>
+                                    setRepresentingNation(e.target.value)
+                                  }
+                                  placeholder="e.g. FRA"
+                                  className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs font-medium text-slate-600">
+                                  Document type
+                                </label>
+                                <select
+                                  value={documentType}
+                                  onChange={(e) =>
+                                    setDocumentType(e.target.value)
+                                  }
+                                  className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                                >
+                                  <option value="">Select</option>
+                                  <option value="passport">Passport</option>
+                                  <option value="national_id">
+                                    National ID
+                                  </option>
+                                  <option value="other">Other</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                       <div className="flex flex-wrap justify-end gap-3">
                         <Button
                           type="button"
@@ -1848,6 +1989,9 @@ const CompetitionRegistration = () => {
                             setSelectedAthlete(null);
                             setSelectedCrew([]);
                             setEntryNotes("");
+                            setRepresentingType("");
+                            setRepresentingNation("");
+                            setDocumentType("");
                           }}
                           disabled={savingEntry}
                         >

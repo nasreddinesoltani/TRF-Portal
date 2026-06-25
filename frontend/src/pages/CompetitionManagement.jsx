@@ -32,6 +32,7 @@ import {
   Filter,
   X,
   FileSpreadsheet,
+  Globe,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -42,7 +43,6 @@ const getBase64ImageFromUrl = async (imageUrl) => {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "Anonymous";
-    img.src = imageUrl;
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.width;
@@ -52,6 +52,7 @@ const getBase64ImageFromUrl = async (imageUrl) => {
       resolve(canvas.toDataURL("image/png"));
     };
     img.onerror = () => resolve(null);
+    img.src = `${imageUrl}${imageUrl.includes("?") ? "&" : "?"}_cb=${Date.now()}`;
   });
 };
 
@@ -76,6 +77,27 @@ const COMPETITION_TYPES = [
   { value: "multi_day", label: "Multi-day" },
   { value: "multi_stage", label: "Multi-stage season" },
   { value: "championship", label: "Championship" },
+];
+
+const SCOPE_OPTIONS = [
+  { value: "national", label: "National (Tunisian clubs only)" },
+  { value: "international_hosted", label: "Intl. Hosted (teams)" },
+  { value: "international_open", label: "Intl. Open (individuals)" },
+  { value: "international_outbound", label: "Intl. Outbound (TRF abroad)" },
+  { value: "international_oaas", label: "Intl. OaaS (platform-as-a-service)" },
+];
+
+const PARTICIPATION_MODE_OPTIONS = [
+  { value: "by_club", label: "By club" },
+  { value: "by_nation", label: "By nation" },
+  { value: "individual", label: "Individual" },
+  { value: "mixed", label: "Mixed" },
+];
+
+const FOREIGN_ELIGIBILITY_OPTIONS = [
+  { value: "relaxed", label: "Relaxed" },
+  { value: "strict", label: "Strict" },
+  { value: "none", label: "None (no foreign athletes)" },
 ];
 
 const STATUS_OPTIONS = [
@@ -312,6 +334,13 @@ const createDefaultFormState = () => {
     allowedCategories: [],
     allowedBoatClasses: [],
     stages: [],
+    scopeType: "national",
+    scopeOrganiserFederation: "",
+    scopeHostCountry: "",
+    scopeParticipatingFederations: "",
+    scopeTrfParticipates: true,
+    scopeParticipationMode: "by_club",
+    scopeForeignEligibilityMode: "relaxed",
   };
 };
 
@@ -564,10 +593,27 @@ const CompetitionManagement = () => {
                 registrationCloseDate: formatDateInput(
                   stage.registrationCloseDate,
                 ),
-                order: stage.order,
-                isFinalDay: Boolean(stage.isFinalDay),
+                order: stage.order ?? 0,
+                isFinalDay: stage.isFinalDay || false,
               }))
             : [],
+          scopeType: payload.scope?.type || "national",
+          scopeOrganiserFederation:
+            payload.scope?.organiserFederation || "",
+          scopeHostCountry: payload.scope?.hostCountry || "",
+          scopeParticipatingFederations: Array.isArray(
+            payload.scope?.participatingFederations,
+          )
+            ? payload.scope.participatingFederations.join(", ")
+            : "",
+          scopeTrfParticipates:
+            payload.scope?.trfParticipates !== undefined
+              ? payload.scope.trfParticipates
+              : true,
+          scopeParticipationMode:
+            payload.scope?.participationMode || "by_club",
+          scopeForeignEligibilityMode:
+            payload.scope?.foreignEligibilityMode || "relaxed",
         });
         setDialogOpen(true);
       } catch (error) {
@@ -692,6 +738,21 @@ const CompetitionManagement = () => {
         closeAt: formState.registrationCloseAt
           ? new Date(formState.registrationCloseAt).toISOString()
           : undefined,
+      },
+      scope: {
+        type: formState.scopeType,
+        organiserFederation:
+          formState.scopeOrganiserFederation.trim() || undefined,
+        hostCountry: formState.scopeHostCountry.trim() || undefined,
+        participatingFederations: formState.scopeParticipatingFederations
+          ? formState.scopeParticipatingFederations
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : undefined,
+        trfParticipates: Boolean(formState.scopeTrfParticipates),
+        participationMode: formState.scopeParticipationMode,
+        foreignEligibilityMode: formState.scopeForeignEligibilityMode,
       },
     };
 
@@ -2455,8 +2516,128 @@ const CompetitionManagement = () => {
                       ))}
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="formScope">Scope</Label>
+                    <Select
+                      id="formScope"
+                      name="scopeType"
+                      value={formState.scopeType}
+                      onChange={handleInputChange}
+                      disabled={!canManage}
+                    >
+                      {SCOPE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
                 </div>
               </div>
+
+              {formState.scopeType && formState.scopeType !== "national" && (
+                <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                  <h3 className="mb-4 flex items-center gap-2 text-sm font-bold text-blue-700">
+                    <Globe className="h-4 w-4" /> International Settings
+                  </h3>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="scopeOrganiserFederation">
+                        Organiser federation code (Alpha-3)
+                      </Label>
+                      <Input
+                        id="scopeOrganiserFederation"
+                        name="scopeOrganiserFederation"
+                        value={formState.scopeOrganiserFederation}
+                        onChange={handleInputChange}
+                        placeholder="e.g. TUN, FRA, ITA"
+                        disabled={!canManage}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="scopeHostCountry">
+                        Host country (Alpha-3)
+                      </Label>
+                      <Input
+                        id="scopeHostCountry"
+                        name="scopeHostCountry"
+                        value={formState.scopeHostCountry}
+                        onChange={handleInputChange}
+                        placeholder="e.g. TUN"
+                        disabled={!canManage}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="scopeParticipationMode">
+                        Participation mode
+                      </Label>
+                      <Select
+                        id="scopeParticipationMode"
+                        name="scopeParticipationMode"
+                        value={formState.scopeParticipationMode}
+                        onChange={handleInputChange}
+                        disabled={!canManage}
+                      >
+                        {PARTICIPATION_MODE_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="scopeForeignEligibilityMode">
+                        Foreign athlete eligibility
+                      </Label>
+                      <Select
+                        id="scopeForeignEligibilityMode"
+                        name="scopeForeignEligibilityMode"
+                        value={formState.scopeForeignEligibilityMode}
+                        onChange={handleInputChange}
+                        disabled={!canManage}
+                      >
+                        {FOREIGN_ELIGIBILITY_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="scopeParticipatingFederations">
+                        Participating federations (comma-separated Alpha-3 codes)
+                      </Label>
+                      <Input
+                        id="scopeParticipatingFederations"
+                        name="scopeParticipatingFederations"
+                        value={formState.scopeParticipatingFederations}
+                        onChange={handleInputChange}
+                        placeholder="e.g. TUN, FRA, ITA, ESP"
+                        disabled={!canManage}
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="scopeTrfParticipates"
+                      name="scopeTrfParticipates"
+                      checked={formState.scopeTrfParticipates}
+                      onChange={(e) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          scopeTrfParticipates: e.target.checked,
+                        }))
+                      }
+                      disabled={!canManage}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                    />
+                    <Label htmlFor="scopeTrfParticipates">
+                      TRF (Tunisia) participates in this competition
+                    </Label>
+                  </div>
+                </div>
+              )}
 
               {/* Name section */}
               <div className="mb-6">

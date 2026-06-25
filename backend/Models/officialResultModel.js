@@ -57,6 +57,14 @@ const officialResultEntrySchema = new mongoose.Schema(
       min: 0,
       default: 0,
     },
+    representingNation: {
+      type: String,
+      trim: true,
+    },
+    representingType: {
+      type: String,
+      enum: ["club", "nation", "individual", ""],
+    },
   },
   { _id: false },
 );

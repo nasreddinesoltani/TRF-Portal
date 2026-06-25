@@ -8,6 +8,7 @@ import { Select } from "../components/ui/select";
 import { DataGrid } from "../components/DataGrid";
 import AthleteDocumentsDialog from "../components/AthleteDocumentsDialog";
 import { useAuth } from "../contexts/AuthContext";
+import { useCountries } from "../hooks/useCountries";
 import {
   getAthleteInitials,
   getAthletePhotoUrl,
@@ -779,6 +780,7 @@ const ClubDetail = () => {
   const navigate = useNavigate();
   const { clubId: routeClubId } = useParams();
   const { token, user } = useAuth();
+  const { countries } = useCountries();
 
   const [loading, setLoading] = useState(true);
   const [club, setClub] = useState(null);
@@ -867,6 +869,8 @@ const ClubDetail = () => {
     gender: "",
     cin: "",
     passportNumber: "",
+    nationalityCode: "",
+    representingNation: "",
     clubId: "",
     isPara: false,
   });
@@ -1532,6 +1536,8 @@ const ClubDetail = () => {
         gender: athlete.gender || "",
         cin: athlete.cin || "",
         passportNumber: athlete.passportNumber || "",
+        nationalityCode: athlete.nationalityCode || "",
+        representingNation: athlete.representingNation || "",
         clubId: athlete.membershipClubId || effectiveClubId || "",
         isPara: athlete.isPara || false,
       });
@@ -1550,6 +1556,8 @@ const ClubDetail = () => {
       gender: "",
       cin: "",
       passportNumber: "",
+      nationalityCode: "",
+      representingNation: "",
       clubId: "",
       isPara: false,
     });
@@ -1577,6 +1585,8 @@ const ClubDetail = () => {
           gender: editForm.gender || undefined,
           cin: editForm.cin.trim() || undefined,
           passportNumber: editForm.passportNumber.trim() || undefined,
+          nationalityCode: editForm.nationalityCode.trim() || undefined,
+          representingNation: editForm.representingNation.trim() || undefined,
           isPara: Boolean(editForm.isPara),
         };
 
@@ -3773,6 +3783,19 @@ const ClubDetail = () => {
                     updateEditForm("passportNumber", event.target.value)
                   }
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-nationality-code">Nationality Code (ISO Alpha-3)</Label>
+                <Input id="edit-nationality-code" value={editForm.nationalityCode} onChange={(event) => updateEditForm("nationalityCode", event.target.value)} placeholder="e.g. TUN" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-representing-nation">Representing Nation</Label>
+                <select id="edit-representing-nation" value={editForm.representingNation} onChange={(event) => updateEditForm("representingNation", event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                  <option value="">-- Select country --</option>
+                  {(countries || []).map((c) => (
+                    <option key={c.code} value={c.code}>{c.names?.en || c.code}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-2 flex flex-col justify-end pb-2">
                 <label className="flex items-center gap-2 cursor-pointer">

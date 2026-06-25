@@ -748,6 +748,21 @@ function getLaneCompetitorKeys(lane, race, entityType) {
       .filter(Boolean);
   }
 
+  if (entityType === "nation") {
+    // Use the lane's representingNation, falling back to athlete data
+    let nationCode = lane?.representingNation;
+    if (!nationCode) {
+      const athlete = lane?.athlete || lane?.crew?.[0];
+      nationCode =
+        athlete?.nationalityCode || athlete?.representingNation || null;
+    }
+    if (!nationCode) {
+      return [];
+    }
+    // Single key per nation per lane (not per crew member)
+    return [{ key: `nation:${nationCode}`, nationCode }];
+  }
+
   const clubId = lane?.club?._id?.toString?.() || lane?.club?.toString?.();
   if (!clubId) {
     return [];
@@ -993,6 +1008,49 @@ function calculateGroupRanking(group, config) {
         const journeyIdx = race.journeyIndex ?? 0;
         entry.journeyPoints[journeyIdx] =
           (entry.journeyPoints[journeyIdx] || 0) + candidate.points;
+
+        if (candidate.effectivePosition) {
+          entry.positionCounts[candidate.effectivePosition] =
+            (entry.positionCounts[candidate.effectivePosition] || 0) + 1;
+        }
+
+        const status = candidate.status;
+        if (status && entry.statusCounts[status] !== undefined) {
+          entry.statusCounts[status]++;
+        }
+      } else if (entityType === "nation") {
+        const nationCode = candidate.nationCode;
+        if (!nationCode) {
+          continue;
+        }
+
+        if (!pointsMap.has(nationCode)) {
+          pointsMap.set(nationCode, {
+            entityId: nationCode,
+            entityType: "nation",
+            entity: { code: nationCode, name: nationCode },
+            nationCode: nationCode,
+            totalPoints: 0,
+            raceResults: [],
+            positionCounts: {},
+            totalTime: 0,
+            statusCounts: { dns: 0, dnf: 0, dsq: 0, abs: 0 },
+          });
+        }
+
+        const entry = pointsMap.get(nationCode);
+        entry.totalPoints += candidate.points;
+        entry.totalTime += candidate.elapsedMs || 0;
+        entry.raceResults.push({
+          ...raceResult,
+          athletes: athletes.map((a) => ({
+            _id: a._id,
+            firstName: a.firstName,
+            lastName: a.lastName,
+            fullName:
+              a.fullName || `${a.firstName || ""} ${a.lastName || ""}`.trim(),
+          })),
+        });
 
         if (candidate.effectivePosition) {
           entry.positionCounts[candidate.effectivePosition] =

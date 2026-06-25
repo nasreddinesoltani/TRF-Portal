@@ -27,6 +27,7 @@ import {
   serialiseDocuments,
 } from "../Services/documentStatusService.js";
 import {
+  ensureInternationalCategoryForAthlete,
   ensureNationalCategoryForAthlete,
   ensureNationalCategoriesForAthletes,
   getSeasonYear,
@@ -856,22 +857,27 @@ export const createAthlete = asyncHandler(async (req, res) => {
     membership,
     licenseStatus,
     isPara,
+    // --- International / foreign-participant fields ---
+    isForeign: isForeignFlag,
+    nationalityCode,
+    representingNation,
+    federationCode,
+    fisaId,
+    externalId,
   } = req.body;
 
-  const allowedMembershipStatuses = [
-    "active",
-    "inactive",
-    "pending",
-    "transferred",
-  ];
+  // Determine foreign-participant mode:
+  // - Explicit isForeign flag, OR
+  // - A non-Tunisian nationalityCode provided.
+  const normalisedNationalityCode = nationalityCode
+    ? nationalityCode.trim().toUpperCase()
+    : "";
+  const isForeign =
+    isForeignFlag === true ||
+    (normalisedNationalityCode !== "" &&
+      normalisedNationalityCode !== "TUN");
 
-  if (
-    membership?.status &&
-    !allowedMembershipStatuses.includes(membership.status)
-  ) {
-    return res.status(400).json({ message: "Invalid membership status" });
-  }
-
+  // --- Common validation (both domestic and foreign) ---
   if (
     !firstName ||
     !lastName ||
@@ -883,15 +889,16 @@ export const createAthlete = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Missing required athlete fields" });
   }
 
-  const allowedLicenseStatuses = ["active", "inactive", "pending", "suspended"];
-  const normalizedLicenseStatus = licenseStatus
-    ? licenseStatus.toString().toLowerCase()
-    : "inactive";
-
-  if (!allowedLicenseStatuses.includes(normalizedLicenseStatus)) {
-    return res.status(400).json({ message: "Invalid license status" });
+  // Foreign athletes MUST provide nationalityCode and passport.
+  if (isForeign) {
+    if (!normalisedNationalityCode) {
+      return res
+        .status(400)
+        .json({ message: "nationalityCode is required for foreign athletes" });
+    }
   }
 
+  // --- Duplicate checks (CIN, passport, name+dob) ---
   const normalizedCin = cin ? normalizeIdentifier(cin) : undefined;
   const normalizedPassport = passportNumber
     ? normalizeIdentifier(passportNumber)
@@ -919,6 +926,17 @@ export const createAthlete = asyncHandler(async (req, res) => {
     }
   }
 
+  // fisaId uniqueness
+  if (fisaId) {
+    const existingByFisaId = await Athlete.findOne({ fisaId: fisaId.trim() });
+    if (existingByFisaId) {
+      return res.status(409).json({
+        message: "An athlete with this FISA ID already exists",
+        athlete: existingByFisaId,
+      });
+    }
+  }
+
   const duplicateQuery = buildDuplicateQuery({
     firstNameAr,
     lastNameAr,
@@ -932,6 +950,82 @@ export const createAthlete = asyncHandler(async (req, res) => {
         .status(409)
         .json({ message: "Athlete already exists", athlete: existing });
     }
+  }
+
+  // ==============================================================
+  // FOREIGN ATHLETE PATH — no license, no CIN required, no club
+  // membership. Creates athlete directly with international category.
+  // ==============================================================
+  if (isForeign) {
+    const athlete = await Athlete.create({
+      firstName: capitalizeName(firstName),
+      lastName: capitalizeName(lastName),
+      firstNameAr: normalizeArabic(firstNameAr),
+      lastNameAr: normalizeArabic(lastNameAr),
+      birthDate,
+      gender,
+      nationality,
+      nationalityCode: normalisedNationalityCode,
+      representingNation:
+        representingNation?.trim() || normalisedNationalityCode,
+      federationCode: federationCode?.trim().toUpperCase() || undefined,
+      fisaId: fisaId?.trim() || undefined,
+      externalId: externalId?.trim() || undefined,
+      isForeign: true,
+      passportNumber: normalizedPassport,
+      // CIN left empty for foreign athletes
+      // License fields left empty (no TRF license)
+      licenseStatus: "inactive",
+      documents,
+      memberships: [], // no club membership for foreign athletes
+      isPara: Boolean(isPara),
+      createdBy: req.user?.id,
+    });
+
+    const evaluation = await saveAthleteWithEvaluation(athlete);
+    const seasonYear = getSeasonYear();
+    const categoryCache = {};
+    // Build international category assignment (not national)
+    await ensureInternationalCategoryForAthlete(
+      athlete,
+      seasonYear,
+      categoryCache,
+    );
+
+    const athletePayload = athlete.toObject({ virtuals: false });
+    athletePayload.documents = serialiseDocuments(athlete.documents);
+
+    return res.status(201).json({
+      message: "Foreign athlete created successfully",
+      athlete: athletePayload,
+      evaluation,
+    });
+  }
+
+  // ==============================================================
+  // DOMESTIC ATHLETE PATH — existing behaviour, unchanged.
+  // ==============================================================
+  const allowedMembershipStatuses = [
+    "active",
+    "inactive",
+    "pending",
+    "transferred",
+  ];
+
+  if (
+    membership?.status &&
+    !allowedMembershipStatuses.includes(membership.status)
+  ) {
+    return res.status(400).json({ message: "Invalid membership status" });
+  }
+
+  const allowedLicenseStatuses = ["active", "inactive", "pending", "suspended"];
+  const normalizedLicenseStatus = licenseStatus
+    ? licenseStatus.toString().toLowerCase()
+    : "inactive";
+
+  if (!allowedLicenseStatuses.includes(normalizedLicenseStatus)) {
+    return res.status(400).json({ message: "Invalid license status" });
   }
 
   const membershipEntries = [];
@@ -961,6 +1055,9 @@ export const createAthlete = asyncHandler(async (req, res) => {
         birthDate,
         gender,
         nationality,
+        nationalityCode: normalisedNationalityCode || undefined,
+        representingNation:
+          representingNation?.trim() || normalisedNationalityCode || undefined,
         cin: normalizedCin,
         passportNumber: normalizedPassport,
         licenseNumber,
@@ -1148,6 +1245,14 @@ export const updateAthlete = asyncHandler(async (req, res) => {
 
   if (nationality !== undefined) {
     athlete.nationality = nationality;
+  }
+
+  if (req.body.nationalityCode !== undefined) {
+    athlete.nationalityCode = req.body.nationalityCode;
+  }
+
+  if (req.body.representingNation !== undefined) {
+    athlete.representingNation = req.body.representingNation;
   }
 
   if (documents) {
@@ -2671,6 +2776,27 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
       );
       const nationality =
         readStringValue(row, "nationality", "nationalite") || "Tunisia";
+      const nationalityCode = readStringValue(
+        row,
+        "nationalityCode",
+        "nationality_code",
+        "nationCode",
+      );
+      const isForeignRaw = readStringValue(row, "isForeign", "is_foreign");
+      const isForeign =
+        isForeignRaw !== null &&
+        ["true", "1", "yes", "oui"].includes(isForeignRaw.toLowerCase());
+      const representingNation = readStringValue(
+        row,
+        "representingNation",
+        "representing_nation",
+      );
+      const federationCode = readStringValue(
+        row,
+        "federationCode",
+        "federation_code",
+      );
+      const fisaId = readStringValue(row, "fisaId", "fisa_id", "fisa");
       const seasonRaw = readStringValue(row, "season");
       const season = seasonRaw ? parseInt(seasonRaw, 10) : getSeasonYear();
       const membershipStatus =
@@ -2693,31 +2819,51 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
               m.club.toString() === club._id.toString() && m.season === season,
           );
 
+          // Update profile fields if provided
+          const profileUpdate = {};
+          if (nationalityCode) profileUpdate.nationalityCode = nationalityCode;
+          if (isForeign) profileUpdate.isForeign = true;
+          if (representingNation)
+            profileUpdate.representingNation = representingNation;
+          if (federationCode) profileUpdate.federationCode = federationCode;
+          if (fisaId) profileUpdate.fisaId = fisaId;
+
           if (existingMembership) {
-            // Update membership status
+            const updateOp = {
+              $set: { "memberships.$.status": membershipStatus },
+            };
+            if (Object.keys(profileUpdate).length > 0) {
+              updateOp.$set = {
+                ...updateOp.$set,
+                ...profileUpdate,
+              };
+            }
             await Athlete.updateOne(
               {
                 _id: existingAthlete._id,
                 "memberships.club": club._id,
                 "memberships.season": season,
               },
-              { $set: { "memberships.$.status": membershipStatus } },
+              updateOp,
             );
           } else {
-            // Add new membership
-            await Athlete.updateOne(
-              { _id: existingAthlete._id },
-              {
-                $push: {
-                  memberships: {
-                    club: club._id,
-                    season,
-                    status: membershipStatus,
-                    membershipType: "primary",
-                    startDate: new Date(),
-                  },
+            const updateOp = {
+              $push: {
+                memberships: {
+                  club: club._id,
+                  season,
+                  status: membershipStatus,
+                  membershipType: "primary",
+                  startDate: new Date(),
                 },
               },
+            };
+            if (Object.keys(profileUpdate).length > 0) {
+              updateOp.$set = profileUpdate;
+            }
+            await Athlete.updateOne(
+              { _id: existingAthlete._id },
+              updateOp,
             );
           }
           summary.updated += 1;
@@ -2745,6 +2891,11 @@ export const importAthletesFromCsv = asyncHandler(async (req, res) => {
               birthDate,
               gender,
               nationality,
+              nationalityCode: nationalityCode || undefined,
+              isForeign: isForeign || false,
+              representingNation: representingNation || undefined,
+              federationCode: federationCode || undefined,
+              fisaId: fisaId || undefined,
               cin: cin || undefined,
               passportNumber: passportNumber || undefined,
               licenseNumber,

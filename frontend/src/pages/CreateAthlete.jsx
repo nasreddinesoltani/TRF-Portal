@@ -9,6 +9,7 @@ import clsx from "clsx";
 import { toast } from "react-toastify";
 
 import { useAuth } from "../contexts/AuthContext";
+import { useCountries } from "../hooks/useCountries";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -113,6 +114,13 @@ const defaultForm = {
   cin: "",
   passportNumber: "",
   isPara: false,
+  isForeign: false,
+  nationalityCode: "",
+  representingNation: "",
+  federationCode: "",
+  fisaId: "",
+  externalId: "",
+  invitationStatus: "pending",
 };
 
 const todayIsoDate = () => new Date().toISOString().split("T")[0];
@@ -267,6 +275,7 @@ const FilterChip = ({ children }) => (
 
 const CreateAthlete = () => {
   const { token, user } = useAuth();
+  const { countries } = useCountries();
   const isAdmin = user?.role === "admin";
   const userClubId = user?.clubId || "";
   const userClubName = user?.clubName || "";
@@ -370,6 +379,8 @@ const CreateAthlete = () => {
         : "",
       gender: athlete.gender || "male",
       nationality: athlete.nationality || "",
+      nationalityCode: athlete.nationalityCode || "",
+      representingNation: athlete.representingNation || "",
       cin: athlete.cin || "",
       passportNumber: athlete.passportNumber || "",
       isPara: athlete.isPara || false,
@@ -917,15 +928,16 @@ const CreateAthlete = () => {
   }, [activeMembership, resolveClubName, selectedAthlete, userClubName]);
 
   const canSubmit = useMemo(() => {
-    return (
+    const nameFieldsOk =
       formData.firstName.trim() &&
       formData.lastName.trim() &&
       formData.firstNameAr.trim() &&
       formData.lastNameAr.trim() &&
       formData.birthDate &&
-      formData.gender &&
-      (isAdmin ? selectedClubId : userClubId)
-    );
+      formData.gender;
+    if (!nameFieldsOk) return false;
+    if (formData.isForeign) return true;
+    return !!(isAdmin ? selectedClubId : userClubId);
   }, [formData, isAdmin, selectedClubId, userClubId]);
 
   const canUpdate = useMemo(() => {
@@ -1045,10 +1057,23 @@ const CreateAthlete = () => {
       setDuplicateAthlete(null);
       setDuplicateMessage("");
 
-      if (!effectiveCreateClubId) {
+      if (!formData.isForeign && !effectiveCreateClubId) {
         toast.error("Please select a club for this athlete");
         setIsSubmitting(false);
         return;
+      }
+
+      const payload = {
+        ...formData,
+        cin: formData.cin.trim() || undefined,
+        passportNumber: formData.passportNumber.trim() || undefined,
+      };
+
+      if (formData.isForeign) {
+        payload.isForeign = true;
+        payload.membership = { clubId: null };
+      } else {
+        payload.membership = { clubId: effectiveCreateClubId };
       }
 
       const response = await fetch(`${API_BASE_URL}/api/athletes`, {
@@ -1057,14 +1082,7 @@ const CreateAthlete = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          ...formData,
-          cin: formData.cin.trim() || undefined,
-          passportNumber: formData.passportNumber.trim() || undefined,
-          membership: {
-            clubId: effectiveCreateClubId,
-          },
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -2492,6 +2510,14 @@ const CreateAthlete = () => {
                     {selectedAthlete.nationality || "-"}
                   </p>
                 </div>
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <p className="text-xs font-medium text-slate-500">Nationality Code</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{selectedAthlete.nationalityCode || "-"}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <p className="text-xs font-medium text-slate-500">Representing Nation</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{selectedAthlete.representingNation || "-"}</p>
+                </div>
                 <div className="rounded-xl bg-blue-50 p-3">
                   <p className="text-xs font-medium text-blue-600">
                     National Category ({currentSeasonYear})
@@ -2841,6 +2867,19 @@ const CreateAthlete = () => {
                         className="h-10"
                       />
                     </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="editNationalityCode" className="text-xs font-medium text-slate-600">Nationality Code (ISO Alpha-3)</Label>
+                      <Input id="editNationalityCode" name="nationalityCode" value={editFormData.nationalityCode || ""} onChange={handleEditInputChange} placeholder="e.g. TUN" className="h-10" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="editRepresentingNation" className="text-xs font-medium text-slate-600">Representing Nation</Label>
+                      <select id="editRepresentingNation" name="representingNation" value={editFormData.representingNation || ""} onChange={handleEditInputChange} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                        <option value="">-- Select country --</option>
+                        {(countries || []).map((c) => (
+                          <option key={c.code} value={c.code}>{c.names?.en || c.code}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="flex items-end pb-2">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -3097,70 +3136,168 @@ const CreateAthlete = () => {
               <option value="female">Female</option>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="nationality">Nationality</Label>
-            <Input
-              id="nationality"
-              name="nationality"
-              value={formData.nationality}
-              onChange={handleInputChange}
-              placeholder="Optional"
-            />
-          </div>
           <div className="flex items-end pb-2">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                name="isPara"
-                checked={formData.isPara || false}
+                name="isForeign"
+                checked={formData.isForeign || false}
                 onChange={handleInputChange}
                 className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="text-sm font-medium text-slate-700">
-                Para athlete
+                Foreign athlete (no Tunisian license)
               </span>
             </label>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="cin">National ID / CIN</Label>
-            <Input
-              id="cin"
-              name="cin"
-              value={formData.cin}
-              onChange={handleInputChange}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="passportNumber">Passport number</Label>
-            <Input
-              id="passportNumber"
-              name="passportNumber"
-              value={formData.passportNumber}
-              onChange={handleInputChange}
-              placeholder="Optional"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="clubId">Club</Label>
-            {isAdmin ? (
-              <Select
-                id="clubId"
-                value={selectedClubId}
-                onChange={handleClubSelectChange}
-                required
-                disabled={clubsLoading}
-              >
-                <option value="">Select a club</option>
-                {clubs.map((club) => (
-                  <option key={club._id} value={club._id}>
-                    {club.name}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <Input value={userClubName || "-"} disabled readOnly />
-            )}
-          </div>
+
+          {formData.isForeign ? (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="nationalityCode">Nationality code (Alpha-3)</Label>
+                <Input
+                  id="nationalityCode"
+                  name="nationalityCode"
+                  value={formData.nationalityCode}
+                  onChange={handleInputChange}
+                  placeholder="e.g. FRA"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="representingNation">Representing country</Label>
+                <Select
+                  id="representingNation"
+                  name="representingNation"
+                  value={formData.representingNation}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      representingNation: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">-- Select country --</option>
+                  {(countries || []).map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.names?.en || c.code}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="federationCode">Federation code</Label>
+                <Input
+                  id="federationCode"
+                  name="federationCode"
+                  value={formData.federationCode}
+                  onChange={handleInputChange}
+                  placeholder="e.g. FFA"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fisaId">FISA ID</Label>
+                <Input
+                  id="fisaId"
+                  name="fisaId"
+                  value={formData.fisaId}
+                  onChange={handleInputChange}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="externalId">External ID</Label>
+                <Input
+                  id="externalId"
+                  name="externalId"
+                  value={formData.externalId}
+                  onChange={handleInputChange}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invitationStatus">Invitation status</Label>
+                <Select
+                  id="invitationStatus"
+                  name="invitationStatus"
+                  value={formData.invitationStatus}
+                  onChange={handleInputChange}
+                >
+                  <option value="pending">Pending</option>
+                  <option value="invited">Invited</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="declined">Declined</option>
+                </Select>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="nationality">Nationality</Label>
+                <Input
+                  id="nationality"
+                  name="nationality"
+                  value={formData.nationality}
+                  onChange={handleInputChange}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="isPara"
+                    checked={formData.isPara || false}
+                    onChange={handleInputChange}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">
+                    Para athlete
+                  </span>
+                </label>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cin">National ID / CIN</Label>
+                <Input
+                  id="cin"
+                  name="cin"
+                  value={formData.cin}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="passportNumber">Passport number</Label>
+                <Input
+                  id="passportNumber"
+                  name="passportNumber"
+                  value={formData.passportNumber}
+                  onChange={handleInputChange}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="clubId">Club</Label>
+                {isAdmin ? (
+                  <Select
+                    id="clubId"
+                    value={selectedClubId}
+                    onChange={handleClubSelectChange}
+                    required
+                    disabled={clubsLoading}
+                  >
+                    <option value="">Select a club</option>
+                    {clubs.map((club) => (
+                      <option key={club._id} value={club._id}>
+                        {club.name}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input value={userClubName || "-"} disabled readOnly />
+                )}
+              </div>
+            </>
+          )}
         </form>
       </Modal>
 

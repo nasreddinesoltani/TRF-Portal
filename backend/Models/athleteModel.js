@@ -195,6 +195,50 @@ const athleteSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    // --- International competition support (foreign participants) ---
+    // Canonical nationality key (ISO 3166-1 alpha-3). The existing free-text
+    // `nationality` field is kept; this is the normalized, indexed lookup key.
+    nationalityCode: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      index: true,
+    },
+    // Display nation / flag source for international entries.
+    representingNation: {
+      type: String,
+      trim: true,
+    },
+    federationCode: {
+      type: String,
+      uppercase: true,
+      trim: true,
+    },
+    // Optional World Rowing id (sparse-unique).
+    fisaId: {
+      type: String,
+      trim: true,
+      sparse: true,
+      unique: true,
+    },
+    // Foreign federation's own athlete id (for cross-system sync).
+    externalId: {
+      type: String,
+      trim: true,
+    },
+    invitationStatus: {
+      type: String,
+      enum: ["none", "invited", "confirmed", "declined"],
+      default: "none",
+    },
+    // Single switch distinguishing a domestic (TRF-licensed, CIN-driven)
+    // athlete from a foreign participant. Drives CreateAthlete relaxed mode
+    // and license/CIN rules. Set when nationalityCode !== "TUN" or explicitly.
+    isForeign: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     licenseNumber: {
       type: String,
       unique: true,

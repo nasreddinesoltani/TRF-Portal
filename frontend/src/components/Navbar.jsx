@@ -111,6 +111,12 @@ export const Navbar = () => {
             roles: ["admin"],
           },
           {
+            key: "countries",
+            label: "Countries",
+            to: "/countries",
+            roles: ["admin"],
+          },
+          {
             key: "boat-classes",
             label: "Boat Classes",
             to: "/boat-classes",

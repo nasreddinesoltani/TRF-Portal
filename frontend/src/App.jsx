@@ -23,6 +23,7 @@ const Clubs = lazy(() => import("./pages/Clubs"));
 const ClubDetail = lazy(() => import("./pages/ClubDetail"));
 const ImportAthletes = lazy(() => import("./pages/ImportAthletes"));
 const CategoryManagement = lazy(() => import("./pages/CategoryManagement"));
+const CountryManagement = lazy(() => import("./pages/CountryManagement"));
 const BoatClassManagement = lazy(() => import("./pages/BoatClassManagement"));
 const CompetitionManagement = lazy(
   () => import("./pages/CompetitionManagement"),
@@ -166,6 +167,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={["admin"]}>
                   <RankingSystemManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/countries"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <CountryManagement />
                 </ProtectedRoute>
               }
             />

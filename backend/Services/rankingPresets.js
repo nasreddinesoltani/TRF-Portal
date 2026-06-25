@@ -195,6 +195,43 @@ export const RANKING_PRESETS = {
    * - All categories and genders combined
    * - Clubs collect all points from all categories
    */
+  /**
+   * Nation Medal Ranking
+   * - Aggregated by representingNation
+   * - Counts medals (gold/silver/bronze) instead of points
+   * - Sorted by most golds, then silvers, then bronzes (like Olympic medal table)
+   */
+  NATION_MEDAL_TABLE: {
+    code: "NATION_MEDAL_TABLE",
+    names: {
+      en: "Nation Medal Table",
+      fr: "Tableau des Médailles par Nation",
+      ar: "جدول ميداليات الدول",
+    },
+    description:
+      "Nation-based medal ranking. Sorted by gold medals, then silver, then bronze. Medals only (top 3 positions).",
+    groupBy: "global",
+    entityType: "nation",
+    nationGrouping: true,
+    boatClassFilter: "all",
+    scoringMode: "medals",
+    includeMastersDefault: true,
+    discipline: null,
+    journeyMode: "all",
+    maxScoringPosition: 3,
+    dnfGetsPointsIfFewFinishers: false,
+    tieBreakers: [
+      { priority: 1, method: "more_first_places" },
+      { priority: 2, method: "more_second_places" },
+      { priority: 3, method: "alphabetical" },
+    ],
+    showTimeDeltas: false,
+    showTotalTime: false,
+    isPreset: true,
+    isActive: true,
+    sortOrder: 7,
+  },
+
   GLOBAL_CUP: {
     code: "GLOBAL_CUP",
     names: {

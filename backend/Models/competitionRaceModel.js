@@ -106,6 +106,14 @@ const laneAssignmentSchema = new mongoose.Schema(
       enum: ["active", "withdrawn"],
       default: "active",
     },
+    representingNation: {
+      type: String,
+      trim: true,
+    },
+    representingType: {
+      type: String,
+      enum: ["club", "nation", "individual", ""],
+    },
   },
   { _id: false },
 );
@@ -147,6 +155,13 @@ const raceSchema = new mongoose.Schema(
     name: {
       type: String,
       trim: true,
+    },
+    // Competitive round/stage of the race (e.g. "Heat 1", "Semi-Final", "Final A", "Final B").
+    // Free text so organisers can use any naming convention. Drives the phase label in PDFs.
+    phase: {
+      type: String,
+      trim: true,
+      default: "",
     },
     order: {
       type: Number,

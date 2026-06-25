@@ -15,8 +15,13 @@ const templateHeaders = [
   "birthDate",
   "gender",
   "nationality",
+  "nationalityCode",
   "cin",
   "passportNumber",
+  "isForeign",
+  "representingNation",
+  "federationCode",
+  "fisaId",
   "season",
   "membershipStatus",
 ];

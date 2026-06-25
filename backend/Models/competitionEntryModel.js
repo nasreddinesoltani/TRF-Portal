@@ -18,8 +18,28 @@ const competitionEntrySchema = new mongoose.Schema(
     club: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Club",
-      required: true,
       index: true,
+    },
+    // --- International competition support: "who they compete for" ---
+    // club (default, national flow) | nation | individual
+    representingType: {
+      type: String,
+      enum: ["club", "nation", "individual"],
+      default: "club",
+      index: true,
+    },
+    // ISO alpha-3 nation code — flag source for the medal table. For
+    // `representingType:"nation"`/`"individual"` entries. Defaults empty.
+    representingNation: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+    // Which identity document backs this entry's verification.
+    documentType: {
+      type: String,
+      enum: ["cin", "passport", "none"],
+      default: "cin",
     },
     athlete: {
       type: mongoose.Schema.Types.ObjectId,

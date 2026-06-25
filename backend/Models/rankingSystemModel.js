@@ -29,6 +29,7 @@ export const JOURNEY_MODE_OPTIONS = [
 export const ENTITY_TYPE_OPTIONS = [
   "club", // Points go to club (aggregates all athletes)
   "athlete", // Points go to individual athletes
+  "nation", // Points/medals go to nation (aggregates by representingNation)
 ];
 
 // Boat class filter - which boats count
@@ -150,11 +151,19 @@ const rankingSystemSchema = new mongoose.Schema(
     },
 
     // === Entity Type ===
-    // Who gets the points: clubs or individual athletes
+    // Who gets the points: clubs, individual athletes, or nations
     entityType: {
       type: String,
       enum: ENTITY_TYPE_OPTIONS,
       default: "club",
+    },
+
+    // === Nation Grouping ===
+    // When true (typically with entityType:"nation" + scoringMode:"medals"),
+    // results group by nation with a flag column + medal table in the UI.
+    nationGrouping: {
+      type: Boolean,
+      default: false,
     },
 
     // === Boat Class Filter ===

@@ -34,6 +34,17 @@ const POINT_MODE_OPTIONS = [
   { value: "mixed", label: "Mixed (Skiff → Athlete, Crew → Club)" },
 ];
 
+const ENTITY_TYPE_OPTIONS = [
+  { value: "club", label: "Club (aggregate by club)" },
+  { value: "athlete", label: "Athlete (per individual)" },
+  { value: "nation", label: "Nation (medal table by country)" },
+];
+
+const NATION_GROUPING_OPTIONS = [
+  { value: false, label: "Off" },
+  { value: true, label: "On (flag icon + country name)" },
+];
+
 const DISCIPLINE_OPTIONS = [
   { value: "", label: "All Disciplines" },
   { value: "classic", label: "Classic" },
@@ -64,6 +75,8 @@ const EMPTY_FORM = {
   journeyMode: "all",
   bestNCount: "",
   pointMode: "crew_club",
+  entityType: "club",
+  nationGrouping: false,
   maxScoringPosition: 8,
   dnfGetsPointsIfFewFinishers: true,
   customPointTable: [],
@@ -143,6 +156,14 @@ const RankingSystemCard = ({ system, onEdit, onDelete, onToggleActive }) => {
           <span className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs">
             📅 {journeyLabel}
           </span>
+          <span className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs">
+            🏷️ {system.entityType === "nation" ? "Nation" : system.entityType === "athlete" ? "Athlete" : "Club"}
+          </span>
+          {system.nationGrouping && (
+            <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs">
+              🌍 Nation Grouping
+            </span>
+          )}
           {system.discipline && (
             <span className="inline-flex items-center px-2 py-1 rounded bg-purple-100 text-purple-700 text-xs">
               🚣 {system.discipline}
@@ -325,6 +346,40 @@ const RankingSystemForm = ({ system, onSave, onCancel, isReadOnly }) => {
               >
                 {DISCIPLINE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          {/* Entity Type & Nation Grouping */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Entity Type *</Label>
+              <Select
+                value={form.entityType}
+                onChange={(e) => handleChange("entityType", e.target.value)}
+                disabled={isReadOnly}
+              >
+                {ENTITY_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label>Nation Grouping</Label>
+              <Select
+                value={form.nationGrouping}
+                onChange={(e) =>
+                  handleChange("nationGrouping", e.target.value === "true")
+                }
+                disabled={isReadOnly}
+              >
+                {NATION_GROUPING_OPTIONS.map((opt) => (
+                  <option key={String(opt.value)} value={String(opt.value)}>
                     {opt.label}
                   </option>
                 ))}

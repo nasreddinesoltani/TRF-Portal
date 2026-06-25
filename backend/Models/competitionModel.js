@@ -34,6 +34,26 @@ export const STAGE_TYPES = [
   "other",
 ];
 
+// --- International competition support (scope) ---
+export const COMPETITION_SCOPES = [
+  "national", // current behaviour (default)
+  "international_hosted", // scenario 1 — TRF hosts national teams
+  "international_open", // scenario 2 — individuals / Masters
+  "international_outbound", // scenario 3 — TRF team abroad
+  "international_oaas", // scenario 4 — platform-as-a-service
+];
+export const PARTICIPATION_MODES = [
+  "by_club",
+  "by_nation",
+  "individual",
+  "mixed",
+];
+export const FOREIGN_ELIGIBILITY_MODES = ["relaxed", "strict", "none"];
+
+// Convenience: every non-"national" scope is treated as international.
+export const isInternationalScope = (scopeType) =>
+  scopeType && scopeType !== "national";
+
 const localizedNameSchema = new mongoose.Schema(
   {
     en: { type: String, required: true, trim: true },
@@ -118,7 +138,40 @@ const registrationWindowSchema = new mongoose.Schema(
     openAt: { type: Date },
     closeAt: { type: Date },
   },
-  { _id: false },
+  { _id: false }
+);
+
+// International competition scope. Defaults to "national" so every existing
+// competition behaves exactly as before.
+const scopeSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: COMPETITION_SCOPES,
+      default: "national",
+      index: true,
+    },
+    // Alpha-3 / federation code of the body organising the event
+    organiserFederation: { type: String, trim: true },
+    // Owning federation of the event (TRF for 1/2/3; the foreign fed for 4)
+    hostFederation: { type: String, trim: true },
+    // ISO alpha-3 of the venue country
+    hostCountry: { type: String, trim: true },
+    participatingFederations: [{ type: String, trim: true }],
+    // false for OaaS (Tunisia does not compete)
+    trfParticipates: { type: Boolean, default: true },
+    participationMode: {
+      type: String,
+      enum: PARTICIPATION_MODES,
+      default: "by_club",
+    },
+    foreignEligibilityMode: {
+      type: String,
+      enum: FOREIGN_ELIGIBILITY_MODES,
+      default: "relaxed",
+    },
+  },
+  { _id: false }
 );
 
 const competitionSchema = new mongoose.Schema(
@@ -183,6 +236,10 @@ const competitionSchema = new mongoose.Schema(
       type: registrationWindowSchema,
       default: () => ({}),
     },
+    scope: {
+      type: scopeSchema,
+      default: () => ({}),
+    },
     allowUpCategory: {
       type: Boolean,
       default: true,
@@ -238,6 +295,7 @@ const competitionSchema = new mongoose.Schema(
 competitionSchema.index({ discipline: 1, startDate: 1 });
 competitionSchema.index({ status: 1, registrationStatus: 1 });
 competitionSchema.index({ "stages.date": 1 });
+competitionSchema.index({ "scope.type": 1, startDate: 1 });
 
 const Competition = mongoose.model("Competition", competitionSchema);
 export default Competition;

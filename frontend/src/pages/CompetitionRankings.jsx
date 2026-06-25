@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useAuth } from "../contexts/AuthContext";
+import { useCountries } from "../hooks/useCountries";
 import { Button } from "../components/ui/button";
 import { Select } from "../components/ui/select";
 import { Label } from "../components/ui/label";
@@ -15,7 +16,6 @@ const loadImage = (url) => {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "Anonymous";
-    img.src = url;
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.width;
@@ -25,6 +25,7 @@ const loadImage = (url) => {
       resolve(canvas.toDataURL("image/png"));
     };
     img.onerror = () => resolve(null);
+    img.src = `${url}${url.includes("?") ? "&" : "?"}_cb=${Date.now()}`;
   });
 };
 
@@ -145,8 +146,11 @@ const RankingTable = ({
     language,
   );
 
-  // Determine if this is athlete or club ranking
+  const { countryFlag, countryLabel } = useCountries();
+
+  // Determine ranking type
   const isAthleteRanking = entries?.[0]?.entityType === "athlete";
+  const isNationRanking = entries?.[0]?.entityType === "nation";
   const isMedalMode = scoringMode === "medals";
   const hasMultipleJourneys = stages.length > 1;
 
@@ -160,6 +164,9 @@ const RankingTable = ({
         }`.trim() ||
         "Unknown Athlete"
       );
+    }
+    if (entry.entityType === "nation") {
+      return countryLabel(entry.nationCode) || entry.nationCode || "Unknown";
     }
     return entry.entity?.name || "Unknown Club";
   };
@@ -298,7 +305,7 @@ const RankingTable = ({
         };
       }
     } else if (isMedalMode) {
-      tableHeaders = ["#", "Club", "🥇", "🥈", "🥉", "Total"];
+      tableHeaders = ["#", isNationRanking ? "Country" : "Club", "🥇", "🥈", "🥉", "Total"];
       tableBody = entries.map((entry) => [
         entry.rank,
         getEntityName(entry),
@@ -453,7 +460,7 @@ const RankingTable = ({
                 Rank
               </th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                {isAthleteRanking ? "Athlete" : "Club"}
+                {isAthleteRanking ? "Athlete" : isNationRanking ? "Country" : "Club"}
               </th>
               {isAthleteRanking && (
                 <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
@@ -536,9 +543,20 @@ const RankingTable = ({
                   <PositionBadge position={entry.rank} />
                 </td>
                 <td className="px-3 py-3">
-                  <span className="font-medium text-slate-900">
-                    {getEntityName(entry)}
-                  </span>
+                  {isNationRanking && entry.nationCode ? (
+                    <span className="font-medium text-slate-900 inline-flex items-center gap-2">
+                      <img
+                        src={countryFlag(entry.nationCode)}
+                        alt={entry.nationCode || ""}
+                        className="inline-block w-[18px] h-[12px]"
+                      />
+                      {getEntityName(entry)}
+                    </span>
+                  ) : (
+                    <span className="font-medium text-slate-900">
+                      {getEntityName(entry)}
+                    </span>
+                  )}
                 </td>
                 {isAthleteRanking && (
                   <td className="px-3 py-3 text-slate-600 text-sm">
@@ -680,6 +698,7 @@ export default function CompetitionRankings() {
   const { competitionId } = useParams();
   const navigate = useNavigate();
   const { token, loading: authLoading } = useAuth();
+  const { countryLabel } = useCountries();
   const unauthorizedRedirectedRef = React.useRef(false);
 
   // State
@@ -868,6 +887,7 @@ export default function CompetitionRankings() {
 
     // Determine entity type and scoring mode
     const isAthleteRanking = rankingData.entityType === "athlete";
+    const isNationRanking = rankingData.entityType === "nation";
     const isMedalMode = rankingData.scoringMode === "medals";
 
     // Get journey/stage info
@@ -988,70 +1008,112 @@ export default function CompetitionRankings() {
         doc.addImage(footerData, "PNG", 0, pageHeight - h, w, h);
       }
 
-      // Add club legend on the last page
+      // Add legend on the last page
       if (isLastPage) {
-        // Collect all unique clubs from all rankings
-        const clubsMap = new Map();
-        Object.values(rankingData.rankings || {}).forEach((entries) => {
-          entries.forEach((entry) => {
-            if (entry.entityType === "club" && entry.entity?._id) {
-              const id = entry.entity._id.toString();
-              if (!clubsMap.has(id)) {
-                clubsMap.set(id, entry.entity);
-              }
-            } else if (entry.entityType === "athlete" && entry.club?._id) {
-              const id = entry.club._id.toString();
-              if (!clubsMap.has(id)) {
-                clubsMap.set(id, entry.club);
-              }
-            }
+        if (isNationRanking) {
+          // Collect unique nations
+          const nationsSet = new Set();
+          Object.values(rankingData.rankings || {}).forEach((entries) => {
+            entries.forEach((entry) => {
+              if (entry.nationCode) nationsSet.add(entry.nationCode);
+            });
           });
-        });
+          const uniqueNations = Array.from(nationsSet).sort((a, b) =>
+            a.localeCompare(b),
+          );
 
-        const uniqueClubs = Array.from(clubsMap.values()).sort((a, b) =>
-          (a.code || "").localeCompare(b.code || ""),
-        );
+          if (uniqueNations.length > 0) {
+            const lineHeight = 4;
+            const boxHeight = uniqueNations.length * lineHeight + 7;
+            const legendY = pageHeight - 38 - boxHeight;
 
-        if (uniqueClubs.length > 0) {
-          const lineHeight = 4;
-          const boxHeight = uniqueClubs.length * lineHeight + 7;
-          const legendY = pageHeight - 38 - boxHeight;
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.rect(leftMargin, legendY, 190, boxHeight);
 
-          doc.setDrawColor(0);
-          doc.setLineWidth(0.3);
-          doc.rect(leftMargin, legendY, 190, boxHeight);
-
-          doc.setFontSize(9);
-          doc.setFont(fontName, "bold");
-          doc.text("Legend:", leftMargin + 2, legendY + 5);
-
-          doc.setFontSize(8);
-          let clubY = legendY + 9;
-
-          for (const club of uniqueClubs) {
-            const code = club.code || "---";
-            const frenchName =
-              club.name || club.names?.fr || club.names?.en || "";
-            const arabicName = club.nameAr || club.names?.ar || "";
-
+            doc.setFontSize(9);
             doc.setFont(fontName, "bold");
-            doc.text(code + ": ", leftMargin + 4, clubY);
+            doc.text("Legend:", leftMargin + 2, legendY + 5);
 
-            const codeWidth = doc.getTextWidth(code + ": ");
-            doc.setFont(fontName, "normal");
-            doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+            doc.setFontSize(8);
+            let nationY = legendY + 9;
 
-            if (arabicName && arabicFontName) {
-              const frenchWidth = doc.getTextWidth(frenchName);
-              doc.setFont(arabicFontName, "normal");
-              doc.text(
-                " : " + arabicName,
-                leftMargin + 4 + codeWidth + frenchWidth,
-                clubY,
-              );
+            for (const code of uniqueNations) {
+              const name = countryLabel
+                ? countryLabel(code) || code
+                : code;
+              doc.setFont(fontName, "bold");
+              doc.text(code + ": ", leftMargin + 4, nationY);
+              const codeWidth = doc.getTextWidth(code + ": ");
               doc.setFont(fontName, "normal");
+              doc.text(name, leftMargin + 4 + codeWidth, nationY);
+              nationY += lineHeight;
             }
-            clubY += lineHeight;
+          }
+        } else {
+          // Club/athlete legend
+          const clubsMap = new Map();
+          Object.values(rankingData.rankings || {}).forEach((entries) => {
+            entries.forEach((entry) => {
+              if (entry.entityType === "club" && entry.entity?._id) {
+                const id = entry.entity._id.toString();
+                if (!clubsMap.has(id)) {
+                  clubsMap.set(id, entry.entity);
+                }
+              } else if (entry.entityType === "athlete" && entry.club?._id) {
+                const id = entry.club._id.toString();
+                if (!clubsMap.has(id)) {
+                  clubsMap.set(id, entry.club);
+                }
+              }
+            });
+          });
+
+          const uniqueClubs = Array.from(clubsMap.values()).sort((a, b) =>
+            (a.code || "").localeCompare(b.code || ""),
+          );
+
+          if (uniqueClubs.length > 0) {
+            const lineHeight = 4;
+            const boxHeight = uniqueClubs.length * lineHeight + 7;
+            const legendY = pageHeight - 38 - boxHeight;
+
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.rect(leftMargin, legendY, 190, boxHeight);
+
+            doc.setFontSize(9);
+            doc.setFont(fontName, "bold");
+            doc.text("Legend:", leftMargin + 2, legendY + 5);
+
+            doc.setFontSize(8);
+            let clubY = legendY + 9;
+
+            for (const club of uniqueClubs) {
+              const code = club.code || "---";
+              const frenchName =
+                club.name || club.names?.fr || club.names?.en || "";
+              const arabicName = club.nameAr || club.names?.ar || "";
+
+              doc.setFont(fontName, "bold");
+              doc.text(code + ": ", leftMargin + 4, clubY);
+
+              const codeWidth = doc.getTextWidth(code + ": ");
+              doc.setFont(fontName, "normal");
+              doc.text(frenchName, leftMargin + 4 + codeWidth, clubY);
+
+              if (arabicName && arabicFontName) {
+                const frenchWidth = doc.getTextWidth(frenchName);
+                doc.setFont(arabicFontName, "normal");
+                doc.text(
+                  " : " + arabicName,
+                  leftMargin + 4 + codeWidth + frenchWidth,
+                  clubY,
+                );
+                doc.setFont(fontName, "normal");
+              }
+              clubY += lineHeight;
+            }
           }
         }
       }
@@ -1372,7 +1434,11 @@ export default function CompetitionRankings() {
         {selectedSystem && (
           <div className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-500">
             <span className="font-medium">Entity:</span>{" "}
-            {selectedSystem.entityType === "athlete" ? "Athletes" : "Clubs"}
+            {selectedSystem.entityType === "athlete"
+              ? "Athletes"
+              : selectedSystem.entityType === "nation"
+                ? "Nations"
+                : "Clubs"}
             {" • "}
             <span className="font-medium">Groups by:</span>{" "}
             {selectedSystem.groupBy === "gender"
