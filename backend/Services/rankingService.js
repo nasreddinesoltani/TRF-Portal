@@ -822,7 +822,14 @@ function resolveBetterMergedCandidate(current, candidate) {
     : Number.MAX_SAFE_INTEGER;
   if (candidatePos < currentPos) return candidate;
 
-  const statusPriority = { ok: 1, dnf: 2, dns: 3, abs: 4, dsq: 5, hors_course: 6 };
+  const statusPriority = {
+    ok: 1,
+    dnf: 2,
+    dns: 3,
+    abs: 4,
+    dsq: 5,
+    hors_course: 6,
+  };
   const currentStatus = statusPriority[current.status] || 99;
   const candidateStatus = statusPriority[candidate.status] || 99;
   if (candidateStatus < currentStatus) return candidate;
@@ -864,8 +871,10 @@ function buildMergedEventCandidates(races, entityType) {
           competitor.key,
           resolveBetterMergedCandidate(existing, {
             ...candidate,
+            // Preserve entity identifiers for downstream aggregation
             entityId: competitor.entityId,
             clubId: competitor.clubId,
+            nationCode: competitor.nationCode,
           }),
         );
       }

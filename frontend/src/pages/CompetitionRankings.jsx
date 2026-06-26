@@ -166,7 +166,8 @@ const RankingTable = ({
       );
     }
     if (entry.entityType === "nation") {
-      return countryLabel(entry.nationCode) || entry.nationCode || "Unknown";
+      const nationCode = entry.entityId || entry.entity?.code;
+      return countryLabel(nationCode) || nationCode || "Unknown";
     }
     return entry.entity?.name || "Unknown Club";
   };
@@ -305,7 +306,14 @@ const RankingTable = ({
         };
       }
     } else if (isMedalMode) {
-      tableHeaders = ["#", isNationRanking ? "Country" : "Club", "🥇", "🥈", "🥉", "Total"];
+      tableHeaders = [
+        "#",
+        isNationRanking ? "Country" : "Club",
+        "Gold",
+        "Silver",
+        "Bronze",
+        "Total",
+      ];
       tableBody = entries.map((entry) => [
         entry.rank,
         getEntityName(entry),
@@ -433,7 +441,12 @@ const RankingTable = ({
               : isAthleteRanking
                 ? "🏃 Athlete Rankings"
                 : "🏢 Club Rankings"}{" "}
-            • {entries?.length || 0} {isAthleteRanking ? "athletes" : "clubs"}
+            • {entries?.length || 0}{" "}
+            {isAthleteRanking
+              ? "athletes"
+              : isNationRanking
+                ? "countries"
+                : "clubs"}
           </p>
         </div>
         <button
@@ -460,7 +473,11 @@ const RankingTable = ({
                 Rank
               </th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                {isAthleteRanking ? "Athlete" : isNationRanking ? "Country" : "Club"}
+                {isAthleteRanking
+                  ? "Athlete"
+                  : isNationRanking
+                    ? "Country"
+                    : "Club"}
               </th>
               {isAthleteRanking && (
                 <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
@@ -543,15 +560,23 @@ const RankingTable = ({
                   <PositionBadge position={entry.rank} />
                 </td>
                 <td className="px-3 py-3">
-                  {isNationRanking && entry.nationCode ? (
-                    <span className="font-medium text-slate-900 inline-flex items-center gap-2">
-                      <img
-                        src={countryFlag(entry.nationCode)}
-                        alt={entry.nationCode || ""}
-                        className="inline-block w-[18px] h-[12px]"
-                      />
-                      {getEntityName(entry)}
-                    </span>
+                  {isNationRanking && (entry.entityId || entry.entity?.code) ? (
+                    (() => {
+                      const nationCode =
+                        entry.nationCode ||
+                        entry.entityId ||
+                        entry.entity?.code;
+                      return (
+                        <span className="font-medium text-slate-900 inline-flex items-center gap-2">
+                          <img
+                            src={countryFlag(nationCode)}
+                            alt={nationCode || ""}
+                            className="inline-block w-[18px] h-[12px]"
+                          />
+                          {getEntityName({ ...entry, nationCode })}
+                        </span>
+                      );
+                    })()
                   ) : (
                     <span className="font-medium text-slate-900">
                       {getEntityName(entry)}
@@ -853,6 +878,12 @@ export default function CompetitionRankings() {
 
   // Export PDF
   const exportPDF = useCallback(async () => {
+    const getMedalHeader = () => ({
+      1: "Gold",
+      2: "Silver",
+      3: "Bronze",
+    });
+
     if (!rankingData || !selectedSystem) return;
 
     const doc = new jsPDF({
@@ -1039,9 +1070,7 @@ export default function CompetitionRankings() {
             let nationY = legendY + 9;
 
             for (const code of uniqueNations) {
-              const name = countryLabel
-                ? countryLabel(code) || code
-                : code;
+              const name = countryLabel ? countryLabel(code) || code : code;
               doc.setFont(fontName, "bold");
               doc.text(code + ": ", leftMargin + 4, nationY);
               const codeWidth = doc.getTextWidth(code + ": ");
@@ -1130,6 +1159,12 @@ export default function CompetitionRankings() {
           "Unknown Athlete"
         );
       }
+
+      if (entry.entityType === "nation") {
+        const nationCode = entry.entityId || entry.entity?.code;
+        return countryLabel(nationCode) || nationCode || "Unknown";
+      }
+
       return entry.entity?.name || "Unknown Club";
     };
 
@@ -1227,7 +1262,7 @@ export default function CompetitionRankings() {
         }
       } else if (isMedalMode) {
         // MEDAL MODE: Rank | Club | 🥇 | 🥈 | 🥉 | Total
-        tableHeaders = ["#", "Club", "🥇", "🥈", "🥉", "Total"];
+        tableHeaders = ["#", "Club", "Gold", "Silver", "Bronze", "Total"];
         tableBody = entries.map((entry) => [
           entry.rank,
           getEntityName(entry),
@@ -1335,6 +1370,8 @@ export default function CompetitionRankings() {
     const fileName = `Rankings_${competition?.code || "competition"}_${
       selectedSystem.code
     }.pdf`;
+    // Reduce output size: compress images and prefer smaller streams.
+    doc.setProperties({ compress: true });
     doc.save(fileName);
     toast.success("PDF exported successfully");
   }, [rankingData, selectedSystem, competition]);
