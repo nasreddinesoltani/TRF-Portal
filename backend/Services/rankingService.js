@@ -248,7 +248,8 @@ export async function buildCompetitionRanking(
     .populate("boatClass")
     .populate("lanes.club")
     .populate("lanes.athlete")
-    .populate("lanes.crew");
+    .populate("lanes.crew")
+    .lean(); // Use lean() so populated subdocuments serialize to plain objects cleanly
 
   // Filter by journey mode
   let filteredRaces = races;
@@ -270,11 +271,18 @@ export async function buildCompetitionRanking(
     );
   }
 
-  // Filter by boat class filter (skiff_only)
+  // Filter by boat class filter
   if (config.boatClassFilter === "skiff_only") {
     filteredRaces = filteredRaces.filter((r) => {
       const crewSize = r.boatClass?.crewSize || 1;
       return crewSize === 1;
+    });
+  } else if (config.boatClassFilter === "crew_only") {
+    // Only multi-person boats (2x, 4x, 8+, etc.) — singles are excluded because
+    // points/medals go to the individual athlete, not the crew slot.
+    filteredRaces = filteredRaces.filter((r) => {
+      const crewSize = r.boatClass?.crewSize || 1;
+      return crewSize > 1;
     });
   }
 
@@ -502,7 +510,11 @@ function isSeniorCategory(category) {
     abbr === "sm" ||
     abbr === "sw" ||
     abbr === "smix" ||
-    (titleEn.includes("senior") && !titleEn.includes("master"))
+    // Lightweight Senior categories (LWM, LWW, LW2x, LW4x...) are a weight class
+    // of Senior, so they rank together with Seniors.
+    abbr.startsWith("lw") ||
+    (titleEn.includes("senior") && !titleEn.includes("master")) ||
+    (titleEn.includes("lightweight") && !titleEn.includes("master"))
   );
 }
 
@@ -670,15 +682,35 @@ function groupRaces(races, groupBy, groupingCategories = []) {
           groupingCategory?.gender || race.category?.gender || "unknown";
         break;
 
-      case "category":
-        // Group by category abbreviation (Senior, Junior, etc.)
-        groupKey =
-          groupingCategory?.abbreviation ||
-          groupingCategory?._id?.toString() ||
-          race.category?.abbreviation ||
-          race.category?._id?.toString() ||
-          "unknown";
+      case "category": {
+        // Group by category abbreviation — normalize LW to Senior so
+        // Lightweight races count within the Senior group.
+        const rawAbbr =
+          groupingCategory?.abbreviation || race.category?.abbreviation;
+        const catForGroup = groupingCategory || race.category;
+        if (
+          rawAbbr &&
+          rawAbbr.toLowerCase().startsWith("lw") &&
+          isSeniorCategory(catForGroup)
+        ) {
+          // Find the actual non-LW Senior category in the competition's category list
+          // so we use the federation's real abbreviation (SM, M, Senior, etc.)
+          const seniorAbbr =
+            groupingCategories.find(
+              (c) =>
+                isSeniorCategory(c) &&
+                !c.abbreviation?.toLowerCase().startsWith("lw"),
+            )?.abbreviation || "Senior";
+          groupKey = seniorAbbr;
+        } else {
+          groupKey =
+            rawAbbr ||
+            groupingCategory?._id?.toString() ||
+            race.category?._id?.toString() ||
+            "unknown";
+        }
         break;
+      }
 
       case "global":
         // All categories and genders combined
@@ -686,13 +718,35 @@ function groupRaces(races, groupBy, groupingCategories = []) {
         break;
 
       case "category_gender":
-      default:
-        // Group by category + gender combination
-        const cat =
+      default: {
+        // Group by category + gender combination.
+        // Normalize LW categories into their Senior gender group so Lightweight
+        // races count within Senior Men / Senior Women rather than a separate group.
+        const rawCat =
           groupingCategory?.abbreviation || race.category?.abbreviation || "?";
-        const gen = groupingCategory?.gender || race.category?.gender || "?";
+        const gen =
+          groupingCategory?.gender || race.category?.gender || "?";
+        const catGroupObj = groupingCategory || race.category;
+        let cat = rawCat;
+        if (
+          rawCat.toLowerCase().startsWith("lw") &&
+          isSeniorCategory(catGroupObj)
+        ) {
+          // Find the actual non-LW Senior category in the competition's category
+          // list for this gender, using the federation's real abbreviation.
+          const seniorMatch = groupingCategories.find(
+            (c) =>
+              isSeniorCategory(c) &&
+              !c.abbreviation?.toLowerCase().startsWith("lw") &&
+              (c.gender === gen || c.gender === "mixed" || !c.gender),
+          );
+          cat =
+            seniorMatch?.abbreviation ||
+            (gen === "men" ? "SM" : gen === "women" ? "SW" : "SMIX");
+        }
         groupKey = `${cat}_${gen}`;
         break;
+      }
     }
 
     if (!groups[groupKey]) {
@@ -774,6 +828,28 @@ function getLaneCompetitorKeys(lane, race, entityType) {
     .sort();
 
   if (crewIds.length > 0) {
+    // For crew boats: key on the crew SLOT (crewNumber) rather than the exact
+    // athlete set, so points accumulate to the same crew identity across journeys
+    // even when individual rowers rotate (e.g. a substitute in a later journey).
+    const crewNumber = lane?.crewNumber;
+    if (crewNumber != null && Number.isInteger(Number(crewNumber))) {
+      const catId =
+        race?.category?._id?.toString?.() ||
+        race?.category?.toString?.() ||
+        "nocat";
+      const boatClassId =
+        race?.boatClass?._id?.toString?.() ||
+        race?.boatClass?.toString?.() ||
+        "noboat";
+      return [
+        {
+          key: `club:${clubId}:cat:${catId}:boat:${boatClassId}:slot:${Number(crewNumber)}`,
+          clubId,
+          crewNumber: Number(crewNumber),
+        },
+      ];
+    }
+    // Fallback (no crewNumber stored): use athlete set (legacy/singles without crewNumber)
     return [
       {
         key: `club:${clubId}:crew:${crewIds.join("+")}`,
@@ -1070,16 +1146,97 @@ function calculateGroupRanking(group, config) {
         if (status && entry.statusCounts[status] !== undefined) {
           entry.statusCounts[status]++;
         }
+      } else if (entityType === "crew") {
+        // Crew-slot ranking: points accumulate per (club + category + boatClass + crewNumber).
+        // EPT 1 accumulates J1 + J3 points even when athletes rotate between journeys.
+        const crewNumber = candidate.lane?.crewNumber ?? candidate.crewNumber;
+        if (!clubId || crewNumber == null) {
+          continue;
+        }
+        const catId =
+          race?.category?._id?.toString?.() ||
+          race?.category?.toString?.() ||
+          "nocat";
+        const boatClassId =
+          race?.boatClass?._id?.toString?.() ||
+          race?.boatClass?.toString?.() ||
+          "noboat";
+        const crewSlotId = `club:${clubId}:cat:${catId}:boat:${boatClassId}:slot:${Number(crewNumber)}`;
+
+        if (!pointsMap.has(crewSlotId)) {
+          pointsMap.set(crewSlotId, {
+            entityId: crewSlotId,
+            entityType: "crew",
+            entity: {
+              club: lane.club,
+              crewNumber: Number(crewNumber),
+              boatClass: race.boatClass,
+              category: race.category,
+              // `name` is what getEntityName reads for display (e.g. "EPT 1", "ASL 2")
+              name: `${lane.club?.name || lane.club?.code || clubId} ${crewNumber}`,
+              label: `${lane.club?.code || clubId} ${crewNumber}`,
+            },
+            club: lane.club,
+            clubId,
+            totalPoints: 0,
+            raceResults: [],
+            positionCounts: {},
+            journeyPoints: {},
+            totalTime: 0,
+            statusCounts: { dns: 0, dnf: 0, dsq: 0, abs: 0 },
+          });
+        }
+
+        const crewEntry = pointsMap.get(crewSlotId);
+        crewEntry.totalPoints += candidate.points;
+        crewEntry.totalTime += candidate.elapsedMs || 0;
+        crewEntry.raceResults.push({
+          ...raceResult,
+          athletes: athletes.map((a) => ({
+            _id: a._id,
+            firstName: a.firstName,
+            lastName: a.lastName,
+            fullName:
+              a.fullName || `${a.firstName || ""} ${a.lastName || ""}`.trim(),
+          })),
+        });
+        const journeyIdx = race.journeyIndex ?? 0;
+        crewEntry.journeyPoints[journeyIdx] =
+          (crewEntry.journeyPoints[journeyIdx] || 0) + candidate.points;
+        if (candidate.effectivePosition) {
+          crewEntry.positionCounts[candidate.effectivePosition] =
+            (crewEntry.positionCounts[candidate.effectivePosition] || 0) + 1;
+        }
+        const crewStatus = candidate.status;
+        if (crewStatus && crewEntry.statusCounts[crewStatus] !== undefined) {
+          crewEntry.statusCounts[crewStatus]++;
+        }
       } else {
         if (!clubId) {
           continue;
         }
 
         if (!pointsMap.has(clubId)) {
+          // Normalize club entity so it always has a top-level `name` field,
+          // even when the Club model stores names in a nested `names: {en,fr,ar}` object.
+          const clubDoc = lane.club;
+          const clubEntity = clubDoc
+            ? {
+                _id: clubDoc._id,
+                code: clubDoc.code,
+                name:
+                  clubDoc.name ||
+                  clubDoc.names?.fr ||
+                  clubDoc.names?.en ||
+                  clubDoc.code ||
+                  null,
+                nameAr: clubDoc.nameAr || clubDoc.names?.ar || null,
+              }
+            : null;
           pointsMap.set(clubId, {
             entityId: clubId,
             entityType: "club",
-            entity: lane.club,
+            entity: clubEntity,
             totalPoints: 0,
             raceResults: [],
             positionCounts: {},

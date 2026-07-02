@@ -18,11 +18,16 @@ const loadImage = (url) => {
     img.crossOrigin = "Anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
+      // Cap width at 1200px — sufficient for A4 PDF at print quality (210mm × 72dpi ≈ 595px,
+      // 2× for crispness = 1190px). Full-resolution PNGs can be 3–10 MB each.
+      const MAX_WIDTH = 1200;
+      const scale = img.width > MAX_WIDTH ? MAX_WIDTH / img.width : 1;
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
       const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL("image/png"));
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      // JPEG at 0.80 quality: ~10–30× smaller than PNG with no visible difference at PDF scale.
+      resolve(canvas.toDataURL("image/jpeg", 0.80));
     };
     img.onerror = () => resolve(null);
     img.src = `${url}${url.includes("?") ? "&" : "?"}_cb=${Date.now()}`;
@@ -151,6 +156,7 @@ const RankingTable = ({
   // Determine ranking type
   const isAthleteRanking = entries?.[0]?.entityType === "athlete";
   const isNationRanking = entries?.[0]?.entityType === "nation";
+  const isCrewRanking = entries?.[0]?.entityType === "crew";
   const isMedalMode = scoringMode === "medals";
   const hasMultipleJourneys = stages.length > 1;
 
@@ -169,7 +175,17 @@ const RankingTable = ({
       const nationCode = entry.entityId || entry.entity?.code;
       return countryLabel(nationCode) || nationCode || "Unknown";
     }
-    return entry.entity?.name || "Unknown Club";
+    if (entry.entityType === "crew") {
+      // Crew slot: show "EPT 1", "ASL 2", etc.
+      return (
+        entry.entity?.name ||
+        entry.entity?.label ||
+        `${entry.entity?.club?.name || entry.entity?.club?.code || "?"} ${entry.entity?.crewNumber ?? ""}`.trim() ||
+        "Unknown Crew"
+      );
+    }
+    // Default: club
+    return entry.entity?.name || entry.entity?.names?.fr || entry.entity?.names?.en || entry.entity?.code || "Unknown Club";
   };
 
   // Get club name for athlete entries
@@ -207,7 +223,7 @@ const RankingTable = ({
       const ratio = imgProps.width / imgProps.height;
       const w = pageWidth;
       const h = w / ratio;
-      doc.addImage(headerData, "PNG", 0, 0, w, h);
+      doc.addImage(headerData, "JPEG", 0, 0, w, h);
       yPos = h + 5;
     }
 
@@ -404,7 +420,7 @@ const RankingTable = ({
       const ratio = imgProps.width / imgProps.height;
       const w = pageWidth;
       const h = w / ratio;
-      doc.addImage(footerData, "PNG", 0, pageHeight - h, w, h);
+      doc.addImage(footerData, "JPEG", 0, pageHeight - h, w, h);
     }
 
     // Save
@@ -440,13 +456,17 @@ const RankingTable = ({
               ? "🏅 Medal Rankings"
               : isAthleteRanking
                 ? "🏃 Athlete Rankings"
-                : "🏢 Club Rankings"}{" "}
+                : isCrewRanking
+                  ? "🚣 Crew Rankings"
+                  : "🏢 Club Rankings"}{" "}
             • {entries?.length || 0}{" "}
             {isAthleteRanking
               ? "athletes"
               : isNationRanking
                 ? "countries"
-                : "clubs"}
+                : isCrewRanking
+                  ? "crews"
+                  : "clubs"}
           </p>
         </div>
         <button
@@ -477,7 +497,9 @@ const RankingTable = ({
                   ? "Athlete"
                   : isNationRanking
                     ? "Country"
-                    : "Club"}
+                    : isCrewRanking
+                      ? "Crew"
+                      : "Club"}
               </th>
               {isAthleteRanking && (
                 <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
@@ -943,7 +965,7 @@ export default function CompetitionRankings() {
         const ratio = imgProps.width / imgProps.height;
         const w = pageWidth;
         const h = w / ratio;
-        doc.addImage(headerData, "PNG", 0, 0, w, h);
+        doc.addImage(headerData, "JPEG", 0, 0, w, h);
       }
 
       let y = headerHeight;
@@ -1036,7 +1058,7 @@ export default function CompetitionRankings() {
         const ratio = imgProps.width / imgProps.height;
         const w = pageWidth;
         const h = w / ratio;
-        doc.addImage(footerData, "PNG", 0, pageHeight - h, w, h);
+        doc.addImage(footerData, "JPEG", 0, pageHeight - h, w, h);
       }
 
       // Add legend on the last page
@@ -1165,7 +1187,7 @@ export default function CompetitionRankings() {
         return countryLabel(nationCode) || nationCode || "Unknown";
       }
 
-      return entry.entity?.name || "Unknown Club";
+      return entry.entity?.name || entry.entity?.names?.fr || entry.entity?.names?.en || entry.entity?.code || (entry.entityType === "crew" ? "Unknown Crew" : "Unknown Club");
     };
 
     // Start rendering
@@ -1370,8 +1392,6 @@ export default function CompetitionRankings() {
     const fileName = `Rankings_${competition?.code || "competition"}_${
       selectedSystem.code
     }.pdf`;
-    // Reduce output size: compress images and prefer smaller streams.
-    doc.setProperties({ compress: true });
     doc.save(fileName);
     toast.success("PDF exported successfully");
   }, [rankingData, selectedSystem, competition]);
@@ -1475,7 +1495,9 @@ export default function CompetitionRankings() {
               ? "Athletes"
               : selectedSystem.entityType === "nation"
                 ? "Nations"
-                : "Clubs"}
+                : selectedSystem.entityType === "crew"
+                  ? "Crews (boat slots)"
+                  : "Clubs"}
             {" • "}
             <span className="font-medium">Groups by:</span>{" "}
             {selectedSystem.groupBy === "gender"
@@ -1485,6 +1507,9 @@ export default function CompetitionRankings() {
                 : "Category + Gender"}
             {selectedSystem.boatClassFilter === "skiff_only" && (
               <span className="ml-2 text-amber-600">(Skiff only)</span>
+            )}
+            {selectedSystem.boatClassFilter === "crew_only" && (
+              <span className="ml-2 text-blue-600">(Crew boats only)</span>
             )}
           </div>
         )}

@@ -4696,15 +4696,22 @@ const CompetitionRaces = () => {
                 })
                 .filter((n) => Number.isFinite(n));
 
-              // Also inspect existing races' lanes - but only in the SAME CATEGORY
+              // Also inspect existing races' lanes - only SAME CATEGORY + SAME BOAT CLASS
               const numsFromRaces = [];
               const currentCategoryId = autoGenState.category;
+              // Fix: scope by boat class so M2x and M4x don't share crew numbers
+              const currentBoatClassId = autoGenState.boatClass || null;
               try {
                 (races || []).forEach((r) => {
                   // Only consider races in the same category
                   const raceCatId = toDocumentId(r.category);
                   if (currentCategoryId && raceCatId !== currentCategoryId) {
                     return; // Skip races from other categories
+                  }
+                  // Only consider races in the same boat class
+                  const raceBoatClassId = toDocumentId(r.boatClass);
+                  if (currentBoatClassId && raceBoatClassId && raceBoatClassId !== currentBoatClassId) {
+                    return; // Skip races from other boat classes
                   }
 
                   (r.lanes || []).forEach((lane) => {
@@ -4751,8 +4758,13 @@ const CompetitionRaces = () => {
                 );
                 if (catData && Array.isArray(catData.entries)) {
                   catData.entries.forEach((e) => {
-                    // Skip withdrawn entries - their crew numbers are freed up
+                    // Skip withdrawn/rejected entries — their crew numbers are freed up
                     if (e.status === "withdrawn" || e.status === "rejected") {
+                      return;
+                    }
+                    // Fix: scope by boat class so M2x and M4x don't share crew numbers
+                    const entryBoatClassId = toDocumentId(e.boatClass);
+                    if (currentBoatClassId && entryBoatClassId && entryBoatClassId !== currentBoatClassId) {
                       return;
                     }
 

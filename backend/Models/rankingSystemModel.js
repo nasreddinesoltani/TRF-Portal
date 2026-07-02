@@ -27,15 +27,17 @@ export const JOURNEY_MODE_OPTIONS = [
 
 // Entity type - who gets the points
 export const ENTITY_TYPE_OPTIONS = [
-  "club", // Points go to club (aggregates all athletes)
+  "club",    // Points go to club (aggregates all athletes)
   "athlete", // Points go to individual athletes
-  "nation", // Points/medals go to nation (aggregates by representingNation)
+  "nation",  // Points/medals go to nation (aggregates by representingNation)
+  "crew",    // Points go to the crew SLOT (e.g. EPT 1) — accumulates across journeys
 ];
 
 // Boat class filter - which boats count
 export const BOAT_CLASS_FILTER_OPTIONS = [
-  "all", // All boat classes count
+  "all",        // All boat classes count
   "skiff_only", // Only single-person boats (crewSize === 1)
+  "crew_only",  // Only multi-person boats (crewSize > 1): 2x, 4x, 8+, etc.
 ];
 
 // Scoring mode - how to rank

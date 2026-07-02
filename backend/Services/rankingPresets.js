@@ -232,6 +232,73 @@ export const RANKING_PRESETS = {
     sortOrder: 7,
   },
 
+  /**
+   * Crew Ranking by Category+Gender
+   * - Each category+gender separate (Junior Men, Senior Women, etc.)
+   * - Points go to the crew SLOT (e.g. EPT 1) not the individual athletes.
+   * - Accumulates across journeys: EPT 1 in J1 + EPT 1 in J3 = total for EPT 1.
+   * - Only crew boats (2x, 4x, 8+, etc.) are counted. Singles are excluded.
+   */
+  CREW_BY_CATEGORY_GENDER: {
+    code: "CREW_BY_CAT_GENDER",
+    names: {
+      en: "Crew Ranking by Category",
+      fr: "Classement Équipage par Catégorie",
+      ar: "ترتيب الطاقم حسب الفئة",
+    },
+    description:
+      "Points go to the crew slot (EPT 1, EPT 2…) per club, accumulating across all journeys. Crew boats only (2x, 4x, 8+). Singles excluded.",
+    groupBy: "category_gender",
+    entityType: "crew",
+    boatClassFilter: "crew_only",
+    includeMastersDefault: true,
+    discipline: null,
+    journeyMode: "all",
+    maxScoringPosition: 8,
+    dnfGetsPointsIfFewFinishers: true,
+    tieBreakers: [
+      { priority: 1, method: "more_first_places" },
+      { priority: 2, method: "more_second_places" },
+      { priority: 3, method: "total_time" },
+      { priority: 4, method: "alphabetical" },
+    ],
+    showTimeDeltas: true,
+    showTotalTime: false,
+    isPreset: true,
+    isActive: true,
+    sortOrder: 8,
+  },
+
+  CREW_BY_CATEGORY: {
+    code: "CREW_BY_CATEGORY",
+    names: {
+      en: "Crew Ranking by Age Category",
+      fr: "Classement Équipage par Catégorie d'âge",
+      ar: "ترتيب الطاقم حسب فئة العمر",
+    },
+    description:
+      "Both genders combined. Points go to the crew slot per club, accumulating across all journeys. Crew boats only.",
+    groupBy: "category",
+    entityType: "crew",
+    boatClassFilter: "crew_only",
+    includeMastersDefault: true,
+    discipline: null,
+    journeyMode: "all",
+    maxScoringPosition: 8,
+    dnfGetsPointsIfFewFinishers: true,
+    tieBreakers: [
+      { priority: 1, method: "more_first_places" },
+      { priority: 2, method: "more_second_places" },
+      { priority: 3, method: "total_time" },
+      { priority: 4, method: "alphabetical" },
+    ],
+    showTimeDeltas: false,
+    showTotalTime: false,
+    isPreset: true,
+    isActive: true,
+    sortOrder: 9,
+  },
+
   GLOBAL_CUP: {
     code: "GLOBAL_CUP",
     names: {

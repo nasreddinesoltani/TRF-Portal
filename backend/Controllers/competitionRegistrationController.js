@@ -1473,31 +1473,42 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         )
       : null;
 
-  // Fetch all active entries for this competition/club involving these categories
-  // to determine the next available crew numbers (filling gaps).
+  // Fetch all active entries (pending + approved only — not withdrawn/rejected)
+  // to determine crew slot continuity across journeys.
   const existingActiveEntries = await CompetitionEntry.find({
     competition: competition._id,
     club: clubContext.clubId,
     category: { $in: Array.from(allCategoryIds) },
-    status: { $ne: "withdrawn" },
+    status: { $nin: ["withdrawn", "rejected"] },
   }).select("category boatClass crewNumber crew athlete");
 
-  // Map: "catId_boatClassId" -> Set(crewNumbers)
-  const usedNumbersMap = new Map();
+  // Build a SLOT MAP per (catId_boatClassId):
+  //   slotMap[key] = Map<crewNumber, Set<athleteId>>
+  // A "slot" is a persistent crew identity. An incoming crew REUSES a slot when it
+  // shares at least one athlete with that slot's current crew set. This is the
+  // mechanism that makes EPT 1 persist across journeys even when athletes rotate.
+  const slotMap = new Map();
 
   const getCounterKey = (catId, boatClassId) => {
     return `${catId}_${boatClassId || "null"}`;
   };
 
   for (const entry of existingActiveEntries) {
-    if (!Array.isArray(entry.crew) || entry.crew.length <= 1) {
-      continue;
-    }
+    const crewArr = Array.isArray(entry.crew) && entry.crew.length > 1
+      ? entry.crew
+      : null;
+    if (!crewArr) continue; // skip singles and invalid entries
     const key = getCounterKey(entry.category, entry.boatClass);
-    if (!usedNumbersMap.has(key)) {
-      usedNumbersMap.set(key, new Set());
+    if (!slotMap.has(key)) slotMap.set(key, new Map());
+    const slots = slotMap.get(key);
+    const slotNum = entry.crewNumber || 0;
+    const athleteIds = new Set(crewArr.map((id) => id.toString()));
+    if (slots.has(slotNum)) {
+      // Union athlete sets across journeys for the same slot
+      for (const id of athleteIds) slots.get(slotNum).add(id);
+    } else {
+      slots.set(slotNum, athleteIds);
     }
-    usedNumbersMap.get(key).add(entry.crewNumber || 0);
   }
 
   const creations = [];
@@ -1687,18 +1698,36 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
     let nextNumber;
 
     if (isCrewBoat) {
-      // Determine next available crew number for this crew event only.
+      // Slot-reuse: find the best-matching existing slot by athlete overlap.
+      // If the incoming crew shares at least one athlete with an existing slot,
+      // it CONTINUES that slot (same crewNumber). Otherwise it gets a new number.
       const counterKey = getCounterKey(entry.categoryId, entry.boatClassId);
-      if (!usedNumbersMap.has(counterKey)) {
-        usedNumbersMap.set(counterKey, new Set());
-      }
-      const usedSet = usedNumbersMap.get(counterKey);
+      if (!slotMap.has(counterKey)) slotMap.set(counterKey, new Map());
+      const slots = slotMap.get(counterKey);
 
-      nextNumber = 1;
-      while (usedSet.has(nextNumber)) {
-        nextNumber++;
+      const newCrewSet = new Set(entry.crewIds.map((id) => id.toString()));
+      let bestSlot = null;
+      let bestOverlap = 0;
+
+      for (const [slotNum, slotAthletes] of slots) {
+        const overlap = [...newCrewSet].filter((id) => slotAthletes.has(id)).length;
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestSlot = slotNum;
+        }
       }
-      usedSet.add(nextNumber);
+
+      if (bestSlot !== null && bestOverlap > 0) {
+        // Continue existing slot — inherit its number and expand its athlete set.
+        nextNumber = bestSlot;
+        for (const id of newCrewSet) slots.get(bestSlot).add(id);
+      } else {
+        // New slot — assign the smallest positive integer not yet taken by any slot.
+        const usedNums = new Set(slots.keys());
+        nextNumber = 1;
+        while (usedNums.has(nextNumber)) nextNumber++;
+        slots.set(nextNumber, newCrewSet);
+      }
     }
 
     const creation = new CompetitionEntry({
