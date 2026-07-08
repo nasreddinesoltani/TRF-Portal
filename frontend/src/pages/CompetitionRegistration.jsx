@@ -137,11 +137,23 @@ const normaliseCategory = (category) => {
   return {
     id,
     abbreviation: category.abbreviation || category.code || "",
+    gender: (category.gender || "").toLowerCase() || null,
     title: category.titles?.en || category.name || category.description || "",
     titleEn: category.titles?.en || category.name || category.description || "",
     titleFr: category.titles?.fr || "",
     titleAr: category.titles?.ar || "",
   };
+};
+
+// Normalise a boat class gender/type indicator to "men" | "women" | "mixed".
+const normaliseGenderToken = (value) => {
+  const text = (value || "").toString().toLowerCase();
+  if (!text) return null;
+  if (text === "female" || text === "women" || text === "w" || text === "f")
+    return "women";
+  if (text === "male" || text === "men" || text === "m") return "men";
+  if (text === "mixed" || text === "mix") return "mixed";
+  return text;
 };
 
 const normaliseBoatClass = (boatClass) => {
@@ -152,11 +164,19 @@ const normaliseBoatClass = (boatClass) => {
   if (!id) {
     return null;
   }
+  const code = boatClass.code || "";
+  const nameEn = boatClass.names?.en || boatClass.label || "";
+  // A boat is "mixed" when its code or English name mentions "mix" (e.g. CMix2x).
+  const isMixed = /mix/i.test(code) || /mixed/i.test(nameEn);
   return {
     id,
-    code: boatClass.code || "",
-    name: boatClass.names?.en || boatClass.label || "",
+    code,
+    name: nameEn,
     seats: boatClass.seats || boatClass.crewSize || 1,
+    isMixed,
+    allowedGenders: Array.isArray(boatClass.allowedGenders)
+      ? boatClass.allowedGenders.map((g) => (g || "").toLowerCase())
+      : null,
   };
 };
 
@@ -571,21 +591,45 @@ const CompetitionRegistration = () => {
     return boatClasses.map(normaliseBoatClass).filter(Boolean);
   }, [boatClasses, summary]);
 
+  // Gender of the currently selected category ("men" | "women" | "mixed" | null)
+  const selectedCategoryGender = useMemo(() => {
+    if (!selectedCategoryId) return null;
+    const cat = availableCategories.find((c) => c.id === selectedCategoryId);
+    return normaliseGenderToken(cat?.gender) || null;
+  }, [availableCategories, selectedCategoryId]);
+
+  // Boat classes shown for the selected category:
+  // - Mixed categories → only mixed boats (e.g. CMix2x)
+  // - Men/Women categories → exclude mixed boats
+  // - No category selected → show all
+  const filteredBoatClasses = useMemo(() => {
+    if (!selectedCategoryGender) {
+      return availableBoatClasses;
+    }
+    if (selectedCategoryGender === "mixed") {
+      const mixedOnly = availableBoatClasses.filter((bc) => bc.isMixed);
+      return mixedOnly.length ? mixedOnly : availableBoatClasses;
+    }
+    // Single-gender category → hide mixed boats.
+    const nonMixed = availableBoatClasses.filter((bc) => !bc.isMixed);
+    return nonMixed.length ? nonMixed : availableBoatClasses;
+  }, [availableBoatClasses, selectedCategoryGender]);
+
   useEffect(() => {
-    if (!availableBoatClasses.length) {
+    if (!filteredBoatClasses.length) {
       setSelectedBoatClassId("");
       return;
     }
     setSelectedBoatClassId((previous) => {
-      if (previous && availableBoatClasses.some((bc) => bc.id === previous)) {
+      if (previous && filteredBoatClasses.some((bc) => bc.id === previous)) {
         return previous;
       }
-      if (availableBoatClasses.length === 1) {
-        return availableBoatClasses[0].id;
+      if (filteredBoatClasses.length === 1) {
+        return filteredBoatClasses[0].id;
       }
       return "";
     });
-  }, [availableBoatClasses]);
+  }, [filteredBoatClasses]);
 
   const boatClassMap = useMemo(() => {
     const map = new Map();
@@ -1227,10 +1271,7 @@ const CompetitionRegistration = () => {
     );
 
     // Nation column — only for international scope
-    if (
-      competition?.scope?.type &&
-      competition.scope.type !== "national"
-    ) {
+    if (competition?.scope?.type && competition.scope.type !== "national") {
       columnList.push({
         headerText: "Country",
         width: 100,
@@ -1245,7 +1286,11 @@ const CompetitionRegistration = () => {
           return (
             <div className="text-center">
               <span className="inline-flex items-center gap-1 text-sm font-semibold text-slate-700 justify-center">
-                <img src={countryFlag(nation)} alt={nation || ""} className="inline-block w-[18px] h-[12px] align-text-bottom" />
+                <img
+                  src={countryFlag(nation)}
+                  alt={nation || ""}
+                  className="inline-block w-[18px] h-[12px] align-text-bottom"
+                />
                 <span>{countryLabel(nation) || nation || "—"}</span>
               </span>
               {type ? (
@@ -1495,10 +1540,19 @@ const CompetitionRegistration = () => {
               textAlign: "Center",
               template: (row) => {
                 const athlete = row?.athlete;
-                const code = athlete?.isForeign ? athlete.nationalityCode : "TUN";
+                const code = athlete?.isForeign
+                  ? athlete.nationalityCode
+                  : "TUN";
                 return (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium" title={code}>
-                    <img src={countryFlag(code)} alt={code || ""} className="inline-block w-[18px] h-[12px] align-text-bottom" />
+                  <span
+                    className="inline-flex items-center gap-1 text-xs font-medium"
+                    title={code}
+                  >
+                    <img
+                      src={countryFlag(code)}
+                      alt={code || ""}
+                      className="inline-block w-[18px] h-[12px] align-text-bottom"
+                    />
                     <span>{countryLabel(code) || code}</span>
                   </span>
                 );
@@ -1696,10 +1750,10 @@ const CompetitionRegistration = () => {
                         setSelectedAthlete(null);
                         setSelectedCrew([]);
                       }}
-                      disabled={!availableBoatClasses.length}
+                      disabled={!filteredBoatClasses.length}
                     >
                       <option value="">Any class</option>
-                      {availableBoatClasses.map((boatClassOption) => (
+                      {filteredBoatClasses.map((boatClassOption) => (
                         <option
                           key={boatClassOption.id}
                           value={boatClassOption.id}
@@ -1940,9 +1994,7 @@ const CompetitionRegistration = () => {
                                   </option>
                                   <option value="club">Club</option>
                                   <option value="nation">Country</option>
-                                  <option value="individual">
-                                    Individual
-                                  </option>
+                                  <option value="individual">Individual</option>
                                 </select>
                               </div>
                               <div>

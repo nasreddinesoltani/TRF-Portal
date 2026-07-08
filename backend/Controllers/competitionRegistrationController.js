@@ -1742,11 +1742,24 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       }
     }
 
-    // Mixed categories with more than one seat require a genuine mix — at least
-    // one man and one woman in the crew (e.g. a mixed double must be 1M + 1W).
+    // Mixed events with more than one seat require a genuine mix — at least one
+    // man and one woman in the crew (e.g. a mixed double must be 1M + 1W).
+    // A crew is treated as "mixed" when either the category gender is mixed OR
+    // the boat class itself is a mixed boat (e.g. CMix2x), so two same-gender
+    // athletes can never be entered in a mixed double even under a men's or
+    // women's category.
+    const boatClassForMixCheck = entry.boatClassId
+      ? boatClassMap.get(entry.boatClassId.toString())
+      : null;
+    const isMixedBoatClass =
+      /mix/i.test(boatClassForMixCheck?.code || "") ||
+      /mixed/i.test(boatClassForMixCheck?.names?.en || "");
+    const isMixedCategory =
+      normalizeAssignmentGender(categoryDoc.gender) === "mixed";
+
     if (
       !req.body.bypassEligibility &&
-      normalizeAssignmentGender(categoryDoc.gender) === "mixed" &&
+      (isMixedCategory || isMixedBoatClass) &&
       entry.crewIds.length > 1
     ) {
       const crewGenders = entry.crewIds.map((id) =>
@@ -1755,8 +1768,12 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       const hasMan = crewGenders.includes("men");
       const hasWoman = crewGenders.includes("women");
       if (!hasMan || !hasWoman) {
+        const label =
+          boatClassForMixCheck?.code ||
+          categoryDoc.abbreviation ||
+          "mixed event";
         return res.status(400).json({
-          message: `A mixed crew for ${categoryDoc.abbreviation} must include both a man and a woman`,
+          message: `A mixed crew for ${label} must include both a man and a woman`,
         });
       }
     }
