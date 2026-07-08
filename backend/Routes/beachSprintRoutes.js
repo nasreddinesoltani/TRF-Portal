@@ -19,13 +19,20 @@ router.use(protect);
 router.post(
   "/events",
   allowRoles("admin", "jury_president"),
-  beachSprintController.createEvent
+  beachSprintController.createEvent,
 );
 
 // Get all events for a competition
 router.get(
   "/competitions/:competitionId/events",
-  beachSprintController.getCompetitionEvents
+  beachSprintController.getCompetitionEvents,
+);
+
+// Auto-generate events from registrations
+router.post(
+  "/competitions/:competitionId/auto-generate-events",
+  allowRoles("admin", "jury_president"),
+  beachSprintController.autoGenerateEvents,
 );
 
 // Get single event with races
@@ -35,18 +42,21 @@ router.get("/events/:eventId", beachSprintController.getEvent);
 router.put(
   "/events/:eventId",
   allowRoles("admin", "jury_president"),
-  beachSprintController.updateEvent
+  beachSprintController.updateEvent,
 );
 
 // Delete event
 router.delete(
   "/events/:eventId",
   allowRoles("admin", "jury_president"),
-  beachSprintController.deleteEvent
+  beachSprintController.deleteEvent,
 );
 
 // Get event bracket
 router.get("/events/:eventId/bracket", beachSprintController.getEventBracket);
+
+// Get registered entries eligible for an event
+router.get("/events/:eventId/entries", beachSprintController.getEventEntries);
 
 // ============ Race Generation Routes ============
 
@@ -54,28 +64,28 @@ router.get("/events/:eventId/bracket", beachSprintController.getEventBracket);
 router.post(
   "/events/:eventId/generate-time-trials",
   allowRoles("admin", "jury_president"),
-  beachSprintController.generateTimeTrials
+  beachSprintController.generateTimeTrials,
 );
 
 // Process time trial progression
 router.post(
   "/events/:eventId/process-time-trial",
   allowRoles("admin", "jury_president"),
-  beachSprintController.processTimeTrialProgression
+  beachSprintController.processTimeTrialProgression,
 );
 
 // Process knockout progression
 router.post(
   "/events/:eventId/process-knockout",
   allowRoles("admin", "jury_president"),
-  beachSprintController.processKnockoutProgression
+  beachSprintController.processKnockoutProgression,
 );
 
 // Process finals and assign medals
 router.post(
   "/events/:eventId/process-finals",
   allowRoles("admin", "jury_president"),
-  beachSprintController.processFinalResults
+  beachSprintController.processFinalResults,
 );
 
 // ============ Race Routes ============
@@ -90,14 +100,14 @@ router.get("/races/:raceId", beachSprintController.getRace);
 router.put(
   "/races/:raceId",
   allowRoles("admin", "jury_president"),
-  beachSprintController.updateRace
+  beachSprintController.updateRace,
 );
 
 // Record race results
 router.post(
   "/races/:raceId/results",
   allowRoles("admin", "jury_president"),
-  beachSprintController.recordRaceResults
+  beachSprintController.recordRaceResults,
 );
 
 // ============ Standings Routes ============
@@ -105,14 +115,14 @@ router.post(
 // Get club standings for a competition
 router.get(
   "/competitions/:competitionId/standings",
-  beachSprintController.getClubStandings
+  beachSprintController.getClubStandings,
 );
 
 // Recalculate standings
 router.post(
   "/competitions/:competitionId/recalculate-standings",
   allowRoles("admin", "jury_president"),
-  beachSprintController.recalculateStandings
+  beachSprintController.recalculateStandings,
 );
 
 // ============ Utility Routes ============

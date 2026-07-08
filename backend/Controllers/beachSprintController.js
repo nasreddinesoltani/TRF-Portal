@@ -49,15 +49,32 @@ export const createEvent = async (req, res) => {
 };
 
 /**
+ * Auto-generate events from a competition's registrations
+ * POST /api/beach-sprint/competitions/:competitionId/auto-generate-events
+ */
+export const autoGenerateEvents = async (req, res) => {
+  try {
+    const { competitionId } = req.params;
+    const result = await beachSprintService.autoGenerateEvents(competitionId);
+    res.status(201).json({
+      message: `Created ${result.created.length} event(s), skipped ${result.skipped.length} existing.`,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Error auto-generating events:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * Get all events for a competition
  * GET /api/beach-sprint/competitions/:competitionId/events
  */
 export const getCompetitionEvents = async (req, res) => {
   try {
     const { competitionId } = req.params;
-    const events = await beachSprintService.getEventsByCompetition(
-      competitionId
-    );
+    const events =
+      await beachSprintService.getEventsByCompetition(competitionId);
     res.json(events);
   } catch (error) {
     console.error("Error fetching events:", error);
@@ -97,7 +114,7 @@ export const updateEvent = async (req, res) => {
     const event = await BeachSprintEvent.findByIdAndUpdate(
       eventId,
       { $set: updates },
-      { new: true }
+      { new: true },
     );
 
     if (!event) {
@@ -160,6 +177,24 @@ export const getEventBracket = async (req, res) => {
 };
 
 /**
+ * Get registered entries eligible for an event
+ * GET /api/beach-sprint/events/:eventId/entries
+ */
+export const getEventEntries = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const result = await beachSprintService.getEventEntries(eventId);
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching event entries:", error);
+    if (error.message === "Event not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * Generate time trial heats from entries
  * POST /api/beach-sprint/events/:eventId/generate-time-trials
  */
@@ -175,7 +210,7 @@ export const generateTimeTrials = async (req, res) => {
     const heats = await beachSprintService.generateTimeTrialHeats(
       eventId,
       entries,
-      lanesPerHeat || 4
+      lanesPerHeat || 4,
     );
 
     res.json({ message: `Generated ${heats.length} time trial heats`, heats });
@@ -246,7 +281,7 @@ export const updateRace = async (req, res) => {
     const race = await BeachSprintRace.findByIdAndUpdate(
       raceId,
       { $set: updates },
-      { new: true }
+      { new: true },
     )
       .populate("lanes.athlete")
       .populate("lanes.crew")
@@ -298,9 +333,8 @@ export const processTimeTrialProgression = async (req, res) => {
   try {
     const { eventId } = req.params;
 
-    const result = await beachSprintService.processTimeTrialProgression(
-      eventId
-    );
+    const result =
+      await beachSprintService.processTimeTrialProgression(eventId);
 
     res.json({
       message: `Progression processed. Next phase: ${result.nextPhase}`,
@@ -327,7 +361,7 @@ export const processKnockoutProgression = async (req, res) => {
 
     const result = await beachSprintService.processKnockoutProgression(
       eventId,
-      phase
+      phase,
     );
 
     res.json({

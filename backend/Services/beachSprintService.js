@@ -16,6 +16,7 @@ import {
   RACE_PHASES,
   PROGRESSION_RULES,
 } from "../Models/beachSprintModel.js";
+import CompetitionEntry from "../Models/competitionEntryModel.js";
 
 /**
  * Parse time string to milliseconds
@@ -741,10 +742,203 @@ async function getEventBracket(eventId) {
   return bracket;
 }
 
+/**
+ * Map a Category gender ("men"|"women"|"mixed") to a BeachSprintEvent
+ * gender enum ("M"|"F"|"Mixed").
+ */
+function categoryGenderToEventGender(categoryGender) {
+  const g = String(categoryGender || "").toLowerCase();
+  if (g === "men") return "M";
+  if (g === "women") return "F";
+  return "Mixed";
+}
+
+/**
+ * Auto-generate Beach Sprint events from a competition's registrations.
+ *
+ * Reads eligible entries (pending/approved), groups them by
+ * category + boatClass, and creates one BeachSprintEvent per group that
+ * actually has entries (gender derived from the category). Idempotent:
+ * combinations that already have an event are skipped.
+ *
+ * @param {string} competitionId
+ * @returns {Promise<{ created: Array, skipped: Array, totalGroups: number }>}
+ */
+async function autoGenerateEvents(competitionId) {
+  const entries = await CompetitionEntry.find({
+    competition: competitionId,
+    status: { $in: ["pending", "approved"] },
+  })
+    .populate("category")
+    .populate("boatClass");
+
+  // Group by category + boatClass
+  const groups = new Map();
+  for (const entry of entries) {
+    const categoryId = entry.category?._id?.toString() || null;
+    const boatClassId = entry.boatClass?._id?.toString() || null;
+    if (!categoryId || !boatClassId) continue; // need both to define an event
+    const key = `${categoryId}::${boatClassId}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        categoryId,
+        boatClassId,
+        category: entry.category,
+        boatClass: entry.boatClass,
+        count: 0,
+      });
+    }
+    groups.get(key).count += 1;
+  }
+
+  // Load existing events to avoid duplicates
+  const existingEvents = await BeachSprintEvent.find({
+    competition: competitionId,
+  });
+  const existingKeys = new Set(
+    existingEvents.map(
+      (ev) =>
+        `${ev.category?.toString?.() || ev.category}::${
+          ev.boatClass?.toString?.() || ev.boatClass
+        }`,
+    ),
+  );
+
+  const created = [];
+  const skipped = [];
+
+  for (const group of groups.values()) {
+    const key = `${group.categoryId}::${group.boatClassId}`;
+    if (existingKeys.has(key)) {
+      skipped.push({
+        categoryId: group.categoryId,
+        boatClassId: group.boatClassId,
+        reason: "event_exists",
+      });
+      continue;
+    }
+
+    const categoryLabel =
+      group.category?.titles?.en || group.category?.abbreviation || "Category";
+    const boatLabel =
+      group.boatClass?.names?.en || group.boatClass?.code || "Boat";
+    const name = `${categoryLabel} ${boatLabel}`;
+    const gender = categoryGenderToEventGender(group.category?.gender);
+
+    const event = new BeachSprintEvent({
+      competition: competitionId,
+      boatClass: group.boatClassId,
+      category: group.categoryId,
+      gender,
+      name,
+      progressionConfig: {},
+    });
+    await event.save();
+    created.push(event);
+  }
+
+  return { created, skipped, totalGroups: groups.size };
+}
+
+/**
+ * Normalize an event gender value to an athlete gender matcher.
+ * Event genders are stored as "M" | "F" | "Mixed".
+ * Athlete genders may be stored in various forms (male/female/M/F/...).
+ */
+function genderMatches(eventGender, athleteGender) {
+  if (!eventGender || eventGender === "Mixed") return true;
+  if (!athleteGender) return true; // don't hide entries with unknown gender
+  const g = String(athleteGender).trim().toLowerCase();
+  if (eventGender === "M") {
+    return g === "m" || g === "male" || g === "men" || g === "man";
+  }
+  if (eventGender === "F") {
+    return g === "f" || g === "female" || g === "women" || g === "woman";
+  }
+  return true;
+}
+
+/**
+ * Get the registered entries eligible for a Beach Sprint event.
+ *
+ * Beach Sprint has no manual "approve" step yet, so both `pending` and
+ * `approved` entries are considered eligible (only `rejected`/`withdrawn`
+ * are excluded). Entries are matched to the event by competition, category,
+ * boat class and — via the athlete/crew — gender.
+ *
+ * @param {string} eventId
+ * @returns {Promise<{ event: object, entries: Array, total: number }>}
+ */
+async function getEventEntries(eventId) {
+  const event = await BeachSprintEvent.findById(eventId)
+    .populate("boatClass")
+    .populate("category");
+  if (!event) throw new Error("Event not found");
+
+  const query = {
+    competition: event.competition,
+    category: event.category?._id || event.category,
+    status: { $in: ["pending", "approved"] },
+  };
+  // Only constrain boat class when the event has one (it always should)
+  if (event.boatClass?._id || event.boatClass) {
+    query.boatClass = event.boatClass?._id || event.boatClass;
+  }
+
+  const rawEntries = await CompetitionEntry.find(query)
+    .populate("athlete")
+    .populate("crew")
+    .populate("club")
+    .sort({ seed: 1, createdAt: 1 });
+
+  // Filter by gender using the athlete (or first crew member) gender.
+  const filtered = rawEntries.filter((entry) => {
+    const primary =
+      entry.athlete ||
+      (Array.isArray(entry.crew) && entry.crew.length ? entry.crew[0] : null);
+    return genderMatches(event.gender, primary?.gender);
+  });
+
+  // Normalize into a lightweight shape the frontend can render directly,
+  // preserving the ObjectId references needed to generate races.
+  const entries = filtered.map((entry, index) => {
+    const crew = Array.isArray(entry.crew) ? entry.crew : [];
+    const athleteName = entry.athlete
+      ? [entry.athlete.firstName, entry.athlete.lastName]
+          .filter(Boolean)
+          .join(" ")
+      : null;
+    const crewNames = crew
+      .map((m) => [m?.firstName, m?.lastName].filter(Boolean).join(" "))
+      .filter(Boolean);
+
+    return {
+      entryId: entry._id,
+      seed: entry.seed ?? null,
+      classification: entry.seed ?? index + 1,
+      status: entry.status,
+      athlete: entry.athlete?._id || null,
+      athleteName: athleteName || null,
+      crew: crew.map((m) => m?._id).filter(Boolean),
+      crewNames,
+      displayName: athleteName || crewNames.join(" / ") || "Unknown",
+      club: entry.club?._id || null,
+      clubName: entry.club?.name || null,
+      clubCode: entry.club?.code || null,
+      representingType: entry.representingType || "club",
+      representingNation: entry.representingNation || null,
+    };
+  });
+
+  return { event, entries, total: entries.length };
+}
+
 export {
   createEvent,
+  autoGenerateEvents,
   getEventsByCompetition,
   getEventWithRaces,
+  getEventEntries,
   generateTimeTrialHeats,
   recordRaceResults,
   processTimeTrialProgression,

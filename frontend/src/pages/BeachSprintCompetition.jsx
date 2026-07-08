@@ -73,12 +73,13 @@ const EventCard = ({ event, onSelect, onDelete }) => {
         <div className="text-sm text-slate-600 space-y-1">
           <p>
             <span className="font-medium">Category:</span>{" "}
-            {event.category?.name || "-"}
+            {event.category?.titles?.en || event.category?.abbreviation || "-"}
           </p>
           <p>
             <span className="font-medium">Boat:</span>{" "}
-            {event.boatClass?.name || "-"}
+            {event.boatClass?.names?.en || event.boatClass?.code || "-"}
           </p>
+
           <p>
             <span className="font-medium">Phase:</span>{" "}
             {PHASE_NAMES[event.currentPhase] || event.currentPhase}
@@ -233,19 +234,19 @@ const ResultsDialog = ({ race, onSave, onCancel }) => {
       lane: lane.lane,
       time: lane.time || "",
       status: lane.status || "ok",
-    }))
+    })),
   );
   const [saving, setSaving] = useState(false);
 
   const handleTimeChange = (laneNum, time) => {
     setResults((prev) =>
-      prev.map((r) => (r.lane === laneNum ? { ...r, time } : r))
+      prev.map((r) => (r.lane === laneNum ? { ...r, time } : r)),
     );
   };
 
   const handleStatusChange = (laneNum, status) => {
     setResults((prev) =>
-      prev.map((r) => (r.lane === laneNum ? { ...r, status } : r))
+      prev.map((r) => (r.lane === laneNum ? { ...r, status } : r)),
     );
   };
 
@@ -339,11 +340,11 @@ const CreateEventDialog = ({ competition, onSave, onCancel }) => {
   // Get allowed IDs from competition
   const allowedBoatClassIds =
     competition?.allowedBoatClasses?.map((bc) =>
-      typeof bc === "string" ? bc : bc._id
+      typeof bc === "string" ? bc : bc._id,
     ) || [];
   const allowedCategoryIds =
     competition?.allowedCategories?.map((cat) =>
-      typeof cat === "string" ? cat : cat._id
+      typeof cat === "string" ? cat : cat._id,
     ) || [];
 
   useEffect(() => {
@@ -367,7 +368,7 @@ const CreateEventDialog = ({ competition, onSave, onCancel }) => {
           const filtered =
             allowedBoatClassIds.length > 0
               ? allBoatClasses.filter((bc) =>
-                  allowedBoatClassIds.includes(bc._id)
+                  allowedBoatClassIds.includes(bc._id),
                 )
               : allBoatClasses;
           setBoatClasses(filtered);
@@ -381,7 +382,7 @@ const CreateEventDialog = ({ competition, onSave, onCancel }) => {
           const filtered =
             allowedCategoryIds.length > 0
               ? allCategories.filter((cat) =>
-                  allowedCategoryIds.includes(cat._id)
+                  allowedCategoryIds.includes(cat._id),
                 )
               : allCategories;
           setCategories(filtered);
@@ -638,6 +639,123 @@ const BracketView = ({ bracket }) => {
 };
 
 /**
+ * Entries Panel Component
+ * Shows the registered entries eligible for an event, grouped by club,
+ * with each entry's classification (seed) and a per-club count.
+ */
+const EntriesPanel = ({
+  entries,
+  loading,
+  onGenerate,
+  generating,
+  canGenerate,
+}) => {
+  // Group entries by club for display
+  const groups = React.useMemo(() => {
+    const byClub = new Map();
+    for (const entry of entries) {
+      const key = entry.club || entry.clubName || "unaffiliated";
+      const label =
+        entry.clubName ||
+        (entry.representingType === "nation"
+          ? entry.representingNation || "Nation"
+          : "Unaffiliated");
+      if (!byClub.has(key)) {
+        byClub.set(key, { label, code: entry.clubCode, items: [] });
+      }
+      byClub.get(key).items.push(entry);
+    }
+    return Array.from(byClub.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+  }, [entries]);
+
+  const clubCount = groups.length;
+
+  return (
+    <div className="mb-6 bg-white rounded-lg border">
+      <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-slate-800">Registered Entries</h3>
+          <p className="text-xs text-slate-500">
+            {entries.length} entr{entries.length === 1 ? "y" : "ies"} •{" "}
+            {clubCount} club{clubCount === 1 ? "" : "s"}
+          </p>
+        </div>
+        {canGenerate && (
+          <Button
+            size="sm"
+            onClick={onGenerate}
+            disabled={generating || entries.length === 0}
+          >
+            {generating ? "Generating..." : "Generate Time Trials"}
+          </Button>
+        )}
+      </div>
+
+      <div className="p-4">
+        {loading ? (
+          <div className="text-center py-6 text-slate-400 text-sm">
+            Loading entries...
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="text-center py-6 text-slate-500 text-sm">
+            No registered entries match this event (category, boat class &amp;
+            gender). Register clubs/athletes for this competition first.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {groups.map((group, gi) => (
+              <div key={gi}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-medium text-slate-700 text-sm">
+                    {group.label}
+                  </span>
+                  {group.code && (
+                    <span className="text-xs text-slate-400">
+                      ({group.code})
+                    </span>
+                  )}
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                    {group.items.length}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {group.items.map((entry) => (
+                    <div
+                      key={entry.entryId}
+                      className="flex items-center justify-between rounded-md border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-6 h-6 flex items-center justify-center rounded bg-white text-xs font-bold text-slate-500 shrink-0">
+                          {entry.classification ?? "-"}
+                        </span>
+                        <span className="truncate text-slate-700">
+                          {entry.displayName}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded ${
+                          entry.status === "approved"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {entry.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/**
  * Main Beach Sprint Competition Page
  */
 export default function BeachSprintCompetition() {
@@ -651,6 +769,11 @@ export default function BeachSprintCompetition() {
   const [eventDetail, setEventDetail] = useState(null);
   const [bracket, setBracket] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Registered entries for the selected event
+  const [entries, setEntries] = useState([]);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [generatingTT, setGeneratingTT] = useState(false);
 
   // Dialogs
   const [showCreateEvent, setShowCreateEvent] = useState(false);
@@ -668,7 +791,7 @@ export default function BeachSprintCompetition() {
           `${API_BASE_URL}/api/competitions/${competitionId}`,
           {
             headers: { Authorization: `Bearer ${token}` },
-          }
+          },
         );
         if (response.ok) {
           setCompetition(await response.json());
@@ -685,7 +808,7 @@ export default function BeachSprintCompetition() {
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/beach-sprint/competitions/${competitionId}/events`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       if (response.ok) {
         setEvents(await response.json());
@@ -701,12 +824,42 @@ export default function BeachSprintCompetition() {
     if (token && competitionId) fetchEvents();
   }, [token, competitionId, fetchEvents]);
 
+  // Fetch registered entries for the selected event
+  const fetchEntries = useCallback(
+    async (eventId) => {
+      if (!eventId) {
+        setEntries([]);
+        return;
+      }
+      setEntriesLoading(true);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/beach-sprint/events/${eventId}/entries`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setEntries(Array.isArray(data.entries) ? data.entries : []);
+        } else {
+          setEntries([]);
+        }
+      } catch (error) {
+        console.error("Error fetching entries:", error);
+        setEntries([]);
+      } finally {
+        setEntriesLoading(false);
+      }
+    },
+    [token],
+  );
+
   // Fetch event detail when selected
   useEffect(() => {
     const fetchEventDetail = async () => {
       if (!selectedEvent) {
         setEventDetail(null);
         setBracket(null);
+        setEntries([]);
         return;
       }
 
@@ -716,13 +869,13 @@ export default function BeachSprintCompetition() {
             `${API_BASE_URL}/api/beach-sprint/events/${selectedEvent._id}`,
             {
               headers: { Authorization: `Bearer ${token}` },
-            }
+            },
           ),
           fetch(
             `${API_BASE_URL}/api/beach-sprint/events/${selectedEvent._id}/bracket`,
             {
               headers: { Authorization: `Bearer ${token}` },
-            }
+            },
           ),
         ]);
 
@@ -734,7 +887,93 @@ export default function BeachSprintCompetition() {
     };
 
     fetchEventDetail();
-  }, [token, selectedEvent]);
+    fetchEntries(selectedEvent?._id);
+  }, [token, selectedEvent, fetchEntries]);
+
+  // Generate time trial heats from the loaded entries
+  const handleGenerateTimeTrials = async () => {
+    if (!selectedEvent) return;
+    if (!entries.length) {
+      toast.error("No registered entries found for this event");
+      return;
+    }
+
+    // Map the normalized entry shape to what the generator expects:
+    // { athlete, crew, club } using ObjectId references.
+    const payloadEntries = entries.map((entry) => ({
+      athlete: entry.athlete || undefined,
+      crew: Array.isArray(entry.crew) ? entry.crew : [],
+      club: entry.club || undefined,
+    }));
+
+    setGeneratingTT(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/beach-sprint/events/${selectedEvent._id}/generate-time-trials`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ entries: payloadEntries, lanesPerHeat: 4 }),
+        },
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        toast.success(result.message || "Time trials generated");
+        fetchEvents();
+        setSelectedEvent({ ...selectedEvent });
+      } else {
+        const error = await response.json();
+        toast.error(error.message || "Failed to generate time trials");
+      }
+    } catch (error) {
+      toast.error("Failed to generate time trials");
+    } finally {
+      setGeneratingTT(false);
+    }
+  };
+
+  // Auto-generate events from registrations
+  const [generatingEvents, setGeneratingEvents] = useState(false);
+  const handleAutoGenerateEvents = async () => {
+    setGeneratingEvents(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/beach-sprint/competitions/${competitionId}/auto-generate-events`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.created?.length) {
+          toast.success(result.message);
+        } else if (result.totalGroups === 0) {
+          toast.info(
+            "No registrations found. Register clubs/athletes for this competition first.",
+          );
+        } else {
+          toast.info("All events already exist for the current registrations.");
+        }
+        fetchEvents();
+      } else {
+        const error = await response.json();
+        toast.error(error.message || "Failed to generate events");
+      }
+    } catch (error) {
+      toast.error("Failed to generate events");
+    } finally {
+      setGeneratingEvents(false);
+    }
+  };
 
   // Create event
   const handleCreateEvent = async (eventData) => {
@@ -771,7 +1010,7 @@ export default function BeachSprintCompetition() {
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (response.ok) {
@@ -798,7 +1037,7 @@ export default function BeachSprintCompetition() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ results }),
-        }
+        },
       );
 
       if (response.ok) {
@@ -821,8 +1060,8 @@ export default function BeachSprintCompetition() {
       type === "time_trial"
         ? "process-time-trial"
         : type === "finals"
-        ? "process-finals"
-        : "process-knockout";
+          ? "process-finals"
+          : "process-knockout";
 
     try {
       const response = await fetch(
@@ -834,7 +1073,7 @@ export default function BeachSprintCompetition() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ phase: selectedEvent.currentPhase }),
-        }
+        },
       );
 
       if (response.ok) {
@@ -877,9 +1116,20 @@ export default function BeachSprintCompetition() {
               </h1>
               <p className="text-slate-600">Beach Sprint Events & Brackets</p>
             </div>
-            <Button onClick={() => setShowCreateEvent(true)}>
-              + Create Event
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleAutoGenerateEvents}
+                disabled={generatingEvents}
+              >
+                {generatingEvents
+                  ? "Generating..."
+                  : "⚡ Generate Events from Registrations"}
+              </Button>
+              <Button onClick={() => setShowCreateEvent(true)}>
+                + Create Event
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -959,7 +1209,7 @@ export default function BeachSprintCompetition() {
                         </Button>
                       )}
                       {["quarterfinal", "semifinal"].includes(
-                        selectedEvent.currentPhase
+                        selectedEvent.currentPhase,
                       ) && (
                         <Button
                           size="sm"
@@ -970,7 +1220,7 @@ export default function BeachSprintCompetition() {
                         </Button>
                       )}
                       {["final_a", "final_b"].includes(
-                        selectedEvent.currentPhase
+                        selectedEvent.currentPhase,
                       ) && (
                         <Button
                           size="sm"
@@ -984,6 +1234,16 @@ export default function BeachSprintCompetition() {
                 </div>
 
                 <div className="p-6">
+                  {/* Registered entries + generate action (list view only) */}
+                  {viewMode !== "bracket" && (
+                    <EntriesPanel
+                      entries={entries}
+                      loading={entriesLoading}
+                      onGenerate={handleGenerateTimeTrials}
+                      generating={generatingTT}
+                      canGenerate={selectedEvent.currentPhase === "time_trial"}
+                    />
+                  )}
                   {viewMode === "bracket" ? (
                     <BracketView bracket={bracket} />
                   ) : (
@@ -992,7 +1252,7 @@ export default function BeachSprintCompetition() {
                         // Group races by phase
                         PHASE_ORDER.map((phase) => {
                           const phaseRaces = eventDetail.races.filter(
-                            (r) => r.phase === phase
+                            (r) => r.phase === phase,
                           );
                           if (phaseRaces.length === 0) return null;
 
