@@ -1,6 +1,8 @@
 import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
-import Competition, { isInternationalScope } from "../Models/competitionModel.js";
+import Competition, {
+  isInternationalScope,
+} from "../Models/competitionModel.js";
 import CompetitionEntry, {
   COMPETITION_ENTRY_STATUSES,
 } from "../Models/competitionEntryModel.js";
@@ -540,9 +542,12 @@ const athleteFitsCategory = (assignment, categoryDoc, allowUpCategory) => {
 
   const assignmentGender = normalizeAssignmentGender(assignment.gender);
   const categoryGender = normalizeAssignmentGender(categoryDoc.gender);
+  // Mixed categories intentionally accept both men and women. Only enforce a
+  // strict gender match for single-gender categories.
   if (
     assignmentGender &&
     categoryGender &&
+    categoryGender !== "mixed" &&
     assignmentGender !== categoryGender
   ) {
     return false;
@@ -604,7 +609,12 @@ const computeAgeOnCutoff = (birthDate, season) => {
   return age >= 0 ? age : null;
 };
 
-const buildFallbackAssignment = (athlete, categoryDoc, season, type = "national") => {
+const buildFallbackAssignment = (
+  athlete,
+  categoryDoc,
+  season,
+  type = "national",
+) => {
   if (!athlete || !categoryDoc) {
     return null;
   }
@@ -612,11 +622,19 @@ const buildFallbackAssignment = (athlete, categoryDoc, season, type = "national"
   const athleteGender = normalizeAssignmentGender(athlete.gender);
   const categoryGender = normalizeAssignmentGender(categoryDoc.gender);
 
-  if (athleteGender && categoryGender && athleteGender !== categoryGender) {
+  // Mixed categories accept both men and women — only reject on a strict
+  // gender mismatch for single-gender categories.
+  if (
+    athleteGender &&
+    categoryGender &&
+    categoryGender !== "mixed" &&
+    athleteGender !== categoryGender
+  ) {
     return null;
   }
 
   const ageOnCutoff = computeAgeOnCutoff(athlete.birthDate, season);
+
   if (typeof ageOnCutoff !== "number") {
     return null;
   }
@@ -665,7 +683,14 @@ const athleteMatchesRequestedCategory = (
 
   const athleteGender = normalizeAssignmentGender(athlete?.gender);
   const categoryGender = normalizeAssignmentGender(requestedCategoryDoc.gender);
-  if (athleteGender && categoryGender && athleteGender !== categoryGender) {
+  // Mixed categories accept both men and women; only single-gender categories
+  // enforce a strict gender match.
+  if (
+    athleteGender &&
+    categoryGender &&
+    categoryGender !== "mixed" &&
+    athleteGender !== categoryGender
+  ) {
     return false;
   }
 
@@ -931,7 +956,9 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
   }
 
   const existingEntries = await CompetitionEntry.find(entryQuery)
-    .select("athlete crew status category journeyIndex representingType representingNation documentType")
+    .select(
+      "athlete crew status category journeyIndex representingType representingNation documentType",
+    )
     .lean();
 
   const existingEntryMap = new Map();
@@ -1017,7 +1044,11 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
 
   athletes.forEach((athlete) => {
     const assignmentType = isInternational ? "international" : "national";
-    const assignment = findSeasonAssignment(athlete, competition.season, assignmentType);
+    const assignment = findSeasonAssignment(
+      athlete,
+      competition.season,
+      assignmentType,
+    );
     if (assignment?.category) {
       requestedCategories.add(assignment.category.toString());
     }
@@ -1036,10 +1067,18 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
   const eligibleAthletes = athletes
     .map((athlete) => {
       const assignmentType = isInternational ? "international" : "national";
-      let assignment = findSeasonAssignment(athlete, competition.season, assignmentType);
+      let assignment = findSeasonAssignment(
+        athlete,
+        competition.season,
+        assignmentType,
+      );
       // For international, fall back to national assignment as last resort
       if (!assignment && isInternational) {
-        assignment = findSeasonAssignment(athlete, competition.season, "national");
+        assignment = findSeasonAssignment(
+          athlete,
+          competition.season,
+          "national",
+        );
       }
       if (!assignment && selectedCategoryDoc) {
         assignment = buildFallbackAssignment(
@@ -1103,17 +1142,17 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
               gender: assignment.gender || null,
             }
           : null,
-          existingEntry: existingEntry
-            ? {
-                id: existingEntry._id?.toString?.() || null,
-                status: existingEntry.status,
-                categoryId: existingEntry.category?.toString?.() || null,
-                journeyIndex: existingEntry.journeyIndex || null,
-                representingType: existingEntry.representingType || null,
-                representingNation: existingEntry.representingNation || null,
-                documentType: existingEntry.documentType || null,
-              }
-            : null,
+        existingEntry: existingEntry
+          ? {
+              id: existingEntry._id?.toString?.() || null,
+              status: existingEntry.status,
+              categoryId: existingEntry.category?.toString?.() || null,
+              journeyIndex: existingEntry.journeyIndex || null,
+              representingType: existingEntry.representingType || null,
+              representingNation: existingEntry.representingNation || null,
+              documentType: existingEntry.documentType || null,
+            }
+          : null,
         category: serializeCategory(categoryDoc),
       };
     })
@@ -1494,9 +1533,8 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
   };
 
   for (const entry of existingActiveEntries) {
-    const crewArr = Array.isArray(entry.crew) && entry.crew.length > 1
-      ? entry.crew
-      : null;
+    const crewArr =
+      Array.isArray(entry.crew) && entry.crew.length > 1 ? entry.crew : null;
     if (!crewArr) continue; // skip singles and invalid entries
     const key = getCounterKey(entry.category, entry.boatClass);
     if (!slotMap.has(key)) slotMap.set(key, new Map());
@@ -1643,7 +1681,10 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       }
 
       // Validate license status — skip for foreign athletes and international entries without club context
-      if (!isForeignAthlete(athlete) && !(isInternational && !clubContext.clubId)) {
+      if (
+        !isForeignAthlete(athlete) &&
+        !(isInternational && !clubContext.clubId)
+      ) {
         const currentYear = new Date().getFullYear();
         const isHistoricalSeason =
           competition.season && competition.season < currentYear;
@@ -1661,9 +1702,17 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       }
 
       const assignmentType = isInternational ? "international" : "national";
-      let assignment = findSeasonAssignment(athlete, competition.season, assignmentType);
+      let assignment = findSeasonAssignment(
+        athlete,
+        competition.season,
+        assignmentType,
+      );
       if (!assignment && isInternational) {
-        assignment = findSeasonAssignment(athlete, competition.season, "national");
+        assignment = findSeasonAssignment(
+          athlete,
+          competition.season,
+          "national",
+        );
       }
       if (!assignment && categoryDoc) {
         assignment = buildFallbackAssignment(
@@ -1693,6 +1742,25 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       }
     }
 
+    // Mixed categories with more than one seat require a genuine mix — at least
+    // one man and one woman in the crew (e.g. a mixed double must be 1M + 1W).
+    if (
+      !req.body.bypassEligibility &&
+      normalizeAssignmentGender(categoryDoc.gender) === "mixed" &&
+      entry.crewIds.length > 1
+    ) {
+      const crewGenders = entry.crewIds.map((id) =>
+        normalizeAssignmentGender(athleteMap.get(id.toString())?.gender),
+      );
+      const hasMan = crewGenders.includes("men");
+      const hasWoman = crewGenders.includes("women");
+      if (!hasMan || !hasWoman) {
+        return res.status(400).json({
+          message: `A mixed crew for ${categoryDoc.abbreviation} must include both a man and a woman`,
+        });
+      }
+    }
+
     const isSingle = entry.crewIds.length === 1;
     const isCrewBoat = !isSingle;
     let nextNumber;
@@ -1710,7 +1778,9 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       let bestOverlap = 0;
 
       for (const [slotNum, slotAthletes] of slots) {
-        const overlap = [...newCrewSet].filter((id) => slotAthletes.has(id)).length;
+        const overlap = [...newCrewSet].filter((id) =>
+          slotAthletes.has(id),
+        ).length;
         if (overlap > bestOverlap) {
           bestOverlap = overlap;
           bestSlot = slotNum;
@@ -2109,7 +2179,14 @@ export const restoreEntryFromRaceLane = asyncHandler(async (req, res) => {
 
 export const updateEntry = asyncHandler(async (req, res) => {
   const { competitionId, entryId } = req.params;
-  const { seed, notes, crewNumber, representingType, representingNation, documentType } = req.body;
+  const {
+    seed,
+    notes,
+    crewNumber,
+    representingType,
+    representingNation,
+    documentType,
+  } = req.body;
 
   const role = req.user?.role;
   if (!hasManagementPrivileges(role)) {
