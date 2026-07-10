@@ -196,7 +196,7 @@ const sanitiseScope = (scope, existingScope) => {
         ? raw.hostCountry.trim().toUpperCase() || undefined
         : undefined,
     participatingFederations: sanitiseFederationList(
-      raw.participatingFederations
+      raw.participatingFederations,
     ),
     trfParticipates:
       raw.trfParticipates === undefined ? true : Boolean(raw.trfParticipates),
@@ -204,7 +204,7 @@ const sanitiseScope = (scope, existingScope) => {
       ? raw.participationMode
       : "by_club",
     foreignEligibilityMode: FOREIGN_ELIGIBILITY_MODES.includes(
-      raw.foreignEligibilityMode
+      raw.foreignEligibilityMode,
     )
       ? raw.foreignEligibilityMode
       : "relaxed",
@@ -228,6 +228,7 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
     organizer,
     registrationWindow,
     allowUpCategory,
+    bypassAgeCheck,
     allowedCategories,
     allowedBoatClasses,
     defaultDistance,
@@ -363,6 +364,9 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
   if (allowUpCategory !== undefined) {
     payload.allowUpCategory = Boolean(allowUpCategory);
   }
+  if (bypassAgeCheck !== undefined) {
+    payload.bypassAgeCheck = Boolean(bypassAgeCheck);
+  }
 
   if (allowedCategories !== undefined) {
     payload.allowedCategories = sanitiseObjectIdArray(allowedCategories);
@@ -395,14 +399,14 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
   if (scope !== undefined) {
     const scopePayload = sanitiseScope(
       scope,
-      existingCompetition?.scope?.toObject?.() ?? existingCompetition?.scope
+      existingCompetition?.scope?.toObject?.() ?? existingCompetition?.scope,
     );
     if (scopePayload) {
       // Cross-field validation for international competitions.
       if (scopePayload.type !== "national") {
         if (!scopePayload.hostCountry) {
           throw new Error(
-            "International competitions require a host country (scope.hostCountry)"
+            "International competitions require a host country (scope.hostCountry)",
           );
         }
         if (scopePayload.type === "international_oaas") {

@@ -523,7 +523,28 @@ const findSeasonAssignment = (athlete, season, type = "national") => {
   return null;
 };
 
-const athleteFitsCategory = (assignment, categoryDoc, allowUpCategory) => {
+/**
+ * Directional "up-category" eligibility.
+ *
+ * Rule (per federation logic): a YOUNGER athlete may race in an OLDER category
+ * (U15 -> U17 -> U19 -> Senior), but an athlete may NEVER drop DOWN into a
+ * younger category (U19 cannot race U17, Senior cannot race U19, etc.).
+ *
+ * Direction is decided by comparing category age-bands, NOT by the athlete's
+ * raw age against a single band (age bands can overlap or omit a maxAge). The
+ * requested category must be the SAME or OLDER than the athlete's own assigned
+ * category, i.e. requestedCategory.minAge >= assignedCategory.minAge.
+ *
+ * @param {object} assignedCategoryDoc - the athlete's own season category doc
+ *   (with minAge/maxAge). Used to determine direction.
+ */
+const athleteFitsCategory = (
+  assignment,
+  categoryDoc,
+  allowUpCategory,
+  bypassAgeCheck = false,
+  assignedCategoryDoc = null,
+) => {
   if (!assignment || !categoryDoc) {
     return false;
   }
@@ -536,7 +557,9 @@ const athleteFitsCategory = (assignment, categoryDoc, allowUpCategory) => {
     return true;
   }
 
-  if (!allowUpCategory) {
+  // Registering into a DIFFERENT category is only permitted when either
+  // up-category racing is enabled or age checks are bypassed.
+  if (!allowUpCategory && !bypassAgeCheck) {
     return false;
   }
 
@@ -553,20 +576,45 @@ const athleteFitsCategory = (assignment, categoryDoc, allowUpCategory) => {
     return false;
   }
 
-  if (typeof assignment.ageOnCutoff !== "number") {
-    return false;
+  return isUpOrSameCategory(assignedCategoryDoc, categoryDoc, assignment);
+};
+
+/**
+ * Returns true when `requestedCategoryDoc` is the SAME age level or OLDER than
+ * `assignedCategoryDoc` (i.e. moving up is allowed, moving down is not).
+ *
+ * Primary comparison uses category minAge (a higher minAge = an older
+ * category). When the athlete's assigned category is unknown, we fall back to
+ * the athlete's age vs the requested category's maxAge ceiling.
+ */
+const isUpOrSameCategory = (
+  assignedCategoryDoc,
+  requestedCategoryDoc,
+  assignment,
+) => {
+  const requestedMin =
+    typeof requestedCategoryDoc?.minAge === "number"
+      ? requestedCategoryDoc.minAge
+      : null;
+  const assignedMin =
+    typeof assignedCategoryDoc?.minAge === "number"
+      ? assignedCategoryDoc.minAge
+      : null;
+
+  if (requestedMin !== null && assignedMin !== null) {
+    // Requested is older-or-equal -> up/same allowed. Younger -> down, blocked.
+    return requestedMin >= assignedMin;
   }
 
-  const meetsMin =
-    typeof categoryDoc.minAge === "number"
-      ? assignment.ageOnCutoff >= categoryDoc.minAge
-      : true;
-  const meetsMax =
-    typeof categoryDoc.maxAge === "number"
-      ? assignment.ageOnCutoff <= categoryDoc.maxAge
-      : true;
+  // Fallback (assigned category unknown): block an athlete who is clearly too
+  // OLD for the requested band (older athlete dropping down), otherwise allow.
+  const age =
+    typeof assignment?.ageOnCutoff === "number" ? assignment.ageOnCutoff : null;
+  if (age !== null && typeof requestedCategoryDoc?.maxAge === "number") {
+    return age <= requestedCategoryDoc.maxAge;
+  }
 
-  return meetsMin && meetsMax;
+  return true;
 };
 
 const normalizeAssignmentGender = (gender) => {
@@ -668,6 +716,9 @@ const athleteMatchesRequestedCategory = (
   assignment,
   requestedCategoryDoc,
   season,
+  allowUpCategory = false,
+  bypassAgeCheck = false,
+  assignedCategoryDoc = null,
 ) => {
   if (!requestedCategoryDoc) {
     return true;
@@ -679,6 +730,12 @@ const athleteMatchesRequestedCategory = (
     assignmentCategoryId === requestedCategoryDoc._id?.toString?.()
   ) {
     return true;
+  }
+
+  // Registering into a DIFFERENT category than the athlete's own assignment is
+  // only permitted when up-category racing is enabled or age is bypassed.
+  if (!allowUpCategory && !bypassAgeCheck) {
+    return false;
   }
 
   const athleteGender = normalizeAssignmentGender(athlete?.gender);
@@ -694,25 +751,16 @@ const athleteMatchesRequestedCategory = (
     return false;
   }
 
-  const ageFromAssignment =
-    typeof assignment?.ageOnCutoff === "number" ? assignment.ageOnCutoff : null;
-  const ageOnCutoff =
-    ageFromAssignment ?? computeAgeOnCutoff(athlete?.birthDate, season);
-
-  if (typeof ageOnCutoff !== "number") {
-    return false;
-  }
-
-  const meetsMin =
-    typeof requestedCategoryDoc.minAge === "number"
-      ? ageOnCutoff >= requestedCategoryDoc.minAge
-      : true;
-  const meetsMax =
-    typeof requestedCategoryDoc.maxAge === "number"
-      ? ageOnCutoff <= requestedCategoryDoc.maxAge
-      : true;
-
-  return meetsMin && meetsMax;
+  // Directional up-category rule: requested category must be same-or-older than
+  // the athlete's own assigned category (younger athletes may move up; older
+  // athletes may never drop down).
+  return isUpOrSameCategory(assignedCategoryDoc, requestedCategoryDoc, {
+    ...assignment,
+    ageOnCutoff:
+      typeof assignment?.ageOnCutoff === "number"
+        ? assignment.ageOnCutoff
+        : computeAgeOnCutoff(athlete?.birthDate, season),
+  });
 };
 
 const populateEntryDoc = async (entryDoc) =>
@@ -872,6 +920,7 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
       registrationStatus: effectiveStatus,
       registrationWindow: competition.registrationWindow || {},
       allowUpCategory: competition.allowUpCategory,
+      bypassAgeCheck: competition.bypassAgeCheck,
       allowedCategories,
       allowedBoatClasses,
       stages: competition.stages || [],
@@ -1105,12 +1154,18 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
 
       if (categoryId) {
         const requestedCategoryDoc = categoryMap.get(categoryId.toString());
+        const assignedCategoryDoc = categoryMap.get(
+          assignment.category?.toString?.(),
+        );
         if (
           !athleteMatchesRequestedCategory(
             athlete,
             assignment,
             requestedCategoryDoc,
             competition.season,
+            competition.allowUpCategory,
+            competition.bypassAgeCheck,
+            assignedCategoryDoc,
           )
         ) {
           return null;
@@ -1261,6 +1316,8 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
             assignment,
             selectedCategoryDoc || categoryMap.get(categoryId.toString()),
             competition.allowUpCategory,
+            competition.bypassAgeCheck,
+            categoryMap.get(assignment?.category?.toString?.()),
           )
         : true;
 
@@ -1728,12 +1785,25 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         });
       }
 
+      // Resolve the athlete's OWN assigned category doc so we can enforce the
+      // directional up-category rule (younger may go up, older may not go down).
+      let assignedCategoryDoc = categoryMap.get(
+        assignment.category?.toString?.(),
+      );
+      if (!assignedCategoryDoc && assignment.category) {
+        assignedCategoryDoc = await Category.findById(assignment.category)
+          .select("abbreviation titles gender minAge maxAge")
+          .lean();
+      }
+
       if (
         !req.body.bypassEligibility &&
         !athleteFitsCategory(
           assignment,
           categoryDoc,
           competition.allowUpCategory,
+          competition.bypassAgeCheck,
+          assignedCategoryDoc,
         )
       ) {
         return res.status(400).json({

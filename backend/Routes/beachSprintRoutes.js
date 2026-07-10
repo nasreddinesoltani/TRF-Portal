@@ -55,6 +55,12 @@ router.delete(
 // Get event bracket
 router.get("/events/:eventId/bracket", beachSprintController.getEventBracket);
 
+// Export all competition entries as an "Entries by Team" Excel file
+router.get(
+  "/competitions/:competitionId/entries-export",
+  beachSprintController.exportEntriesByTeam,
+);
+
 // Get registered entries eligible for an event
 router.get("/events/:eventId/entries", beachSprintController.getEventEntries);
 

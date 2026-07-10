@@ -328,6 +328,7 @@ const createDefaultFormState = () => {
     venueCountry: "",
     defaultDistance: "",
     allowUpCategory: true,
+    bypassAgeCheck: false,
     registrationOpenAt: "",
     registrationCloseAt: "",
     notes: "",
@@ -564,6 +565,7 @@ const CompetitionManagement = () => {
               ? payload.defaultDistance.toString()
               : "",
           allowUpCategory: Boolean(payload.allowUpCategory),
+          bypassAgeCheck: Boolean(payload.bypassAgeCheck),
           registrationOpenAt: formatDateInput(
             payload.registrationWindow?.openAt,
           ),
@@ -598,8 +600,7 @@ const CompetitionManagement = () => {
               }))
             : [],
           scopeType: payload.scope?.type || "national",
-          scopeOrganiserFederation:
-            payload.scope?.organiserFederation || "",
+          scopeOrganiserFederation: payload.scope?.organiserFederation || "",
           scopeHostCountry: payload.scope?.hostCountry || "",
           scopeParticipatingFederations: Array.isArray(
             payload.scope?.participatingFederations,
@@ -610,8 +611,7 @@ const CompetitionManagement = () => {
             payload.scope?.trfParticipates !== undefined
               ? payload.scope.trfParticipates
               : true,
-          scopeParticipationMode:
-            payload.scope?.participationMode || "by_club",
+          scopeParticipationMode: payload.scope?.participationMode || "by_club",
           scopeForeignEligibilityMode:
             payload.scope?.foreignEligibilityMode || "relaxed",
         });
@@ -710,6 +710,7 @@ const CompetitionManagement = () => {
         country: formState.venueCountry.trim() || undefined,
       },
       allowUpCategory: Boolean(formState.allowUpCategory),
+      bypassAgeCheck: Boolean(formState.bypassAgeCheck),
       allowedCategories: formState.allowedCategories,
       allowedBoatClasses: formState.allowedBoatClasses,
       defaultDistance: formState.defaultDistance
@@ -1324,6 +1325,7 @@ const CompetitionManagement = () => {
               : "Set per event",
           ],
           ["Up-category", comp.allowUpCategory ? "Allowed" : "Not allowed"],
+          ["Age check", comp.bypassAgeCheck ? "Bypassed" : "Enforced"],
           ["Registration", regState.label],
           ["Results", RESULTS_STATUS_LABELS[comp.resultsStatus] || "Pending"],
         ],
@@ -2350,6 +2352,14 @@ const CompetitionManagement = () => {
                           : "Not allowed"}
                       </p>
                     </div>
+                    <div>
+                      <p className="info-label">Age check</p>
+                      <p className="info-value">
+                        {selectedCompetition.bypassAgeCheck
+                          ? "Bypassed (any category)"
+                          : "Enforced"}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -2605,7 +2615,8 @@ const CompetitionManagement = () => {
                     </div>
                     <div className="space-y-2 md:col-span-2">
                       <Label htmlFor="scopeParticipatingFederations">
-                        Participating federations (comma-separated Alpha-3 codes)
+                        Participating federations (comma-separated Alpha-3
+                        codes)
                       </Label>
                       <Input
                         id="scopeParticipatingFederations"
@@ -2949,6 +2960,16 @@ const CompetitionManagement = () => {
                         disabled={!canManage}
                       />{" "}
                       Allow up-category racing
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-600">
+                      <input
+                        type="checkbox"
+                        name="bypassAgeCheck"
+                        checked={formState.bypassAgeCheck}
+                        onChange={handleInputChange}
+                        disabled={!canManage}
+                      />{" "}
+                      Bypass age check (any category)
                     </label>
                   </div>
                 </div>

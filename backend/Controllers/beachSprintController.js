@@ -177,6 +177,33 @@ export const getEventBracket = async (req, res) => {
 };
 
 /**
+ * Export all competition entries as an "Entries by Team" Excel file that
+ * matches the layout expected by the external race-management system.
+ * GET /api/beach-sprint/competitions/:competitionId/entries-export
+ */
+export const exportEntriesByTeam = async (req, res) => {
+  try {
+    const { competitionId } = req.params;
+
+    const { buffer, fileName } =
+      await beachSprintService.generateEntriesByTeamWorkbook(competitionId);
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    console.error("Error exporting entries by team:", error);
+    if (error.message === "Competition not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * Get registered entries eligible for an event
  * GET /api/beach-sprint/events/:eventId/entries
  */

@@ -138,7 +138,7 @@ const registrationWindowSchema = new mongoose.Schema(
     openAt: { type: Date },
     closeAt: { type: Date },
   },
-  { _id: false }
+  { _id: false },
 );
 
 // International competition scope. Defaults to "national" so every existing
@@ -171,7 +171,7 @@ const scopeSchema = new mongoose.Schema(
       default: "relaxed",
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const competitionSchema = new mongoose.Schema(
@@ -244,6 +244,13 @@ const competitionSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // When true, ALL age checks are skipped during registration (any age can
+    // be entered in any category). Gender/para/membership rules still apply.
+    bypassAgeCheck: {
+      type: Boolean,
+      default: false,
+    },
+
     allowedCategories: [
       {
         type: mongoose.Schema.Types.ObjectId,

@@ -9,6 +9,7 @@
  * - Club standings calculation
  */
 
+import ExcelJS from "exceljs";
 import {
   BeachSprintEvent,
   BeachSprintRace,
@@ -17,6 +18,7 @@ import {
   PROGRESSION_RULES,
 } from "../Models/beachSprintModel.js";
 import CompetitionEntry from "../Models/competitionEntryModel.js";
+import Competition from "../Models/competitionModel.js";
 
 /**
  * Parse time string to milliseconds
@@ -933,9 +935,235 @@ async function getEventEntries(eventId) {
   return { event, entries, total: entries.length };
 }
 
+/**
+ * Format a Date (or date string) to an ISO "YYYY-MM-DD" string.
+ * Returns "" for missing/invalid values.
+ */
+function formatDateYMD(value) {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Derive the age-group prefix used by the external race-management system
+ * from a Category. Rules (per federation usage):
+ *   - Under-17 category  -> "U17"
+ *   - Junior category    -> "J"
+ *   - Senior category    -> "" (no prefix)
+ */
+function ageGroupPrefix(category) {
+  if (!category) return "";
+  const abbr = String(category.abbreviation || "").toUpperCase();
+  const titleEn = String(category.titles?.en || "").toUpperCase();
+  const haystack = `${abbr} ${titleEn}`;
+
+  if (/(U-?17|UNDER\s*17)/.test(haystack)) return "U17";
+  // Match a junior category but avoid matching "senior".
+  if (/\bJ(UNIOR)?\b/.test(haystack) || /^J/.test(abbr)) return "J";
+  return "";
+}
+
+/**
+ * Map a gender value to the external system's letter:
+ *   men -> "M", women -> "W", mixed -> "Mix".
+ * Accepts category gender ("men"/"women"/"mixed") or event gender
+ * ("M"/"F"/"Mixed").
+ */
+function eventGenderLetter(gender) {
+  const g = String(gender || "").toLowerCase();
+  if (g === "men" || g === "m" || g === "male") return "M";
+  if (g === "women" || g === "f" || g === "female") return "W";
+  return "Mix";
+}
+
+/**
+ * Build the external "Event" code for an entry, e.g. "U17CW1x", "JCM2x",
+ * "CMix2x". Format: [agePrefix] + "C" (Coastal) + genderLetter + boatCode.
+ *
+ * @param {object} category  - populated Category document
+ * @param {object} boatClass - populated BoatClass document
+ * @returns {string}
+ */
+function buildEventCode(category, boatClass) {
+  const prefix = ageGroupPrefix(category);
+  const gender = eventGenderLetter(category?.gender);
+
+  // Boat class codes may already embed the discipline/gender (e.g. "C1x",
+  // "C2x", "Cmix2x"). We only want the boat SIZE ("1x"/"2x") here, since the
+  // external "Event" code is composed as [agePrefix] + "C" + gender + size.
+  const rawCode = String(boatClass?.code || "").toLowerCase();
+  const sizeMatch = rawCode.match(/\d+x/);
+  const boatSize = sizeMatch ? sizeMatch[0] : rawCode.replace(/[^0-9x]/gi, "");
+
+  return `${prefix}C${gender}${boatSize}`;
+}
+
+/**
+ * Determine the seat "Position" label for a crew member.
+ * The `crew` array order encodes seating (index 0 = Bow, last = Stroke),
+ * matching how registration stores/reorders crew.
+ *   - Single or bow seat  -> "b"
+ *   - Stroke seat (last)  -> "s"
+ *   - Middle seats        -> seat number ("2", "3", ...)
+ */
+function seatPositionLabel(index, crewSize) {
+  if (crewSize <= 1) return "b";
+  if (index === 0) return "b";
+  if (index === crewSize - 1) return "s";
+  return String(index + 1);
+}
+
+/**
+ * Build the "Entries by Team" Excel workbook for a competition, matching the
+ * exact column layout expected by the external race-management system.
+ *
+ * One row is produced per athlete per entry (crew boats expand to multiple
+ * rows sharing the same Crew Number and Event).
+ *
+ * @param {string} competitionId
+ * @returns {Promise<{ buffer: Buffer, fileName: string, rowCount: number }>}
+ */
+async function generateEntriesByTeamWorkbook(competitionId) {
+  const competition = await Competition.findById(competitionId).lean();
+  if (!competition) throw new Error("Competition not found");
+
+  const entries = await CompetitionEntry.find({
+    competition: competitionId,
+    status: { $nin: ["rejected", "withdrawn"] },
+  })
+    .populate("athlete")
+    .populate("crew")
+    .populate("club")
+    .populate("category")
+    .populate("boatClass")
+    .sort({ createdAt: 1 });
+
+  // Expand entries into per-athlete rows.
+  const rows = [];
+  for (const entry of entries) {
+    const club = entry.club || null;
+    const isNation = entry.representingType === "nation";
+
+    // Team identity: nation code for international entries, else club code.
+    const teamCode = isNation
+      ? entry.representingNation || club?.code || ""
+      : club?.code || "";
+    const teamName = isNation
+      ? entry.representingNation || club?.name || ""
+      : club?.name || "";
+    const teamLeader = club?.contacts?.primaryName || "";
+    const leaderTel = club?.contacts?.primaryPhone || club?.phone || "";
+    const email = club?.email || "";
+    const entryDate = formatDateYMD(entry.submittedAt || entry.createdAt);
+
+    const eventCode = buildEventCode(entry.category, entry.boatClass);
+    const crewNumber = entry.crewNumber || 1;
+
+    // Build the ordered athlete list for this entry (single or crew).
+    const athletes =
+      Array.isArray(entry.crew) && entry.crew.length > 0
+        ? entry.crew
+        : entry.athlete
+          ? [entry.athlete]
+          : [];
+
+    const crewSize = athletes.length;
+
+    athletes.forEach((athlete, index) => {
+      if (!athlete) return;
+      const nationality =
+        athlete.nationalityCode || athlete.nationality || teamCode || "";
+      const athleteId =
+        athlete.licenseNumber ||
+        athlete.passportNumber ||
+        athlete.cin ||
+        athlete.fisaId ||
+        "";
+
+      rows.push({
+        teamCode,
+        teamName,
+        teamLeader,
+        leaderTel,
+        email,
+        entryDate,
+        familyName: athlete.lastName || "",
+        givenName: athlete.firstName || "",
+        gender: athlete.gender === "female" ? "F" : "M",
+        dateOfBirth: formatDateYMD(athlete.birthDate),
+        nationality,
+        athleteId,
+        event: eventCode,
+        crewNumber,
+        position: seatPositionLabel(index, crewSize),
+      });
+    });
+  }
+
+  // Sort for a clean, grouped file: Team, Event, Crew Number, then seat.
+  const seatRank = (p) => (p === "b" ? 0 : p === "s" ? 99 : Number(p) || 50);
+  rows.sort((a, b) => {
+    if (a.teamCode !== b.teamCode) return a.teamCode.localeCompare(b.teamCode);
+    if (a.event !== b.event) return a.event.localeCompare(b.event);
+    if (a.crewNumber !== b.crewNumber) return a.crewNumber - b.crewNumber;
+    return seatRank(a.position) - seatRank(b.position);
+  });
+
+  // Build the workbook.
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "TRF Portal";
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet("Entries by Team");
+  worksheet.columns = [
+    { header: "Team Code", key: "teamCode", width: 12 },
+    { header: "Team Name", key: "teamName", width: 20 },
+    { header: "Team Leader", key: "teamLeader", width: 18 },
+    { header: "Leader Tel", key: "leaderTel", width: 14 },
+    { header: "Email", key: "email", width: 22 },
+    { header: "Entry Date", key: "entryDate", width: 12 },
+    { header: "Family Name", key: "familyName", width: 18 },
+    { header: "Given Name", key: "givenName", width: 18 },
+    { header: "Gender", key: "gender", width: 8 },
+    { header: "Date Of Birth", key: "dateOfBirth", width: 13 },
+    { header: "Nationality", key: "nationality", width: 11 },
+    {
+      header: "Athlete ID/Passport/License No.",
+      key: "athleteId",
+      width: 28,
+    },
+    { header: "Event", key: "event", width: 12 },
+    { header: "Crew Number", key: "crewNumber", width: 12 },
+    { header: "Position", key: "position", width: 9 },
+  ];
+
+  // Force text formatting so codes/ids are not coerced to numbers/dates.
+  worksheet.getColumn("entryDate").numFmt = "@";
+  worksheet.getColumn("dateOfBirth").numFmt = "@";
+  worksheet.getColumn("athleteId").numFmt = "@";
+
+  worksheet.getRow(1).font = { bold: true };
+
+  rows.forEach((row) => worksheet.addRow(row));
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const safeName = String(competition.name || "competition")
+    .replace(/[^a-z0-9]+/gi, "_")
+    .replace(/^_+|_+$/g, "");
+  const fileName = `Entries_by_Team_${safeName || "competition"}.xlsx`;
+
+  return { buffer, fileName, rowCount: rows.length };
+}
+
 export {
   createEvent,
   autoGenerateEvents,
+  generateEntriesByTeamWorkbook,
   getEventsByCompetition,
   getEventWithRaces,
   getEventEntries,

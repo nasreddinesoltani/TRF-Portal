@@ -936,6 +936,50 @@ export default function BeachSprintCompetition() {
     }
   };
 
+  // Export all entries as "Entries by Team" Excel
+  const [exportingEntries, setExportingEntries] = useState(false);
+  const handleExportEntries = async () => {
+    setExportingEntries(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/beach-sprint/competitions/${competitionId}/entries-export`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (!response.ok) {
+        let message = "Failed to export entries";
+        try {
+          const error = await response.json();
+          message = error.message || message;
+        } catch {
+          // response was not JSON (unexpected)
+        }
+        toast.error(message);
+        return;
+      }
+
+      // Derive filename from the Content-Disposition header when present.
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="?([^"]+)"?/i);
+      const fileName = match ? match[1] : "Entries_by_Team.xlsx";
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Entries exported");
+    } catch (error) {
+      toast.error("Failed to export entries");
+    } finally {
+      setExportingEntries(false);
+    }
+  };
+
   // Auto-generate events from registrations
   const [generatingEvents, setGeneratingEvents] = useState(false);
   const handleAutoGenerateEvents = async () => {
@@ -1117,6 +1161,15 @@ export default function BeachSprintCompetition() {
               <p className="text-slate-600">Beach Sprint Events & Brackets</p>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleExportEntries}
+                disabled={exportingEntries}
+              >
+                {exportingEntries
+                  ? "Exporting..."
+                  : "📥 Export Entries (Excel)"}
+              </Button>
               <Button
                 variant="outline"
                 onClick={handleAutoGenerateEvents}
