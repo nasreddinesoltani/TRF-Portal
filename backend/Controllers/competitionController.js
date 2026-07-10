@@ -229,6 +229,7 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
     registrationWindow,
     allowUpCategory,
     bypassAgeCheck,
+    allowMultipleEntries,
     allowedCategories,
     allowedBoatClasses,
     defaultDistance,
@@ -366,6 +367,9 @@ const buildCompetitionPayload = (body, userId, options = {}) => {
   }
   if (bypassAgeCheck !== undefined) {
     payload.bypassAgeCheck = Boolean(bypassAgeCheck);
+  }
+  if (allowMultipleEntries !== undefined) {
+    payload.allowMultipleEntries = Boolean(allowMultipleEntries);
   }
 
   if (allowedCategories !== undefined) {

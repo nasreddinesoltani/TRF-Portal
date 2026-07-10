@@ -250,6 +250,13 @@ const competitionSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // When true, an athlete may be entered in more than one event of this
+    // competition (e.g. a 1x and a 2x). Beach/coastal disciplines and
+    // championship competitions always allow this regardless of the flag.
+    allowMultipleEntries: {
+      type: Boolean,
+      default: false,
+    },
 
     allowedCategories: [
       {

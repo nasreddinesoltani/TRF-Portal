@@ -921,6 +921,7 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
       registrationWindow: competition.registrationWindow || {},
       allowUpCategory: competition.allowUpCategory,
       bypassAgeCheck: competition.bypassAgeCheck,
+      allowMultipleEntries: competition.allowMultipleEntries,
       allowedCategories,
       allowedBoatClasses,
       stages: competition.stages || [],
@@ -1682,6 +1683,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
         competition.discipline === "beach" ||
         competition.discipline === "coastal" ||
         competition.competitionType === "championship" ||
+        competition.allowMultipleEntries === true ||
         req.body.bypassMultipleEntries === true;
 
       const jKey = `${idStr}_${entry.journeyIndex || "all"}`;

@@ -329,6 +329,7 @@ const createDefaultFormState = () => {
     defaultDistance: "",
     allowUpCategory: true,
     bypassAgeCheck: false,
+    allowMultipleEntries: false,
     registrationOpenAt: "",
     registrationCloseAt: "",
     notes: "",
@@ -566,6 +567,7 @@ const CompetitionManagement = () => {
               : "",
           allowUpCategory: Boolean(payload.allowUpCategory),
           bypassAgeCheck: Boolean(payload.bypassAgeCheck),
+          allowMultipleEntries: Boolean(payload.allowMultipleEntries),
           registrationOpenAt: formatDateInput(
             payload.registrationWindow?.openAt,
           ),
@@ -711,6 +713,7 @@ const CompetitionManagement = () => {
       },
       allowUpCategory: Boolean(formState.allowUpCategory),
       bypassAgeCheck: Boolean(formState.bypassAgeCheck),
+      allowMultipleEntries: Boolean(formState.allowMultipleEntries),
       allowedCategories: formState.allowedCategories,
       allowedBoatClasses: formState.allowedBoatClasses,
       defaultDistance: formState.defaultDistance
@@ -1326,6 +1329,10 @@ const CompetitionManagement = () => {
           ],
           ["Up-category", comp.allowUpCategory ? "Allowed" : "Not allowed"],
           ["Age check", comp.bypassAgeCheck ? "Bypassed" : "Enforced"],
+          [
+            "Multiple entries",
+            comp.allowMultipleEntries ? "Allowed" : "Not allowed",
+          ],
           ["Registration", regState.label],
           ["Results", RESULTS_STATUS_LABELS[comp.resultsStatus] || "Pending"],
         ],
@@ -2360,6 +2367,17 @@ const CompetitionManagement = () => {
                           : "Enforced"}
                       </p>
                     </div>
+                    <div>
+                      <p className="info-label">Multiple entries</p>
+                      <p className="info-value">
+                        {selectedCompetition.allowMultipleEntries ||
+                        selectedCompetition.discipline === "beach" ||
+                        selectedCompetition.discipline === "coastal" ||
+                        selectedCompetition.competitionType === "championship"
+                          ? "Allowed"
+                          : "Not allowed"}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -2970,6 +2988,16 @@ const CompetitionManagement = () => {
                         disabled={!canManage}
                       />{" "}
                       Bypass age check (any category)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-600">
+                      <input
+                        type="checkbox"
+                        name="allowMultipleEntries"
+                        checked={formState.allowMultipleEntries}
+                        onChange={handleInputChange}
+                        disabled={!canManage}
+                      />{" "}
+                      Multiple entries/athlete
                     </label>
                   </div>
                 </div>
