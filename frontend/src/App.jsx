@@ -42,6 +42,18 @@ const BeachSprintCompetition = lazy(
 const CompetitionDetail = lazy(() => import("./pages/CompetitionDetail"));
 const RaceDetail = lazy(() => import("./pages/RaceDetail"));
 
+// Public event & team information pages
+const EventPage = lazy(() => import("./pages/EventPage"));
+const VisaPage = lazy(() => import("./pages/teams/VisaPage"));
+const AccommodationPage = lazy(() => import("./pages/teams/AccommodationPage"));
+const TransportationPage = lazy(
+  () => import("./pages/teams/TransportationPage"),
+);
+const AccreditationPage = lazy(() => import("./pages/teams/AccreditationPage"));
+const BoatsEquipmentsPage = lazy(
+  () => import("./pages/teams/BoatsEquipmentsPage"),
+);
+
 function App() {
   return (
     <Router>
@@ -78,6 +90,24 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<PublicHome />} />
             <Route path="/competition/:id" element={<CompetitionDetail />} />
+            <Route path="/events/:slug" element={<EventPage />} />
+            <Route path="/teams/visa" element={<VisaPage />} />
+            <Route
+              path="/teams/accommodation"
+              element={<AccommodationPage />}
+            />
+            <Route
+              path="/teams/transportation"
+              element={<TransportationPage />}
+            />
+            <Route
+              path="/teams/accreditation"
+              element={<AccreditationPage />}
+            />
+            <Route
+              path="/teams/boats-equipments"
+              element={<BoatsEquipmentsPage />}
+            />
             <Route
               path="/dashboard"
               element={

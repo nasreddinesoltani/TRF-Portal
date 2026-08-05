@@ -53,6 +53,7 @@ export const createClub = asyncHandler(async (req, res) => {
     phone,
     address,
     city,
+    governorate,
     logoUrl,
     seasonActivation,
     contact = {},
@@ -135,6 +136,7 @@ export const createClub = asyncHandler(async (req, res) => {
     phone,
     address,
     city,
+    governorate,
     logoUrl,
     code: clubCode,
     contacts: {
@@ -318,6 +320,7 @@ export const updateClub = asyncHandler(async (req, res) => {
     phone,
     address,
     city,
+    governorate,
     logoUrl,
     isActive,
     seasonActivation,
@@ -427,6 +430,10 @@ export const updateClub = asyncHandler(async (req, res) => {
 
   if (city !== undefined) {
     updates.city = city;
+  }
+
+  if (governorate !== undefined) {
+    updates.governorate = governorate;
   }
 
   if (logoUrl !== undefined) {

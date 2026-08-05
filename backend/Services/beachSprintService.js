@@ -88,10 +88,26 @@ async function createEvent(eventData) {
  * Get all events for a competition
  */
 async function getEventsByCompetition(competitionId) {
-  return BeachSprintEvent.find({ competition: competitionId })
+  const events = await BeachSprintEvent.find({ competition: competitionId })
     .populate("boatClass")
     .populate("category")
-    .sort({ gender: 1, "category.ageMin": -1 });
+    .sort({ gender: 1, "category.ageMin": -1 })
+    .lean();
+
+  if (!events.length) return events;
+
+  const raceCounts = await BeachSprintRace.aggregate([
+    { $match: { event: { $in: events.map((event) => event._id) } } },
+    { $group: { _id: "$event", count: { $sum: 1 } } },
+  ]);
+  const countByEvent = new Map(
+    raceCounts.map((item) => [item._id.toString(), item.count]),
+  );
+
+  return events.map((event) => ({
+    ...event,
+    raceCount: countByEvent.get(event._id.toString()) || 0,
+  }));
 }
 
 /**
@@ -982,8 +998,8 @@ function eventGenderLetter(gender) {
 }
 
 /**
- * Build the external "Event" code for an entry, e.g. "U17CW1x", "JCM2x",
- * "CMix2x". Format: [agePrefix] + "C" (Coastal) + genderLetter + boatCode.
+ * Build the external "Event" code for an entry, e.g. "CU17W1x", "CJM2x",
+ * "CMix2x". Format: "C" (Coastal) + [agePrefix] + genderLetter + boatCode.
  *
  * @param {object} category  - populated Category document
  * @param {object} boatClass - populated BoatClass document
@@ -995,12 +1011,12 @@ function buildEventCode(category, boatClass) {
 
   // Boat class codes may already embed the discipline/gender (e.g. "C1x",
   // "C2x", "Cmix2x"). We only want the boat SIZE ("1x"/"2x") here, since the
-  // external "Event" code is composed as [agePrefix] + "C" + gender + size.
+  // external "Event" code is composed as "C" + [agePrefix] + gender + size.
   const rawCode = String(boatClass?.code || "").toLowerCase();
   const sizeMatch = rawCode.match(/\d+x/);
   const boatSize = sizeMatch ? sizeMatch[0] : rawCode.replace(/[^0-9x]/gi, "");
 
-  return `${prefix}C${gender}${boatSize}`;
+  return `C${prefix}${gender}${boatSize}`;
 }
 
 /**

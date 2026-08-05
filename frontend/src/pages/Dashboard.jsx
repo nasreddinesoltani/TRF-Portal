@@ -4,15 +4,16 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { DataGrid } from "../components/DataGrid";
 import EditUserModal from "../components/EditUserModal";
+import LicenseStatisticsModal from "../components/LicenseStatisticsModal";
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "react-toastify";
-import { 
-  Users, 
-  UserCheck, 
-  AlertCircle, 
-  ShieldAlert, 
+import {
+  Users,
+  UserCheck,
+  AlertCircle,
+  ShieldAlert,
   RefreshCw,
   TrendingUp,
   Award,
@@ -22,7 +23,7 @@ import {
   Plus,
   Search,
   ChevronRight,
-  Clock
+  Clock,
 } from "lucide-react";
 
 const API_BASE_URL = "";
@@ -55,12 +56,20 @@ const StatCard = ({ title, value, subtitle, icon, color = "blue", trend }) => {
     >
       <div className="flex items-start justify-between">
         <div className="space-y-1">
-          <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">{title}</p>
-          <p className="text-3xl font-black text-slate-900 group-hover:scale-105 transition-transform origin-left">{value ?? 0}</p>
-          {subtitle && <p className="text-xs text-slate-400 font-medium">{subtitle}</p>}
+          <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
+            {title}
+          </p>
+          <p className="text-3xl font-black text-slate-900 group-hover:scale-105 transition-transform origin-left">
+            {value ?? 0}
+          </p>
+          {subtitle && (
+            <p className="text-xs text-slate-400 font-medium">{subtitle}</p>
+          )}
         </div>
         {icon && (
-          <div className={`rounded-xl p-3 ${iconBgClasses[color]} text-white shadow-lg`}>
+          <div
+            className={`rounded-xl p-3 ${iconBgClasses[color]} text-white shadow-lg`}
+          >
             {icon}
           </div>
         )}
@@ -208,6 +217,7 @@ function Dashboard() {
   const [pendingDeletions, setPendingDeletions] = useState([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [showLicenseStats, setShowLicenseStats] = useState(false);
 
   const { token, user } = useAuth();
   const navigate = useNavigate();
@@ -242,20 +252,21 @@ function Dashboard() {
     setIsActionLoading(true);
     try {
       // Parallel fetch for better performance
-      const [statsRes, clubsRes, transfersRes, deletionsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/athletes/stats`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${API_BASE_URL}/api/clubs`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${API_BASE_URL}/api/athlete-transfers`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${API_BASE_URL}/api/athlete-deletions`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      ]);
+      const [statsRes, clubsRes, transfersRes, deletionsRes] =
+        await Promise.all([
+          fetch(`${API_BASE_URL}/api/athletes/stats`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE_URL}/api/clubs`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE_URL}/api/athlete-transfers`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE_URL}/api/athlete-deletions`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
 
       if (statsRes.ok) {
         setAthleteStats(await statsRes.json());
@@ -266,11 +277,15 @@ function Dashboard() {
       if (transfersRes.ok) {
         const transfers = await transfersRes.json();
         // Filter for pending status if necessary, or just store all
-        setPendingTransfers(transfers.filter(t => t.status === 'pending') || []);
+        setPendingTransfers(
+          transfers.filter((t) => t.status === "pending") || [],
+        );
       }
       if (deletionsRes.ok) {
         const deletions = await deletionsRes.json();
-        setPendingDeletions(deletions.filter(d => d.status === 'pending') || []);
+        setPendingDeletions(
+          deletions.filter((d) => d.status === "pending") || [],
+        );
       }
     } catch (err) {
       console.error("Error loading analytics:", err);
@@ -385,13 +400,13 @@ function Dashboard() {
 
     if (categoryFilter !== "all") {
       filtered = filtered.filter(
-        (currentUser) => currentUser.category === categoryFilter
+        (currentUser) => currentUser.category === categoryFilter,
       );
     }
 
     if (genderFilter !== "all") {
       filtered = filtered.filter(
-        (currentUser) => currentUser.gender === genderFilter
+        (currentUser) => currentUser.gender === genderFilter,
       );
     }
 
@@ -402,7 +417,7 @@ function Dashboard() {
           currentUser.firstName.toLowerCase().includes(term) ||
           currentUser.lastName.toLowerCase().includes(term) ||
           currentUser.email.toLowerCase().includes(term) ||
-          currentUser.city.toLowerCase().includes(term)
+          currentUser.city.toLowerCase().includes(term),
       );
     }
 
@@ -514,11 +529,36 @@ function Dashboard() {
       value ? new Date(value).toLocaleDateString() : "-";
 
     const clubStatCards = [
-      { label: "Season Total", value: stats.totalAthletes, icon: <Users className="h-5 w-5" />, color: "blue" },
-      { label: "Active Memb.", value: stats.licensedAthletes, icon: <UserCheck className="h-5 w-5" />, color: "green" },
-      { label: "Pending Docs", value: stats.pendingDocsAthletes, icon: <Clock className="h-5 w-5" />, color: "amber" },
-      { label: "Attention Required", value: stats.attentionAthletes, icon: <AlertCircle className="h-5 w-5" />, color: "red" },
-      { label: "Transfers", value: stats.transferredMemberships, icon: <ArrowRightLeft className="h-5 w-5" />, color: "purple" },
+      {
+        label: "Season Total",
+        value: stats.totalAthletes,
+        icon: <Users className="h-5 w-5" />,
+        color: "blue",
+      },
+      {
+        label: "Active Memb.",
+        value: stats.licensedAthletes,
+        icon: <UserCheck className="h-5 w-5" />,
+        color: "green",
+      },
+      {
+        label: "Pending Docs",
+        value: stats.pendingDocsAthletes,
+        icon: <Clock className="h-5 w-5" />,
+        color: "amber",
+      },
+      {
+        label: "Attention Required",
+        value: stats.attentionAthletes,
+        icon: <AlertCircle className="h-5 w-5" />,
+        color: "red",
+      },
+      {
+        label: "Transfers",
+        value: stats.transferredMemberships,
+        icon: <ArrowRightLeft className="h-5 w-5" />,
+        color: "purple",
+      },
     ];
 
     return (
@@ -534,29 +574,33 @@ function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Button 
-              onClick={handleRefresh} 
+            <Button
+              onClick={handleRefresh}
               disabled={clubLoading}
               variant="outline"
               className="bg-white hover:bg-slate-50 shadow-sm border-slate-200"
             >
-              <RefreshCw className={`mr-2 h-4 w-4 ${clubLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${clubLoading ? "animate-spin" : ""}`}
+              />
               Refresh Data
             </Button>
-            <Button onClick={() => navigate(`/clubs/${clubId}`)}>Manage Club</Button>
+            <Button onClick={() => navigate(`/clubs/${clubId}`)}>
+              Manage Club
+            </Button>
           </div>
         </div>
 
         {clubError && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center gap-3">
-             <AlertCircle className="h-5 w-5" />
-             <span>Error: {clubError}</span>
+            <AlertCircle className="h-5 w-5" />
+            <span>Error: {clubError}</span>
           </div>
         )}
 
         {clubLoading ? (
           <div className="flex items-center justify-center py-20">
-             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
         ) : club ? (
           <>
@@ -577,8 +621,17 @@ function Dashboard() {
                 {/* Recent Athletes Table */}
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="p-6 border-b border-slate-200 flex justify-between items-center">
-                    <h2 className="text-lg font-semibold text-slate-900">Recently Added Athletes</h2>
-                    <Button variant="ghost" size="sm" className="text-blue-600" onClick={() => navigate(`/clubs/${clubId}`)}>View All</Button>
+                    <h2 className="text-lg font-semibold text-slate-900">
+                      Recently Added Athletes
+                    </h2>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-blue-600"
+                      onClick={() => navigate(`/clubs/${clubId}`)}
+                    >
+                      View All
+                    </Button>
                   </div>
                   {recentAthletes.length === 0 ? (
                     <div className="p-10 text-center text-slate-400">
@@ -589,15 +642,26 @@ function Dashboard() {
                       <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b border-slate-200">
                           <tr>
-                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Athlete</th>
-                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-center">License</th>
-                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-center">Status</th>
-                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-right">Added</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">
+                              Athlete
+                            </th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-center">
+                              License
+                            </th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-center">
+                              Status
+                            </th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-right">
+                              Added
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {recentAthletes.map((athlete) => (
-                            <tr key={athlete.id} className="hover:bg-slate-50/50 transition-colors">
+                            <tr
+                              key={athlete.id}
+                              className="hover:bg-slate-50/50 transition-colors"
+                            >
                               <td className="px-6 py-4">
                                 <div className="flex flex-col">
                                   <span className="font-medium text-slate-900">
@@ -611,14 +675,22 @@ function Dashboard() {
                                 </div>
                               </td>
                               <td className="px-6 py-4 text-center text-slate-600">
-                                <span className="bg-slate-100 px-2 py-1 rounded text-xs font-mono">{athlete.licenseNumber || "N/A"}</span>
+                                <span className="bg-slate-100 px-2 py-1 rounded text-xs font-mono">
+                                  {athlete.licenseNumber || "N/A"}
+                                </span>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                                  athlete.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 
-                                  athlete.status === 'pending_documents' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
-                                }`}>
-                                  {athlete.status?.replace('_', ' ') || 'Pending'}
+                                <span
+                                  className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                                    athlete.status === "active"
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : athlete.status === "pending_documents"
+                                        ? "bg-amber-100 text-amber-700"
+                                        : "bg-slate-100 text-slate-600"
+                                  }`}
+                                >
+                                  {athlete.status?.replace("_", " ") ||
+                                    "Pending"}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-right text-slate-500 text-sm">
@@ -634,59 +706,93 @@ function Dashboard() {
               </div>
 
               <div className="space-y-6">
-                 {/* Club Details Card */}
-                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-200 bg-slate-50/50">
-                      <h2 className="text-lg font-semibold text-slate-900">Club Information</h2>
+                {/* Club Details Card */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-slate-200 bg-slate-50/50">
+                    <h2 className="text-lg font-semibold text-slate-900">
+                      Club Information
+                    </h2>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
+                      <span className="text-slate-500 font-medium whitespace-nowrap">
+                        Official Code
+                      </span>
+                      <span className="text-slate-900 font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded uppercase">
+                        {club.code || "-"}
+                      </span>
                     </div>
-                    <div className="p-6 space-y-4">
-                       <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
-                          <span className="text-slate-500 font-medium whitespace-nowrap">Official Code</span>
-                          <span className="text-slate-900 font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded uppercase">{club.code || "-"}</span>
-                       </div>
-                       <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
-                          <span className="text-slate-500 font-medium">Organization Type</span>
-                          <span className="text-slate-900 font-semibold capitalize">{club.type?.replace(/_/g, " ") || "-"}</span>
-                       </div>
-                       <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
-                          <span className="text-slate-500 font-medium">Headquarters</span>
-                          <span className="text-slate-900 font-semibold">{club.city || "-"}</span>
-                       </div>
-                       <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
-                          <span className="text-slate-500 font-medium">Primary Email</span>
-                          <span className="text-slate-900 text-right truncate ml-4" title={club.email}>{club.email || "N/A"}</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500 font-medium">Season Activation</span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${club.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                            {club.isActive ? "ACTIVE" : "EXPIRED"}
-                          </span>
-                       </div>
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
+                      <span className="text-slate-500 font-medium">
+                        Organization Type
+                      </span>
+                      <span className="text-slate-900 font-semibold capitalize">
+                        {club.type?.replace(/_/g, " ") || "-"}
+                      </span>
                     </div>
-                 </div>
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
+                      <span className="text-slate-500 font-medium">
+                        Headquarters
+                      </span>
+                      <span className="text-slate-900 font-semibold">
+                        {club.city || "-"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-50 text-sm">
+                      <span className="text-slate-500 font-medium">
+                        Primary Email
+                      </span>
+                      <span
+                        className="text-slate-900 text-right truncate ml-4"
+                        title={club.email}
+                      >
+                        {club.email || "N/A"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500 font-medium">
+                        Season Activation
+                      </span>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-bold ${club.isActive ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}
+                      >
+                        {club.isActive ? "ACTIVE" : "EXPIRED"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-                 {/* Manager Info Card */}
-                 <div className="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-2xl p-6 text-white shadow-lg shadow-blue-200">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm uppercase font-bold text-lg">
-                        {managerInfo?.firstName?.charAt(0)}{managerInfo?.lastName?.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-white/70 leading-none">Club Manager</p>
-                        <p className="font-bold text-lg mt-1">{managerInfo?.firstName} {managerInfo?.lastName}</p>
-                      </div>
+                {/* Manager Info Card */}
+                <div className="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-2xl p-6 text-white shadow-lg shadow-blue-200">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm uppercase font-bold text-lg">
+                      {managerInfo?.firstName?.charAt(0)}
+                      {managerInfo?.lastName?.charAt(0)}
                     </div>
-                    <div className="space-y-4 text-sm mt-8 border-t border-white/10 pt-4">
-                       <div className="flex items-center gap-3">
-                          <Plus className="h-4 w-4 text-white/60" />
-                          <span className="text-white/90">Email: {managerInfo?.email || "N/A"}</span>
-                       </div>
-                       <div className="flex items-center gap-3">
-                          <Plus className="h-4 w-4 text-white/60" />
-                          <span className="text-white/90">Joined: {formatDate(managerInfo?.createdAt)}</span>
-                       </div>
+                    <div>
+                      <p className="text-sm font-medium text-white/70 leading-none">
+                        Club Manager
+                      </p>
+                      <p className="font-bold text-lg mt-1">
+                        {managerInfo?.firstName} {managerInfo?.lastName}
+                      </p>
                     </div>
-                 </div>
+                  </div>
+                  <div className="space-y-4 text-sm mt-8 border-t border-white/10 pt-4">
+                    <div className="flex items-center gap-3">
+                      <Plus className="h-4 w-4 text-white/60" />
+                      <span className="text-white/90">
+                        Email: {managerInfo?.email || "N/A"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Plus className="h-4 w-4 text-white/60" />
+                      <span className="text-white/90">
+                        Joined: {formatDate(managerInfo?.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </>
@@ -804,12 +910,22 @@ function Dashboard() {
             >
               {statsLoading ? "Loading..." : "↻ Refresh"}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowLicenseStats(true)}
+              className="gap-2"
+            >
+              <FileCheck className="h-4 w-4" />
+              License Statistics
+            </Button>
             <Button onClick={() => navigate("/register")}>+ Add User</Button>
           </div>
         </div>
       </div>
       {/* Action Center - Urgent Tasks */}
-      {(seasonAttention.pendingDocuments > 0 || pendingTransfers.length > 0 || pendingDeletions.length > 0) && (
+      {(seasonAttention.pendingDocuments > 0 ||
+        pendingTransfers.length > 0 ||
+        pendingDeletions.length > 0) && (
         <div className="mb-8 p-6 bg-white rounded-2xl border border-red-100 shadow-sm shadow-red-50">
           <div className="flex items-center gap-2 mb-4 text-red-600 font-bold uppercase tracking-wider text-xs">
             <ShieldAlert className="h-4 w-4" />
@@ -817,35 +933,43 @@ function Dashboard() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {seasonAttention.pendingDocuments > 0 && (
-              <div 
+              <div
                 className="flex items-center justify-between p-4 bg-amber-50 rounded-xl border border-amber-100 cursor-pointer hover:bg-amber-100 transition-colors"
-                onClick={() => navigate('/clubs')}
+                onClick={() => navigate("/clubs")}
               >
                 <div className="flex items-center gap-3">
                   <div className="bg-amber-500 text-white p-2 rounded-lg">
                     <FileCheck className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-semibold text-amber-900">{seasonAttention.pendingDocuments} Athletes</p>
-                    <p className="text-xs text-amber-700 font-medium">Documents need verification</p>
+                    <p className="font-semibold text-amber-900">
+                      {seasonAttention.pendingDocuments} Athletes
+                    </p>
+                    <p className="text-xs text-amber-700 font-medium">
+                      Documents need verification
+                    </p>
                   </div>
                 </div>
                 <ChevronRight className="h-4 w-4 text-amber-400" />
               </div>
             )}
-            
+
             {pendingTransfers.length > 0 && (
-              <div 
+              <div
                 className="flex items-center justify-between p-4 bg-blue-50 rounded-xl border border-blue-100 cursor-pointer hover:bg-blue-100 transition-colors"
-                onClick={() => navigate('/clubs')}
+                onClick={() => navigate("/clubs")}
               >
                 <div className="flex items-center gap-3">
                   <div className="bg-blue-500 text-white p-2 rounded-lg">
                     <ArrowRightLeft className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-semibold text-blue-900">{pendingTransfers.length} Transfers</p>
-                    <p className="text-xs text-blue-700 font-medium">Pending approval</p>
+                    <p className="font-semibold text-blue-900">
+                      {pendingTransfers.length} Transfers
+                    </p>
+                    <p className="text-xs text-blue-700 font-medium">
+                      Pending approval
+                    </p>
                   </div>
                 </div>
                 <ChevronRight className="h-4 w-4 text-blue-400" />
@@ -853,17 +977,21 @@ function Dashboard() {
             )}
 
             {pendingDeletions.length > 0 && (
-              <div 
+              <div
                 className="flex items-center justify-between p-4 bg-rose-50 rounded-xl border border-rose-100 cursor-pointer hover:bg-rose-100 transition-colors"
-                onClick={() => navigate('/clubs')}
+                onClick={() => navigate("/clubs")}
               >
                 <div className="flex items-center gap-3">
                   <div className="bg-rose-500 text-white p-2 rounded-lg">
                     <Trash2 className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-semibold text-rose-900">{pendingDeletions.length} Deletions</p>
-                    <p className="text-xs text-rose-700 font-medium">Requested removals</p>
+                    <p className="font-semibold text-rose-900">
+                      {pendingDeletions.length} Deletions
+                    </p>
+                    <p className="text-xs text-rose-700 font-medium">
+                      Requested removals
+                    </p>
                   </div>
                 </div>
                 <ChevronRight className="h-4 w-4 text-rose-400" />
@@ -1128,42 +1256,80 @@ function Dashboard() {
       <div className="bg-gradient-to-br from-slate-900 to-indigo-950 rounded-2xl shadow-xl mb-8 overflow-hidden text-white border border-slate-800">
         <div className="p-6 border-b border-white/10 flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-bold">Federation Historical Overview</h3>
-            <p className="text-slate-400 text-sm mt-1">Growth and data points since establishment</p>
+            <h3 className="text-xl font-bold">
+              Federation Historical Overview
+            </h3>
+            <p className="text-slate-400 text-sm mt-1">
+              Growth and data points since establishment
+            </p>
           </div>
           <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg backdrop-blur-md border border-white/10">
             <Clock className="h-4 w-4 text-indigo-400" />
-            <span className="text-xs font-bold uppercase tracking-wider">All-Time Statistics</span>
+            <span className="text-xs font-bold uppercase tracking-wider">
+              All-Time Statistics
+            </span>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/10">
           <div className="p-8 group hover:bg-white/5 transition-colors">
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">Total Athletes</p>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">
+              Total Athletes
+            </p>
             <div className="flex items-end gap-3">
-              <span className="text-4xl font-black">{totalAthletes.toLocaleString()}</span>
+              <span className="text-4xl font-black">
+                {totalAthletes.toLocaleString()}
+              </span>
               <TrendingUp className="h-6 w-6 text-emerald-400 mb-1" />
             </div>
-            <p className="text-slate-500 text-xs mt-3">Registered across all seasons and clubs</p>
+            <p className="text-slate-500 text-xs mt-3">
+              Registered across all seasons and clubs
+            </p>
           </div>
           <div className="p-8 group hover:bg-white/5 transition-colors">
-            <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-2">Male Demographic</p>
+            <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-2">
+              Male Demographic
+            </p>
             <div className="flex items-end gap-3">
               <span className="text-4xl font-black">{byGender.male || 0}</span>
               <div className="h-2 w-24 bg-white/10 rounded-full mb-2 overflow-hidden">
-                <div className="h-full bg-blue-500" style={{ width: `${totalAthletes > 0 ? (byGender.male / totalAthletes) * 100 : 0}%` }}></div>
+                <div
+                  className="h-full bg-blue-500"
+                  style={{
+                    width: `${totalAthletes > 0 ? (byGender.male / totalAthletes) * 100 : 0}%`,
+                  }}
+                ></div>
               </div>
             </div>
-            <p className="text-slate-500 text-xs mt-3">{totalAthletes > 0 ? Math.round((byGender.male/totalAthletes)*100) : 0}% of total distribution</p>
+            <p className="text-slate-500 text-xs mt-3">
+              {totalAthletes > 0
+                ? Math.round((byGender.male / totalAthletes) * 100)
+                : 0}
+              % of total distribution
+            </p>
           </div>
           <div className="p-8 group hover:bg-white/5 transition-colors">
-            <p className="text-pink-400 text-xs font-bold uppercase tracking-widest mb-2">Female Demographic</p>
+            <p className="text-pink-400 text-xs font-bold uppercase tracking-widest mb-2">
+              Female Demographic
+            </p>
             <div className="flex items-end gap-3">
-              <span className="text-4xl font-black">{byGender.female || 0}</span>
+              <span className="text-4xl font-black">
+                {byGender.female || 0}
+              </span>
               <div className="h-2 w-24 bg-white/10 rounded-full mb-2 overflow-hidden">
-                <div className="h-full bg-pink-500" style={{ width: `${totalAthletes > 0 ? (byGender.female / totalAthletes) * 100 : 0}%` }}></div>
+                <div
+                  className="h-full bg-pink-500"
+                  style={{
+                    width: `${totalAthletes > 0 ? (byGender.female / totalAthletes) * 100 : 0}%`,
+                  }}
+                ></div>
               </div>
             </div>
-            <p className="text-slate-500 text-xs mt-3">{totalAthletes > 0 ? Math.round((byGender.female/totalAthletes)*100) : 0}% of total distribution</p>
+            <p className="text-slate-500 text-xs mt-3">
+              {totalAthletes > 0
+                ? Math.round((byGender.female / totalAthletes) * 100)
+                : 0}
+              % of total distribution
+            </p>
           </div>
         </div>
       </div>
@@ -1342,6 +1508,13 @@ function Dashboard() {
           onSave={loadUsers}
         />
       )}
+
+      {/* License Statistics Modal */}
+      <LicenseStatisticsModal
+        open={showLicenseStats}
+        onClose={() => setShowLicenseStats(false)}
+        season={currentSeason}
+      />
     </div>
   );
 }

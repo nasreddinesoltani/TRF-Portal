@@ -28,6 +28,7 @@ import {
   exportEligibleAthletesExcel,
   exportAthletePhotosZip,
 } from "../Controllers/athleteController.js";
+import { getLicenseStatisticsReport } from "../Controllers/licenseStatisticsController.js";
 import { allowRoles, protect } from "../Middleware/authMiddleware.js";
 import { documentUpload } from "../config/upload.js";
 import Athlete from "../Models/athleteModel.js";
@@ -70,6 +71,12 @@ router.get(
   protect,
   allowRoles("admin", "club_manager", "jury_president", "umpire"),
   getAthleteStatistics,
+);
+router.get(
+  "/license-statistics",
+  protect,
+  allowRoles("admin"),
+  getLicenseStatisticsReport,
 );
 router.get(
   "/export/eligible-excel",

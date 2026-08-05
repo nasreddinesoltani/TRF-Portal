@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useAuth } from "../contexts/AuthContext";
@@ -6,6 +6,12 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Select } from "../components/ui/select";
 import { Label } from "../components/ui/label";
+import {
+  exportEntryListByEventPdf,
+  exportEntriesByEventPdf,
+  exportNumberOfEntriesByClubPdf,
+  exportEntryListByClubPdf,
+} from "../lib/entriesReportsPdf";
 
 const API_BASE_URL = "";
 
@@ -41,6 +47,49 @@ const MEDAL_EMOJI = {
   gold: "🥇",
   silver: "🥈",
   bronze: "🥉",
+};
+
+const formatAthleteName = (athlete) => {
+  if (!athlete) return "";
+  return [athlete.firstName, athlete.lastName].filter(Boolean).join(" ");
+};
+
+// --- Beach sprint ("Coastal") event code ------------------------------------
+// Mirrors the backend buildEventCode (beachSprintService.js) so the codes shown
+// in the PDF reports match the "Export Entries" Excel file exactly.
+// Format: "C" (Coastal) + [agePrefix] + genderLetter + boatSize
+// e.g. "CU17W1x", "CJM2x", "CMix2x".
+
+const ageGroupPrefix = (category) => {
+  if (!category) return "";
+  const abbr = String(category.abbreviation || "").toUpperCase();
+  const titleEn = String(category.titles?.en || "").toUpperCase();
+  const haystack = `${abbr} ${titleEn}`;
+
+  if (/(U-?17|UNDER\s*17)/.test(haystack)) return "U17";
+  // Match a junior category but avoid matching "senior".
+  if (/\bJ(UNIOR)?\b/.test(haystack) || /^J/.test(abbr)) return "J";
+  return "";
+};
+
+const eventGenderLetter = (gender) => {
+  const g = String(gender || "").toLowerCase();
+  if (g === "men" || g === "m" || g === "male") return "M";
+  if (g === "women" || g === "f" || g === "female") return "W";
+  return "Mix";
+};
+
+const buildBeachEventCode = (category, boatClass) => {
+  const prefix = ageGroupPrefix(category);
+  const gender = eventGenderLetter(category?.gender);
+
+  // Boat class codes may already embed the discipline/gender (e.g. "C1x",
+  // "C2x", "Cmix2x"). We only want the boat SIZE ("1x"/"2x") here.
+  const rawCode = String(boatClass?.code || "").toLowerCase();
+  const sizeMatch = rawCode.match(/\d+x/);
+  const boatSize = sizeMatch ? sizeMatch[0] : rawCode.replace(/[^0-9x]/gi, "");
+
+  return `C${prefix}${gender}${boatSize}`;
 };
 
 /**
@@ -770,6 +819,12 @@ export default function BeachSprintCompetition() {
   const [bracket, setBracket] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Registration summary (stats cards + categories overview + PDF reports)
+  const [registrationEntries, setRegistrationEntries] = useState([]);
+  const [loadingRegistration, setLoadingRegistration] = useState(false);
+  const [globalJourneyFilter, setGlobalJourneyFilter] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+
   // Registered entries for the selected event
   const [entries, setEntries] = useState([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
@@ -823,6 +878,98 @@ export default function BeachSprintCompetition() {
   useEffect(() => {
     if (token && competitionId) fetchEvents();
   }, [token, competitionId, fetchEvents]);
+
+  // Fetch the full registration summary (shared endpoint with classic racing)
+  const loadRegistrationSummary = useCallback(async () => {
+    if (!token || !competitionId) return;
+    setLoadingRegistration(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionId}/registration${globalJourneyFilter ? `?journeyIndex=${globalJourneyFilter}` : ""}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setRegistrationEntries(Array.isArray(data.entries) ? data.entries : []);
+      } else {
+        setRegistrationEntries([]);
+      }
+    } catch (error) {
+      console.error("Failed to load registration summary", error);
+      setRegistrationEntries([]);
+    } finally {
+      setLoadingRegistration(false);
+    }
+  }, [token, competitionId, globalJourneyFilter]);
+
+  useEffect(() => {
+    loadRegistrationSummary();
+  }, [loadRegistrationSummary]);
+
+  // Aggregate stats for the dashboard cards and categories overview
+  const registrationStats = useMemo(() => {
+    const clubs = new Set();
+    const categoryCounts = {};
+    // De-duplicate athletes across all their entries (e.g. a rower entered in
+    // both a 1x and a mixed 2x should only be counted once). Key on the
+    // license number, falling back to the athlete document id.
+    const uniqueAthletes = new Set();
+
+    const addAthlete = (athlete) => {
+      if (!athlete) return;
+      const key = athlete.licenseNumber || athlete._id || athlete.id;
+      if (key) uniqueAthletes.add(String(key));
+    };
+
+    registrationEntries.forEach((entry) => {
+      const clubId = entry.club?.id || entry.club?._id;
+      if (clubId) clubs.add(clubId);
+
+      const catId = entry.category?.id || entry.category?._id || "unknown";
+      const catName =
+        entry.category?.abbreviation || entry.category?.titles?.en || "Unknown";
+
+      if (!categoryCounts[catId]) {
+        categoryCounts[catId] = { id: catId, name: catName, count: 0 };
+      }
+      categoryCounts[catId].count++;
+
+      if (Array.isArray(entry.crew) && entry.crew.length > 0) {
+        entry.crew.forEach(addAthlete);
+      } else {
+        addAthlete(entry.athlete);
+      }
+    });
+
+    return {
+      totalEntries: registrationEntries.length,
+      totalAthletes: uniqueAthletes.size,
+      totalClubs: clubs.size,
+      byCategory: Object.values(categoryCounts).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+    };
+  }, [registrationEntries]);
+
+  const totalRacesGenerated = useMemo(
+    () => events.reduce((sum, event) => sum + (event.raceCount || 0), 0),
+    [events],
+  );
+
+  // Selecting a category chip scrolls to / highlights the matching events
+  const handleCategorySelect = (categoryId) => {
+    setSelectedCategoryId((prev) => (prev === categoryId ? "" : categoryId));
+    const matchingEvent = events.find(
+      (event) =>
+        (event.category?.id || event.category?._id) === categoryId ||
+        String(event.category) === categoryId,
+    );
+    if (matchingEvent) {
+      setSelectedEvent(matchingEvent);
+    } else {
+      toast.info("No beach sprint event exists yet for this category");
+    }
+  };
 
   // Fetch registered entries for the selected event
   const fetchEntries = useCallback(
@@ -889,6 +1036,259 @@ export default function BeachSprintCompetition() {
     fetchEventDetail();
     fetchEntries(selectedEvent?._id);
   }, [token, selectedEvent, fetchEntries]);
+
+  // ==================== ENTRIES REPORTS (PDF) ====================
+  // These reuse the shared, World Rowing style generators so the beach sprint
+  // output is identical to the classic rowing page (branded header/footer,
+  // Arabic font, bilingual club columns, totals and a club x event matrix).
+
+  const isInternational = useMemo(
+    () => /inter/i.test(String(competition?.scope?.type || "")),
+    [competition],
+  );
+
+  const seatLabelForIndex = (idx, total) => {
+    if (total <= 1) return "";
+    if (total === 2) return idx === 0 ? "(b)" : "(s)";
+    if (idx === 0) return "(b)";
+    if (idx === total - 1) return "(s)";
+    return `(${idx + 1})`;
+  };
+
+  const formatBirthDate = (value) => {
+    if (!value) return "";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+    return d
+      .toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+      .toUpperCase();
+  };
+
+  const buildEventName = (entry, lang) =>
+    [
+      lang === "ar"
+        ? entry.category?.titles?.ar || ""
+        : entry.category?.titles?.en || entry.category?.abbreviation || "",
+      lang === "ar"
+        ? entry.boatClass?.names?.ar || ""
+        : entry.boatClass?.names?.en || entry.boatClass?.code || "",
+    ]
+      .filter(Boolean)
+      .join(" - ");
+
+  // One row per boat/entry (matches classic collectAssignedEntriesRows shape).
+  const collectRegistrationRows = useCallback(() => {
+    return registrationEntries.map((entry) => {
+      const eventCode =
+        buildBeachEventCode(entry.category, entry.boatClass) || "-";
+      const eventName = buildEventName(entry, "en") || eventCode;
+      const eventNameAr = buildEventName(entry, "ar");
+
+      const crew = Array.isArray(entry.crew) ? entry.crew : [];
+      const athleteName = entry.athlete
+        ? formatAthleteName(entry.athlete)
+        : crew.length
+          ? crew.map((member) => formatAthleteName(member)).join(" / ")
+          : "Unassigned";
+
+      const clubCode = entry.club?.code || "-";
+      const clubName = entry.club?.name || "-";
+
+      // Stable per-athlete identifiers so the report can de-duplicate a rower
+      // that appears in several entries (matches the dashboard athlete count).
+      const athleteKeyOf = (athlete) =>
+        athlete
+          ? String(athlete.licenseNumber || athlete._id || athlete.id || "")
+          : "";
+      const athleteKeys = (entry.athlete ? [entry.athlete] : crew)
+        .map(athleteKeyOf)
+        .filter(Boolean);
+
+      return {
+        eventCode,
+        eventName,
+        eventNameAr,
+        eventNumber: null,
+        clubCode,
+        clubName,
+        clubNameFr: entry.club?.name || "",
+        clubNameAr: entry.club?.nameAr || "",
+        country: clubName,
+        athleteName,
+        athleteKeys,
+        athleteUnitCount: entry.athlete ? 1 : crew.length || 1,
+        status: entry.status,
+      };
+    });
+  }, [registrationEntries]);
+
+  // One row per athlete/seat (matches classic Entry List by Club raceRows).
+  const collectRaceRows = useCallback(() => {
+    const raceRows = [];
+    let rowSequence = 0;
+
+    registrationEntries.forEach((entry) => {
+      const eventCode =
+        buildBeachEventCode(entry.category, entry.boatClass) || "-";
+      const eventName = buildEventName(entry, "en") || eventCode;
+      const clubCode = entry.club?.code || "-";
+
+      const clubName = entry.club?.name || clubCode;
+      const dimensionKey = String(clubCode || "UNK").toUpperCase();
+      const dimensionTitle = `${dimensionKey} - ${clubName}`;
+      const crew = Array.isArray(entry.crew) ? entry.crew : [];
+
+      if (entry.athlete) {
+        raceRows.push({
+          rowSequence: rowSequence++,
+          dimensionKey,
+          dimensionTitle,
+          eventCode,
+          eventName,
+          eventNumber: null,
+          seat: "",
+          athleteName: formatAthleteName(entry.athlete),
+          birthDate: formatBirthDate(entry.athlete.birthDate),
+          crewCount: 1,
+          athleteCount: 1,
+        });
+        return;
+      }
+
+      if (crew.length) {
+        crew.forEach((member, index) => {
+          raceRows.push({
+            rowSequence: rowSequence++,
+            dimensionKey,
+            dimensionTitle,
+            eventCode,
+            eventName,
+            eventNumber: null,
+            seat: seatLabelForIndex(index, crew.length),
+            athleteName: formatAthleteName(member),
+            birthDate: formatBirthDate(member.birthDate),
+            crewCount: index === 0 ? 1 : 0,
+            athleteCount: 1,
+          });
+        });
+        return;
+      }
+
+      raceRows.push({
+        rowSequence: rowSequence++,
+        dimensionKey,
+        dimensionTitle,
+        eventCode,
+        eventName,
+        eventNumber: null,
+        seat: "",
+        athleteName: "Unassigned",
+        birthDate: "",
+        crewCount: 1,
+        athleteCount: 1,
+      });
+    });
+
+    return raceRows;
+  }, [registrationEntries]);
+
+  const runReport = useCallback(async (label, fn) => {
+    toast.info(`Generating ${label} PDF...`);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    try {
+      const ok = await fn();
+      if (ok) {
+        toast.success(`${label} exported successfully`);
+      } else {
+        toast.info("No entries available to export.");
+      }
+    } catch (error) {
+      console.error(`${label} export error:`, error);
+      toast.error(`Failed to export ${label}`);
+    }
+  }, []);
+
+  const exportEntryListByEventPDF = useCallback(
+    () =>
+      runReport("Entry List by Event", () =>
+        exportEntryListByEventPdf({
+          competition,
+          rows: collectRegistrationRows(),
+          isInternational,
+          globalJourneyFilter,
+        }),
+      ),
+    [
+      runReport,
+      competition,
+      collectRegistrationRows,
+      isInternational,
+      globalJourneyFilter,
+    ],
+  );
+
+  const exportEntriesByEventPDF = useCallback(
+    () =>
+      runReport("Entries by Event", () =>
+        exportEntriesByEventPdf({
+          competition,
+          rows: collectRegistrationRows(),
+          isInternational,
+          globalJourneyFilter,
+        }),
+      ),
+    [
+      runReport,
+      competition,
+      collectRegistrationRows,
+      isInternational,
+      globalJourneyFilter,
+    ],
+  );
+
+  const exportNumberOfEntriesByClubPDF = useCallback(
+    () =>
+      runReport(
+        `Number of Entries by ${isInternational ? "Country" : "Club"}`,
+        () =>
+          exportNumberOfEntriesByClubPdf({
+            competition,
+            rows: collectRegistrationRows(),
+            isInternational,
+            globalJourneyFilter,
+          }),
+      ),
+    [
+      runReport,
+      competition,
+      collectRegistrationRows,
+      isInternational,
+      globalJourneyFilter,
+    ],
+  );
+
+  const exportEntryListByClubPDF = useCallback(
+    () =>
+      runReport(`Entry List by ${isInternational ? "Country" : "Club"}`, () =>
+        exportEntryListByClubPdf({
+          competition,
+          raceRows: collectRaceRows(),
+          isInternational,
+          globalJourneyFilter,
+        }),
+      ),
+    [
+      runReport,
+      competition,
+      collectRaceRows,
+      isInternational,
+      globalJourneyFilter,
+    ],
+  );
 
   // Generate time trial heats from the loaded entries
   const handleGenerateTimeTrials = async () => {
@@ -1147,7 +1547,7 @@ export default function BeachSprintCompetition() {
       {/* Header */}
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <button
                 onClick={() => navigate("/competitions")}
@@ -1155,12 +1555,40 @@ export default function BeachSprintCompetition() {
               >
                 ← Back to Competitions
               </button>
+              <p className="text-xs uppercase tracking-[0.28em] text-slate-400">
+                Race planner
+              </p>
               <h1 className="text-2xl font-bold text-slate-900">
-                🏖️ {competition?.name || "Beach Sprint Competition"}
+                🏖️{" "}
+                {competition?.names?.en ||
+                  competition?.name ||
+                  "Beach Sprint Competition"}
               </h1>
-              <p className="text-slate-600">Beach Sprint Events & Brackets</p>
+              {competition?.season ? (
+                <p className="text-sm text-slate-500">
+                  Season {competition.season} - {competition.code}
+                </p>
+              ) : (
+                <p className="text-slate-600">Beach Sprint Events & Brackets</p>
+              )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => navigate(-1)}
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  navigate(`/competitions/${competitionId}/rankings`)
+                }
+              >
+                🏆 Rankings
+              </Button>
               <Button
                 variant="outline"
                 onClick={handleExportEntries}
@@ -1187,9 +1615,161 @@ export default function BeachSprintCompetition() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        {/* Dashboard Stats Cards */}
+        <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                Total Athletes
+              </p>
+              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                <span className="text-blue-600">👥</span>
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold text-slate-900">
+              {registrationStats?.totalAthletes || 0}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                Registered Clubs
+              </p>
+              <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                <span className="text-indigo-600">🏛️</span>
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold text-slate-900">
+              {registrationStats?.totalClubs || 0}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-purple-50 to-white p-4 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                Total Entries
+              </p>
+              <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                <span className="text-purple-600">📋</span>
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold text-slate-900">
+              {registrationStats?.totalEntries || 0}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                Races Generated
+              </p>
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                <span className="text-emerald-600">🏁</span>
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold text-slate-900">
+              {totalRacesGenerated || 0}
+            </p>
+          </div>
+        </section>
+
+        {/* Categories Overview + Entries Reports */}
+        <section className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 px-5 pb-5 pt-3 shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              Categories Overview
+            </h2>
+            <span className="text-xs text-slate-400">
+              Click to load entries
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              {loadingRegistration && !registrationEntries.length ? (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  Loading registration data...
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {registrationStats?.byCategory?.map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => handleCategorySelect(cat.id)}
+                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-200 ${
+                        selectedCategoryId === cat.id
+                          ? "border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200 shadow-sm"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 hover:shadow-sm"
+                      }`}
+                    >
+                      <span className="font-semibold">{cat.name}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                          selectedCategoryId === cat.id
+                            ? "bg-blue-200 text-blue-800"
+                            : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {cat.count}
+                      </span>
+                    </button>
+                  ))}
+                  {!registrationStats?.byCategory?.length && (
+                    <p className="text-sm text-slate-500">
+                      No registrations found for this competition.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-1.5 space-y-1.5">
+              <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Entries Reports
+              </p>
+
+              <div className="flex flex-wrap gap-2 md:flex-nowrap">
+                {[
+                  {
+                    label: "Entry List by Event",
+                    onClick: exportEntryListByEventPDF,
+                  },
+                  {
+                    label: "Entries by Event",
+                    onClick: exportEntriesByEventPDF,
+                  },
+                  {
+                    label: "Number of Entries by Club",
+                    onClick: exportNumberOfEntriesByClubPDF,
+                  },
+                  {
+                    label: "Entry List by Club",
+                    onClick: exportEntryListByClubPDF,
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={item.onClick}
+                    className="group flex min-w-[220px] flex-1 items-center rounded-md border border-slate-200 bg-white text-left hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                  >
+                    <span className="flex h-9 w-9 flex-none items-center justify-center bg-sky-500 text-white text-sm font-bold rounded-l-md">
+                      PDF
+                    </span>
+                    <span className="px-3 py-1.5 text-sm font-semibold text-slate-800 group-hover:text-blue-800">
+                      {item.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
         <div className="grid grid-cols-12 gap-6">
           {/* Events List */}
+
           <div className="col-span-4">
             <h2 className="text-lg font-semibold text-slate-900 mb-4">
               Events

@@ -1023,15 +1023,24 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
     }
   }
 
-  const searchFilters = [];
-  if (searchTerm) {
-    const regex = new RegExp(searchTerm, "i");
-    searchFilters.push({ firstName: regex });
-    searchFilters.push({ lastName: regex });
-    searchFilters.push({ firstNameAr: regex });
-    searchFilters.push({ lastNameAr: regex });
-    searchFilters.push({ licenseNumber: regex });
-  }
+  // Build a token-based search so multi-word queries like "eya r" match an
+  // athlete whose first name is "Eya" and last name "Rabii". Each whitespace
+  // separated token must match at least one name/license field ($and of $or),
+  // which also makes word order irrelevant ("rabii eya" works too).
+  const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const searchTokens = searchTerm.split(/\s+/).filter(Boolean);
+  const searchFilters = searchTokens.map((token) => {
+    const regex = new RegExp(escapeRegex(token), "i");
+    return {
+      $or: [
+        { firstName: regex },
+        { lastName: regex },
+        { firstNameAr: regex },
+        { lastNameAr: regex },
+        { licenseNumber: regex },
+      ],
+    };
+  });
 
   // Fetch the selected category to check its para status
   let selectedCategoryDoc = null;
@@ -1077,6 +1086,14 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
   if (selectedCategoryDoc) {
     athleteQuery.isPara =
       selectedCategoryDoc.isPara === true ? true : { $ne: true };
+  }
+
+  // Apply the search term (name in Latin/Arabic or license number).
+  // Each token is its own { $or: [...fields] } group and ALL tokens must match,
+  // so we spread them into $and (this also works alongside the international
+  // top-level $or branch without clobbering it).
+  if (searchFilters.length) {
+    athleteQuery.$and = [...(athleteQuery.$and || []), ...searchFilters];
   }
 
   const athletes = await Athlete.find(athleteQuery)

@@ -17,12 +17,42 @@ const initialFormState = {
   phone: "",
   address: "",
   city: "",
+  governorate: "",
   logoUrl: "",
   contactName: "",
   contactPhone: "",
   isActive: "true",
   parentClubId: "",
 };
+
+// The 24 Tunisian governorates (الولايات), stored/displayed in Arabic to match
+// the federation license statistics report.
+const GOVERNORATE_OPTIONS = [
+  "تونس",
+  "أريانة",
+  "بن عروس",
+  "منوبة",
+  "نابل",
+  "زغوان",
+  "بنزرت",
+  "باجة",
+  "جندوبة",
+  "الكاف",
+  "سليانة",
+  "القيروان",
+  "القصرين",
+  "سيدي بوزيد",
+  "سوسة",
+  "المنستير",
+  "المهدية",
+  "صفاقس",
+  "قفصة",
+  "توزر",
+  "قبلي",
+  "قابس",
+  "مدنين",
+  "تطاوين",
+];
 
 const PROMOTION_CENTER_TYPE = "centre_de_promotion";
 
@@ -209,12 +239,12 @@ const Clubs = () => {
         parentClub: club.parentClub ?? null,
         raw: club,
       })),
-    [clubs]
+    [clubs],
   );
 
   const baseClubOptions = useMemo(
     () => clubs.filter((club) => club.type === "club"),
-    [clubs]
+    [clubs],
   );
 
   const parentClubChoices = useMemo(() => {
@@ -264,7 +294,7 @@ const Clubs = () => {
     const entries = clubs.filter((club) => club.type === PROMOTION_CENTER_TYPE);
 
     const withParent = entries.filter((club) =>
-      Boolean(club.parentClub)
+      Boolean(club.parentClub),
     ).length;
 
     return {
@@ -316,10 +346,10 @@ const Clubs = () => {
         return haystacks.some((value) =>
           value
             ? value.toString().toLowerCase().includes(normalizedSearch)
-            : false
+            : false,
         );
       }),
-    [gridRows, normalizedSearch, statusFilter, typeFilter]
+    [gridRows, normalizedSearch, statusFilter, typeFilter],
   );
 
   useEffect(() => {
@@ -333,7 +363,7 @@ const Clubs = () => {
 
   const selectedClub = useMemo(
     () => clubs.find((club) => club._id === selectedClubId) ?? null,
-    [clubs, selectedClubId]
+    [clubs, selectedClubId],
   );
 
   const hasActiveFilters = useMemo(
@@ -341,7 +371,7 @@ const Clubs = () => {
       statusFilter !== "all" ||
       typeFilter !== "all" ||
       normalizedSearch.length > 0,
-    [normalizedSearch, statusFilter, typeFilter]
+    [normalizedSearch, statusFilter, typeFilter],
   );
 
   const handleInputChange = useCallback((event) => {
@@ -404,6 +434,7 @@ const Clubs = () => {
         phone: club.phone ?? "",
         address: club.address ?? "",
         city: club.city ?? "",
+        governorate: club.governorate ?? "",
         logoUrl: club.logoUrl ?? "",
         contactName: club.contacts?.primaryName ?? "",
         contactPhone: club.contacts?.primaryPhone ?? "",
@@ -415,7 +446,7 @@ const Clubs = () => {
       setIsEditMode(true);
       setIsFormOpen(true);
     },
-    [clubs]
+    [clubs],
   );
 
   const handleSubmit = useCallback(
@@ -447,6 +478,7 @@ const Clubs = () => {
           phone: formData.phone.trim() || undefined,
           address: formData.address.trim() || undefined,
           city: formData.city.trim() || undefined,
+          governorate: formData.governorate.trim() || undefined,
           logoUrl: formData.logoUrl.trim() || undefined,
         };
 
@@ -457,8 +489,8 @@ const Clubs = () => {
 
         const filteredContact = Object.fromEntries(
           Object.entries(contactPayload).filter(
-            ([, value]) => value !== undefined
-          )
+            ([, value]) => value !== undefined,
+          ),
         );
 
         if (Object.keys(filteredContact).length > 0) {
@@ -470,7 +502,7 @@ const Clubs = () => {
 
           if (!trimmedParentId) {
             toast.error(
-              "Please select a parent club for the promotion center."
+              "Please select a parent club for the promotion center.",
             );
             return;
           }
@@ -505,7 +537,9 @@ const Clubs = () => {
         }
 
         toast.success(
-          isEditMode ? "Club updated successfully" : "Club created successfully"
+          isEditMode
+            ? "Club updated successfully"
+            : "Club created successfully",
         );
 
         closeForm();
@@ -518,7 +552,7 @@ const Clubs = () => {
         setSubmitting(false);
       }
     },
-    [closeForm, editingClubId, formData, isEditMode, loadClubs, token]
+    [closeForm, editingClubId, formData, isEditMode, loadClubs, token],
   );
 
   const handleStatusToggle = useCallback(
@@ -559,7 +593,7 @@ const Clubs = () => {
         toast.error(message);
       }
     },
-    [clubs, loadClubs, token]
+    [clubs, loadClubs, token],
   );
 
   const handleDelete = useCallback(
@@ -577,7 +611,7 @@ const Clubs = () => {
       }
 
       const confirmed = window.confirm(
-        `Delete ${target.name}? This action cannot be undone.`
+        `Delete ${target.name}? This action cannot be undone.`,
       );
 
       if (!confirmed) {
@@ -606,7 +640,7 @@ const Clubs = () => {
         toast.error(message);
       }
     },
-    [clubs, loadClubs, token]
+    [clubs, loadClubs, token],
   );
 
   const handleResetPassword = useCallback(
@@ -623,7 +657,7 @@ const Clubs = () => {
       }
 
       const newPassword = window.prompt(
-        `Enter new temporary password for ${target.name}:`
+        `Enter new temporary password for ${target.name}:`,
       );
 
       if (!newPassword) return;
@@ -634,17 +668,14 @@ const Clubs = () => {
       }
 
       try {
-        const response = await fetch(
-          `/api/users/${id}/reset-password`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ newPassword }),
-          }
-        );
+        const response = await fetch(`/api/users/${id}/reset-password`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ newPassword }),
+        });
 
         const payload = await response.json().catch(() => null);
 
@@ -658,7 +689,7 @@ const Clubs = () => {
         toast.error(err.message);
       }
     },
-    [clubs, token]
+    [clubs, token],
   );
 
   const handleRowSelected = useCallback((row) => {
@@ -683,7 +714,7 @@ const Clubs = () => {
         />
       </div>
     ),
-    []
+    [],
   );
 
   const renderNameCell = useCallback(
@@ -706,7 +737,7 @@ const Clubs = () => {
         ) : null}
       </div>
     ),
-    []
+    [],
   );
 
   const renderStatusBadge = useCallback((props) => {
@@ -772,7 +803,7 @@ const Clubs = () => {
       handleStatusToggle,
       navigate,
       openEditForm,
-    ]
+    ],
   );
 
   const columns = useMemo(
@@ -810,7 +841,7 @@ const Clubs = () => {
         template: renderActionsCell,
       },
     ],
-    [renderActionsCell, renderLogoCell, renderNameCell, renderStatusBadge]
+    [renderActionsCell, renderLogoCell, renderNameCell, renderStatusBadge],
   );
 
   return (
@@ -1186,6 +1217,23 @@ const Clubs = () => {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="governorate">Governorate (الولاية)</Label>
+                    <Select
+                      id="governorate"
+                      name="governorate"
+                      value={formData.governorate}
+                      onChange={handleInputChange}
+                    >
+                      <option value="">Not specified</option>
+                      {GOVERNORATE_OPTIONS.map((gov) => (
+                        <option key={gov} value={gov}>
+                          {gov}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="contactName">Primary Contact</Label>
                     <Input
                       id="contactName"
@@ -1229,8 +1277,8 @@ const Clubs = () => {
                     {submitting
                       ? "Saving..."
                       : isEditMode
-                      ? "Update Club"
-                      : "Create Club"}
+                        ? "Update Club"
+                        : "Create Club"}
                   </Button>
                 </div>
               </form>
@@ -1274,7 +1322,7 @@ const Clubs = () => {
 
                   if (typeof selectedClub.parentClub === "string") {
                     const referencedClub = clubs.find(
-                      (club) => club._id === selectedClub.parentClub
+                      (club) => club._id === selectedClub.parentClub,
                     );
                     return (
                       referencedClub?.name ||
@@ -1374,6 +1422,9 @@ const Clubs = () => {
                       </DetailItem>
                       <DetailItem label="City">
                         {selectedClub.city || "—"}
+                      </DetailItem>
+                      <DetailItem label="Governorate">
+                        {selectedClub.governorate || "—"}
                       </DetailItem>
                       <DetailItem label="Address">
                         <span className="block break-words">

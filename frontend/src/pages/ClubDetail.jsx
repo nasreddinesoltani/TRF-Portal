@@ -2596,6 +2596,9 @@ const ClubDetail = () => {
                 {club?.isActive ? "Active" : "Inactive"}
               </DetailItem>
               <DetailItem label="City">{club?.city || "--"}</DetailItem>
+              <DetailItem label="Governorate">
+                {club?.governorate || "--"}
+              </DetailItem>
               <DetailItem label="Parent club">
                 {parentClubName || "--"}
               </DetailItem>
@@ -3785,15 +3788,35 @@ const ClubDetail = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-nationality-code">Nationality Code (ISO Alpha-3)</Label>
-                <Input id="edit-nationality-code" value={editForm.nationalityCode} onChange={(event) => updateEditForm("nationalityCode", event.target.value)} placeholder="e.g. TUN" />
+                <Label htmlFor="edit-nationality-code">
+                  Nationality Code (ISO Alpha-3)
+                </Label>
+                <Input
+                  id="edit-nationality-code"
+                  value={editForm.nationalityCode}
+                  onChange={(event) =>
+                    updateEditForm("nationalityCode", event.target.value)
+                  }
+                  placeholder="e.g. TUN"
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-representing-nation">Representing Nation</Label>
-                <select id="edit-representing-nation" value={editForm.representingNation} onChange={(event) => updateEditForm("representingNation", event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                <Label htmlFor="edit-representing-nation">
+                  Representing Nation
+                </Label>
+                <select
+                  id="edit-representing-nation"
+                  value={editForm.representingNation}
+                  onChange={(event) =>
+                    updateEditForm("representingNation", event.target.value)
+                  }
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
                   <option value="">-- Select country --</option>
                   {(countries || []).map((c) => (
-                    <option key={c.code} value={c.code}>{c.names?.en || c.code}</option>
+                    <option key={c.code} value={c.code}>
+                      {c.names?.en || c.code}
+                    </option>
                   ))}
                 </select>
               </div>

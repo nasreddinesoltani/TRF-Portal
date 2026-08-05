@@ -15,6 +15,8 @@ import {
   Trophy,
   Waves,
 } from "lucide-react";
+import { INTERNATIONAL_EVENTS } from "../lib/events";
+import EventCountdown from "../components/EventCountdown";
 import "../public.css";
 
 const DISCIPLINES = {
@@ -369,17 +371,18 @@ const PublicHome = () => {
                   </h1>
 
                   <p className="pub-hero__subtitle">
-                    Follow live races, browse upcoming events, and review
-                    official results.
+                    Tunisia is proud to host a series of international rowing
+                    events this September &amp; October. Follow live races,
+                    browse upcoming events, and review official results.
                   </p>
 
                   <div className="pub-hero__actions">
                     <button
                       className="pub-hero__cta"
-                      onClick={() => scrollToSection("events")}
+                      onClick={() => scrollToSection("intl-events")}
                       type="button"
                     >
-                      Explore Events
+                      International Events
                       <ArrowRight size={15} />
                     </button>
                     <button
@@ -400,60 +403,105 @@ const PublicHome = () => {
                       className="pub-info-card__title"
                       style={{ marginBottom: 18 }}
                     >
-                      <Activity size={16} />
-                      Public Snapshot
-                    </div>
-                    <div className="pub-stat-grid">
-                      <div className="pub-stat-card">
-                        <div className="pub-stat-card__value">
-                          {competitions.length}
-                        </div>
-                        <div className="pub-stat-card__label">Competitions</div>
-                      </div>
-                      <div className="pub-stat-card">
-                        <div className="pub-stat-card__value">
-                          {seasons.length}
-                        </div>
-                        <div className="pub-stat-card__label">Seasons</div>
-                      </div>
-                      <div className="pub-stat-card">
-                        <div className="pub-stat-card__value">
-                          {activeComps.length}
-                        </div>
-                        <div className="pub-stat-card__label">Active</div>
-                      </div>
-                      <div className="pub-stat-card">
-                        <div className="pub-stat-card__value">
-                          {liveRaces.length}
-                        </div>
-                        <div className="pub-stat-card__label">Live</div>
-                      </div>
+                      <Calendar size={16} />
+                      Upcoming International Events
                     </div>
 
-                    <div className="pub-info-row" style={{ marginTop: 20 }}>
-                      <span className="pub-info-row__label">
-                        Current live races
-                      </span>
-                      <span className="pub-info-row__value">
-                        {liveRaces.length > 0 ? "On air" : "Quiet"}
-                      </span>
-                    </div>
-                    <div className="pub-info-row">
-                      <span className="pub-info-row__label">Latest season</span>
-                      <span className="pub-info-row__value">
-                        {seasons[0] || "TBD"}
-                      </span>
-                    </div>
-                    <div className="pub-info-row">
-                      <span className="pub-info-row__label">
-                        Next public view
-                      </span>
-                      <span className="pub-info-row__value">
-                        Programme, results, event info
-                      </span>
+                    <div className="pub-event-list">
+                      {INTERNATIONAL_EVENTS.map((event) => (
+                        <button
+                          key={event.slug}
+                          className="pub-event-item"
+                          type="button"
+                          onClick={() => navigate(`/events/${event.slug}`)}
+                        >
+                          <div className="pub-event-item__body">
+                            <span className="pub-event-item__name">
+                              {event.name}
+                            </span>
+                            <span className="pub-event-item__meta">
+                              <Calendar size={12} />
+                              {event.dateLabel}
+                            </span>
+                            <span className="pub-event-item__meta">
+                              <MapPin size={12} />
+                              {event.venue}
+                            </span>
+                          </div>
+                          <ChevronRight
+                            size={16}
+                            className="pub-event-item__arrow"
+                          />
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section
+            className="pub-section pub-section--border pub-reveal"
+            data-reveal
+            id="intl-events"
+          >
+            <div className="pub-container">
+              <div className="pub-section__header">
+                <h2 className="pub-section__title">
+                  <span className="pub-section__title-icon accent">
+                    <Trophy size={16} />
+                  </span>
+                  International Events in Tunisia
+                </h2>
+              </div>
+
+              <div className="pub-grid pub-grid--3">
+                {INTERNATIONAL_EVENTS.map((event, index) => (
+                  <div
+                    key={event.slug}
+                    className="pub-card pub-card--clickable pub-fade-in"
+                    style={{ animationDelay: `${index * 60}ms` }}
+                    onClick={() => navigate(`/events/${event.slug}`)}
+                  >
+                    <div className="pub-card__body">
+                      <div className="pub-card__header-row">
+                        <span className="pub-badge pub-badge--classic">
+                          <Waves size={14} />
+                          {event.discipline}
+                        </span>
+                        <StatusBadge type="upcoming">International</StatusBadge>
+                      </div>
+
+                      <h3 className="pub-card__headline">{event.name}</h3>
+
+                      <div className="pub-meta" style={{ marginBottom: 12 }}>
+                        <span className="pub-meta__item">
+                          <Calendar size={14} />
+                          {event.dateLabel}
+                        </span>
+                        <span className="pub-meta__item pub-meta__item--venue">
+                          <MapPin size={14} />
+                          {event.venue}
+                        </span>
+                      </div>
+
+                      <p className="pub-card__text">{event.summary}</p>
+
+                      <EventCountdown targetDate={event.startDate} />
+                    </div>
+
+                    <div className="pub-card__footer">
+                      <span className="pub-cta">
+                        View event <ArrowRight size={12} />
+                      </span>
+
+                      <div className="pub-arrow">
+                        <ChevronRight size={16} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </section>

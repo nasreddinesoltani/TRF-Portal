@@ -5,10 +5,27 @@ import { Button } from "./ui/button";
 import { toast } from "react-toastify";
 import "../public.css";
 
+const TEAM_LINKS = [
+  { key: "visa", label: "VISA", to: "/teams/visa" },
+  { key: "accommodation", label: "Accommodation", to: "/teams/accommodation" },
+  {
+    key: "transportation",
+    label: "Transportation",
+    to: "/teams/transportation",
+  },
+  { key: "accreditation", label: "Accreditation", to: "/teams/accreditation" },
+  {
+    key: "boats-equipments",
+    label: "Boats and Equipments",
+    to: "/teams/boats-equipments",
+  },
+];
+
 export const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const [isScrolled, setIsScrolled] = useState(false);
+  const [teamsOpen, setTeamsOpen] = useState(false);
 
   const handleLogout = async () => {
     const result = await logout();
@@ -172,11 +189,19 @@ export const Navbar = () => {
             onClick={() => navigate("/")}
             type="button"
           >
-            <span className="pub-nav__brand-sub">TRF Portal</span>
-            <span className="pub-nav__brand-main">
-              Tunisian Rowing Federation
-            </span>
+            <img
+              src="/logo.png"
+              alt="Tunisian Rowing Federation"
+              className="pub-nav__logo"
+            />
+            {/* <span className="pub-nav__brand-text">
+              <span className="pub-nav__brand-sub">TRF Portal</span>
+              <span className="pub-nav__brand-main">
+                Tunisian Rowing Federation
+              </span>
+            </span> */}
           </button>
+
           <div className="pub-nav__links">
             <button className="pub-nav__link" onClick={() => navigate("/")}>
               Home
@@ -187,6 +212,44 @@ export const Navbar = () => {
             >
               Events
             </button>
+            <div
+              className="pub-nav__dropdown"
+              onMouseEnter={() => setTeamsOpen(true)}
+              onMouseLeave={() => setTeamsOpen(false)}
+            >
+              <button
+                className="pub-nav__link pub-nav__link--has-menu"
+                onClick={() => setTeamsOpen((open) => !open)}
+                type="button"
+                aria-haspopup="true"
+                aria-expanded={teamsOpen}
+              >
+                Teams
+                <span
+                  className={`pub-nav__caret ${teamsOpen ? "is-open" : ""}`}
+                  aria-hidden="true"
+                />
+              </button>
+              <div
+                className={`pub-nav__menu ${teamsOpen ? "is-open" : ""}`}
+                role="menu"
+              >
+                {TEAM_LINKS.map((link) => (
+                  <button
+                    key={link.key}
+                    className="pub-nav__menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setTeamsOpen(false);
+                      navigate(link.to);
+                    }}
+                    type="button"
+                  >
+                    {link.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button
               className="pub-nav__link"
               onClick={() => navigate("/#results")}

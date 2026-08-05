@@ -68,6 +68,12 @@ const clubSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Tunisian governorate (الولاية) used for federation license statistics.
+    governorate: {
+      type: String,
+      trim: true,
+      index: true,
+    },
     logoUrl: {
       type: String,
       trim: true,
@@ -95,7 +101,7 @@ const clubSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 clubSchema.index({ nameAr: 1 });
