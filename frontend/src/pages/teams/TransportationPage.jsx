@@ -22,7 +22,7 @@ const TransportationPage = () => {
         Please submit your request using the attached form (
         <a
           className="pub-doc__link"
-          href="/documents/Tunis-Airport_Transport_Request.pdf"
+          href="/documents/Tunis-Airport_Transport_Request.xlsx"
           target="_blank"
           rel="noreferrer"
         >

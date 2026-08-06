@@ -32,7 +32,7 @@ const AccommodationPage = () => {
         Please submit your request using the attached form{" "}
         <a
           className="pub-doc__link"
-          href="/documents/Hotel-Accommodation.pdf"
+          href="/documents/Hotel-Accommodation.docx"
           target="_blank"
           rel="noreferrer"
         >

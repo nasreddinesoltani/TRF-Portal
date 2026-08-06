@@ -5,7 +5,7 @@ const VisaPage = () => {
   return (
     <TeamPage title="If you need a VISA for entry to Tunisia">
       <p className="pub-doc__lead">
-        Teams who require an invitation in order to obtain visas for entry to
+        Teams who require an invitation in order to obtain visa for entry to
         Tunisia to attend the 2026 Tunisia Rowing Events 27 September to 4
         October 2026 must provide the following information for all team members
         including rowers, coaches, technical staff, etc. to the Organizing
@@ -37,7 +37,7 @@ const VisaPage = () => {
         Please submit your request using the attached form (
         <a
           className="pub-doc__link"
-          href="/documents/VISA_Form_Request.pdf"
+          href="/documents/VISA_Form_Request.xlsx"
           target="_blank"
           rel="noreferrer"
         >

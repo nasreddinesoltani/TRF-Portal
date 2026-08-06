@@ -19,7 +19,7 @@ const AccreditationPage = () => {
         Please submit your request using the attached form{" "}
         <a
           className="pub-doc__link"
-          href="/documents/Accreditation_Application_Form.pdf"
+          href="/documents/Accreditation-Application-Form.xlsx"
           target="_blank"
           rel="noreferrer"
         >
