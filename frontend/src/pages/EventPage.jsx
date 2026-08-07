@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Calendar,
+  FileSpreadsheet,
   MapPin,
   Trophy,
   Waves,
@@ -100,6 +101,18 @@ const EventPage = () => {
           </div>
 
           <div className="pub-event__actions">
+            {event.entryForm && (
+              <a
+                className="pub-hero__cta pub-hero__cta--entry"
+                href={`/documents/${event.entryForm.fileName}`}
+                target="_blank"
+                rel="noreferrer"
+                download
+              >
+                <FileSpreadsheet size={15} />
+                {event.entryForm.label || "Entry Form"}
+              </a>
+            )}
             {event.competitionId ? (
               <button
                 className="pub-hero__cta"

@@ -2102,7 +2102,15 @@ html {
 }
 
 .pub-event__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
   margin-top: 8px;
+}
+
+.pub-hero__cta--entry {
+  text-decoration: none;
 }
 
 .pub-event__soon {

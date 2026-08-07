@@ -21,6 +21,10 @@ export const INTERNATIONAL_EVENTS = [
       "The Tunis Lake International Rowing Regatta is one of the flagship rowing events organised by the Tunisian Rowing Federation. The 17th edition welcomes national teams and international guests for a day of competitive racing on the calm waters of Tunis Lake.",
     // Link to the live competition in the portal once it exists in the database.
     competitionId: null,
+    entryForm: {
+      fileName: "17thTLIRR-Entry-Form.xlsx",
+      label: "Entry Form (xlsx)",
+    },
   },
   {
     slug: "18th-african-rowing-championships",
@@ -37,6 +41,10 @@ export const INTERNATIONAL_EVENTS = [
     description:
       "Tunisia proudly hosts the 18th African Rowing Championships, the premier continental competition organised under the umbrella of the African Rowing Confederation. Over two days, national teams from across the continent compete for continental titles and qualification honours.",
     competitionId: null,
+    entryForm: {
+      fileName: "18thAfRCH-Entry-Form.xlsx",
+      label: "Entry Form (xlsx)",
+    },
   },
   {
     slug: "2026-arab-rowing-championships",
