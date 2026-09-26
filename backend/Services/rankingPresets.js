@@ -200,6 +200,8 @@ export const RANKING_PRESETS = {
    * - Aggregated by representingNation
    * - Counts medals (gold/silver/bronze) instead of points
    * - Sorted by most golds, then silvers, then bronzes (like Olympic medal table)
+   * - Fallback: a lane whose athlete carries no nation still counts for the
+   *   nation of its club (Club.country, then Club.code for type:"country" teams)
    */
   NATION_MEDAL_TABLE: {
     code: "NATION_MEDAL_TABLE",
@@ -217,7 +219,8 @@ export const RANKING_PRESETS = {
     scoringMode: "medals",
     includeMastersDefault: true,
     discipline: null,
-    journeyMode: "all",
+    // Medals belong to the final only — heat results must not add medals.
+    journeyMode: "final_only",
     maxScoringPosition: 3,
     dnfGetsPointsIfFewFinishers: false,
     tieBreakers: [
@@ -230,6 +233,83 @@ export const RANKING_PRESETS = {
     isPreset: true,
     isActive: true,
     sortOrder: 7,
+  },
+
+  /**
+   * Club Medal Ranking (international events)
+   * - Aggregated by club (a club entry's result counts for the club itself,
+   *   e.g. SIMSC — exactly like the display rule "ASL 1")
+   * - Counts medals (gold/silver/bronze) instead of points
+   * - Medals belong to the final only — heat results must not add medals.
+   */
+  CLUB_MEDAL_TABLE: {
+    code: "CLUB_MEDAL_TABLE",
+    names: {
+      en: "Club Medal Table",
+      fr: "Tableau des Médailles par Club",
+      ar: "جدول ميداليات النوادي",
+    },
+    description:
+      "Club-based medal ranking for international events. Sorted by gold medals, then silver, then bronze. Medals only (top 3 positions).",
+    groupBy: "global",
+    entityType: "club",
+    boatClassFilter: "all",
+    scoringMode: "medals",
+    includeMastersDefault: true,
+    discipline: null,
+    // Medals belong to the final only — heat results must not add medals.
+    journeyMode: "final_only",
+    maxScoringPosition: 3,
+    dnfGetsPointsIfFewFinishers: false,
+    tieBreakers: [
+      { priority: 1, method: "more_first_places" },
+      { priority: 2, method: "more_second_places" },
+      { priority: 3, method: "alphabetical" },
+    ],
+    showTimeDeltas: false,
+    showTotalTime: false,
+    isPreset: true,
+    isActive: true,
+    sortOrder: 8,
+  },
+
+  /**
+   * International Medal Table (mixed nations + clubs)
+   * - ONE table where national teams count as nations and regular clubs
+   *   keep their own row — a club's medals ALSO count toward its nation.
+   * - Counts medals (gold/silver/bronze) instead of points
+   * - Sorted by most golds, then silvers, then bronzes (like Olympic medal table)
+   * - Medals belong to the final only — heat results must not add medals.
+   */
+  MIXED_MEDAL_TABLE: {
+    code: "MIXED_MEDAL_TABLE",
+    names: {
+      en: "International Medal Table",
+      fr: "Table International des Médailles",
+      ar: "الجدول الدولي للميداليات",
+    },
+    description:
+      "Nations and clubs in a single table: national teams rank as nations, clubs rank themselves, and each club's medals also count for its nation. Sorted by gold medals, then silver, then bronze. Medals only (top 3 positions, final journey).",
+    groupBy: "global",
+    entityType: "mixed",
+    boatClassFilter: "all",
+    scoringMode: "medals",
+    includeMastersDefault: true,
+    discipline: null,
+    // Medals belong to the final only — heat results must not add medals.
+    journeyMode: "final_only",
+    maxScoringPosition: 3,
+    dnfGetsPointsIfFewFinishers: false,
+    tieBreakers: [
+      { priority: 1, method: "more_first_places" },
+      { priority: 2, method: "more_second_places" },
+      { priority: 3, method: "alphabetical" },
+    ],
+    showTimeDeltas: false,
+    showTotalTime: false,
+    isPreset: true,
+    isActive: true,
+    sortOrder: 10,
   },
 
   /**

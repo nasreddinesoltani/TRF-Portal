@@ -24,8 +24,9 @@ const clubSchema = new mongoose.Schema(
       default: "club",
     },
     // --- Federation identity (international support) ---
-    // ISO 3166-1 alpha-3 country code. A `type:"country"` club represents a
-    // national federation/team and carries the nation's identity here.
+    // 3-letter nation code resolvable by the Country registry (Country.code /
+    // Country.iocCode, e.g. "TUN", "UAE"). A `type:"country"` club represents
+    // a national federation/team and carries the nation's identity here.
     country: {
       type: String,
       trim: true,

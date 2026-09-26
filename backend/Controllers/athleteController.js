@@ -1145,6 +1145,7 @@ export const updateAthlete = asyncHandler(async (req, res) => {
     membership,
     licenseStatus,
     isPara,
+    isForeign: isForeignFlag,
   } = req.body;
 
   const candidateFirstNameAr =
@@ -1279,6 +1280,44 @@ export const updateAthlete = asyncHandler(async (req, res) => {
 
   if (isPara !== undefined) {
     athlete.isPara = Boolean(isPara);
+  }
+
+  if (isForeignFlag !== undefined) {
+    const nextIsForeign = Boolean(isForeignFlag);
+
+    if (nextIsForeign && !athlete.nationalityCode) {
+      return res.status(400).json({
+        message: "nationalityCode is required for foreign athletes",
+      });
+    }
+
+    athlete.isForeign = nextIsForeign;
+  }
+
+  // Foreign athletes hold no club membership, so allow the client to clear it
+  // explicitly by sending `membership: { clubId: null }`.
+  const membershipRequested =
+    membership !== undefined &&
+    membership !== null &&
+    typeof membership === "object";
+  const requestsClubRemoval = membershipRequested && !membership?.clubId;
+
+  if (requestsClubRemoval) {
+    const now = new Date();
+
+    athlete.memberships.forEach((entry) => {
+      if (entry.status === "transferred") {
+        return;
+      }
+
+      entry.status = "transferred";
+      entry.startDate = entry.startDate || now;
+      entry.endDate = entry.endDate || now;
+    });
+
+    if (athlete.licenseStatus === "active") {
+      athlete.licenseStatus = "inactive";
+    }
   }
 
   const requestedClubId = membership?.clubId;

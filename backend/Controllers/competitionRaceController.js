@@ -1028,7 +1028,7 @@ export const listRaces = asyncHandler(async (req, res) => {
     })
     .populate({
       path: "lanes.club",
-      select: "name nameAr code",
+      select: "name nameAr code type country",
     })
     .lean();
 
@@ -1077,7 +1077,7 @@ export const getRace = asyncHandler(async (req, res) => {
     })
     .populate({
       path: "lanes.club",
-      select: "name nameAr code",
+      select: "name nameAr code type country",
     })
     .lean();
 
@@ -1742,7 +1742,7 @@ const fetchRacesForEventGroup = async (competitionId, eventGroupId) => {
       path: "lanes.athlete",
       select: "firstName lastName firstNameAr lastNameAr licenseNumber isForeign nationalityCode representingNation",
     })
-    .populate({ path: "lanes.club", select: "name nameAr code" });
+    .populate({ path: "lanes.club", select: "name nameAr code type country" });
 
   return allRaces.filter(
     (race) => getEffectiveEventGroupId(race) === eventGroupId,

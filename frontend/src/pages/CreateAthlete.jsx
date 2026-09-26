@@ -384,6 +384,7 @@ const CreateAthlete = () => {
       cin: athlete.cin || "",
       passportNumber: athlete.passportNumber || "",
       isPara: athlete.isPara || false,
+      isForeign: Boolean(athlete.isForeign),
     });
 
     const activeMembership = Array.isArray(athlete.memberships)
@@ -944,15 +945,17 @@ const CreateAthlete = () => {
     if (!editFormData) {
       return false;
     }
-    return (
+    const nameFieldsOk =
       editFormData.firstName.trim() &&
       editFormData.lastName.trim() &&
       editFormData.firstNameAr.trim() &&
       editFormData.lastNameAr.trim() &&
       editFormData.birthDate &&
-      editFormData.gender
-    );
-  }, [editFormData]);
+      editFormData.gender;
+    if (!nameFieldsOk) return false;
+    if (editFormData.isForeign) return true;
+    return isAdmin ? !!editClubId : true;
+  }, [editFormData, editClubId, isAdmin]);
 
   const handleInputChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -1140,8 +1143,14 @@ const CreateAthlete = () => {
         passportNumber: (editFormData.passportNumber || "").trim(),
       };
 
-      if (editClubId) {
-        payload.membership = { clubId: editClubId };
+      if (editFormData.isForeign) {
+        payload.isForeign = true;
+        payload.membership = { clubId: null };
+      } else {
+        payload.isForeign = false;
+        if (editClubId) {
+          payload.membership = { clubId: editClubId };
+        }
       }
 
       const response = await fetch(
@@ -2511,12 +2520,20 @@ const CreateAthlete = () => {
                   </p>
                 </div>
                 <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs font-medium text-slate-500">Nationality Code</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">{selectedAthlete.nationalityCode || "-"}</p>
+                  <p className="text-xs font-medium text-slate-500">
+                    Nationality Code
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {selectedAthlete.nationalityCode || "-"}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs font-medium text-slate-500">Representing Nation</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">{selectedAthlete.representingNation || "-"}</p>
+                  <p className="text-xs font-medium text-slate-500">
+                    Representing Nation
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {selectedAthlete.representingNation || "-"}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-blue-50 p-3">
                   <p className="text-xs font-medium text-blue-600">
@@ -2868,15 +2885,41 @@ const CreateAthlete = () => {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="editNationalityCode" className="text-xs font-medium text-slate-600">Nationality Code (ISO Alpha-3)</Label>
-                      <Input id="editNationalityCode" name="nationalityCode" value={editFormData.nationalityCode || ""} onChange={handleEditInputChange} placeholder="e.g. TUN" className="h-10" />
+                      <Label
+                        htmlFor="editNationalityCode"
+                        className="text-xs font-medium text-slate-600"
+                      >
+                        Nationality Code (ISO Alpha-3)
+                      </Label>
+                      <Input
+                        id="editNationalityCode"
+                        name="nationalityCode"
+                        value={editFormData.nationalityCode || ""}
+                        onChange={handleEditInputChange}
+                        placeholder="e.g. TUN"
+                        required={editFormData.isForeign || false}
+                        className="h-10"
+                      />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="editRepresentingNation" className="text-xs font-medium text-slate-600">Representing Nation</Label>
-                      <select id="editRepresentingNation" name="representingNation" value={editFormData.representingNation || ""} onChange={handleEditInputChange} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                      <Label
+                        htmlFor="editRepresentingNation"
+                        className="text-xs font-medium text-slate-600"
+                      >
+                        Representing Nation
+                      </Label>
+                      <select
+                        id="editRepresentingNation"
+                        name="representingNation"
+                        value={editFormData.representingNation || ""}
+                        onChange={handleEditInputChange}
+                        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      >
                         <option value="">-- Select country --</option>
                         {(countries || []).map((c) => (
-                          <option key={c.code} value={c.code}>{c.names?.en || c.code}</option>
+                          <option key={c.code} value={c.code}>
+                            {c.names?.en || c.code}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -2894,6 +2937,20 @@ const CreateAthlete = () => {
                         </span>
                       </label>
                     </div>
+                    <div className="flex items-end pb-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          name="isForeign"
+                          checked={editFormData.isForeign || false}
+                          onChange={handleEditInputChange}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700">
+                          Foreign athlete (no Tunisian license)
+                        </span>
+                      </label>
+                    </div>
                     <div className="space-y-1.5">
                       <Label
                         htmlFor="editClub"
@@ -2901,7 +2958,11 @@ const CreateAthlete = () => {
                       >
                         Club
                       </Label>
-                      {isAdmin ? (
+                      {editFormData.isForeign ? (
+                        <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                          No club is required for foreign athletes.
+                        </p>
+                      ) : isAdmin ? (
                         <Select
                           id="editClub"
                           value={editClubId}
@@ -3154,7 +3215,9 @@ const CreateAthlete = () => {
           {formData.isForeign ? (
             <>
               <div className="space-y-2">
-                <Label htmlFor="nationalityCode">Nationality code (Alpha-3)</Label>
+                <Label htmlFor="nationalityCode">
+                  Nationality code (Alpha-3)
+                </Label>
                 <Input
                   id="nationalityCode"
                   name="nationalityCode"

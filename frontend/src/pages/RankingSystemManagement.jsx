@@ -38,6 +38,7 @@ const ENTITY_TYPE_OPTIONS = [
   { value: "club", label: "Club (aggregate by club)" },
   { value: "athlete", label: "Athlete (per individual)" },
   { value: "nation", label: "Nation (medal table by country)" },
+  { value: "mixed", label: "Mixed (nations + clubs medal table)" },
 ];
 
 const NATION_GROUPING_OPTIONS = [
@@ -157,7 +158,7 @@ const RankingSystemCard = ({ system, onEdit, onDelete, onToggleActive }) => {
             📅 {journeyLabel}
           </span>
           <span className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs">
-            🏷️ {system.entityType === "nation" ? "Nation" : system.entityType === "athlete" ? "Athlete" : "Club"}
+            🏷️ {system.entityType === "nation" ? "Nation" : system.entityType === "athlete" ? "Athlete" : system.entityType === "mixed" ? "Mixed" : "Club"}
           </span>
           {system.nationGrouping && (
             <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs">

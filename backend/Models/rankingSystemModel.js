@@ -31,6 +31,7 @@ export const ENTITY_TYPE_OPTIONS = [
   "athlete", // Points go to individual athletes
   "nation",  // Points/medals go to nation (aggregates by representingNation)
   "crew",    // Points go to the crew SLOT (e.g. EPT 1) — accumulates across journeys
+  "mixed",   // Medals go to nation rows (type:"country" clubs) AND club rows (regular clubs) in the SAME table
 ];
 
 // Boat class filter - which boats count

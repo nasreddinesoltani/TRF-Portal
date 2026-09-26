@@ -156,6 +156,7 @@ const RankingTable = ({
   // Determine ranking type
   const isAthleteRanking = entries?.[0]?.entityType === "athlete";
   const isNationRanking = entries?.[0]?.entityType === "nation";
+  const isMixedRanking = entries?.[0]?.entityType === "mixed";
   const isCrewRanking = entries?.[0]?.entityType === "crew";
   const isMedalMode = scoringMode === "medals";
   const hasMultipleJourneys = stages.length > 1;
@@ -174,6 +175,19 @@ const RankingTable = ({
     if (entry.entityType === "nation") {
       const nationCode = entry.entityId || entry.entity?.code;
       return countryLabel(nationCode) || nationCode || "Unknown";
+    }
+    if (entry.entityType === "mixed") {
+      if (entry.entityKind === "nation") {
+        const nationCode = entry.nationCode || entry.entity?.code;
+        return countryLabel(nationCode) || nationCode || "Unknown";
+      }
+      return (
+        entry.entity?.name ||
+        entry.entity?.names?.fr ||
+        entry.entity?.names?.en ||
+        entry.entity?.code ||
+        "Unknown Club"
+      );
     }
     if (entry.entityType === "crew") {
       // Crew slot: show "EPT 1", "ASL 2", etc.
@@ -324,7 +338,11 @@ const RankingTable = ({
     } else if (isMedalMode) {
       tableHeaders = [
         "#",
-        isNationRanking ? "Country" : "Club",
+        isNationRanking
+          ? "Country"
+          : isMixedRanking
+            ? "Nation / Club"
+            : "Club",
         "Gold",
         "Silver",
         "Bronze",
@@ -464,9 +482,11 @@ const RankingTable = ({
               ? "athletes"
               : isNationRanking
                 ? "countries"
-                : isCrewRanking
-                  ? "crews"
-                  : "clubs"}
+                : isMixedRanking
+                  ? "nations & clubs"
+                  : isCrewRanking
+                    ? "crews"
+                    : "clubs"}
           </p>
         </div>
         <button
@@ -497,9 +517,11 @@ const RankingTable = ({
                   ? "Athlete"
                   : isNationRanking
                     ? "Country"
-                    : isCrewRanking
-                      ? "Crew"
-                      : "Club"}
+                    : isMixedRanking
+                      ? "Nation / Club"
+                      : isCrewRanking
+                        ? "Crew"
+                        : "Club"}
               </th>
               {isAthleteRanking && (
                 <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
@@ -582,12 +604,16 @@ const RankingTable = ({
                   <PositionBadge position={entry.rank} />
                 </td>
                 <td className="px-3 py-3">
-                  {isNationRanking && (entry.entityId || entry.entity?.code) ? (
-                    (() => {
-                      const nationCode =
-                        entry.nationCode ||
-                        entry.entityId ||
-                        entry.entity?.code;
+                  {(() => {
+                    const isNationRow =
+                      isNationRanking ||
+                      (isMixedRanking && entry.entityKind === "nation");
+                    const nationCode = isNationRow
+                      ? entry.nationCode ||
+                        (isMixedRanking ? entry.entity?.code : entry.entityId) ||
+                        entry.entity?.code
+                      : null;
+                    if (isNationRow && nationCode) {
                       return (
                         <span className="font-medium text-slate-900 inline-flex items-center gap-2">
                           <img
@@ -598,12 +624,18 @@ const RankingTable = ({
                           {getEntityName({ ...entry, nationCode })}
                         </span>
                       );
-                    })()
-                  ) : (
-                    <span className="font-medium text-slate-900">
-                      {getEntityName(entry)}
-                    </span>
-                  )}
+                    }
+                    return (
+                      <span className="font-medium text-slate-900 inline-flex items-center gap-2">
+                        {isMixedRanking && entry.entityKind === "club" && (
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-blue-100 text-blue-700 text-xs font-bold">
+                            🏢
+                          </span>
+                        )}
+                        {getEntityName(entry)}
+                      </span>
+                    );
+                  })()}
                 </td>
                 {isAthleteRanking && (
                   <td className="px-3 py-3 text-slate-600 text-sm">
@@ -941,6 +973,7 @@ export default function CompetitionRankings() {
     // Determine entity type and scoring mode
     const isAthleteRanking = rankingData.entityType === "athlete";
     const isNationRanking = rankingData.entityType === "nation";
+    const isMixedRanking = rankingData.entityType === "mixed";
     const isMedalMode = rankingData.scoringMode === "medals";
 
     // Get journey/stage info
@@ -1106,7 +1139,11 @@ export default function CompetitionRankings() {
           const clubsMap = new Map();
           Object.values(rankingData.rankings || {}).forEach((entries) => {
             entries.forEach((entry) => {
-              if (entry.entityType === "club" && entry.entity?._id) {
+              const isClubRow =
+                entry.entityType === "club" ||
+                (entry.entityType === "mixed" &&
+                  entry.entityKind === "club");
+              if (isClubRow && entry.entity?._id) {
                 const id = entry.entity._id.toString();
                 if (!clubsMap.has(id)) {
                   clubsMap.set(id, entry.entity);
@@ -1185,6 +1222,20 @@ export default function CompetitionRankings() {
       if (entry.entityType === "nation") {
         const nationCode = entry.entityId || entry.entity?.code;
         return countryLabel(nationCode) || nationCode || "Unknown";
+      }
+
+      if (entry.entityType === "mixed") {
+        if (entry.entityKind === "nation") {
+          const nationCode = entry.nationCode || entry.entity?.code;
+          return countryLabel(nationCode) || nationCode || "Unknown";
+        }
+        return (
+          entry.entity?.name ||
+          entry.entity?.names?.fr ||
+          entry.entity?.names?.en ||
+          entry.entity?.code ||
+          "Unknown Club"
+        );
       }
 
       return entry.entity?.name || entry.entity?.names?.fr || entry.entity?.names?.en || entry.entity?.code || (entry.entityType === "crew" ? "Unknown Crew" : "Unknown Club");
@@ -1284,7 +1335,18 @@ export default function CompetitionRankings() {
         }
       } else if (isMedalMode) {
         // MEDAL MODE: Rank | Club | 🥇 | 🥈 | 🥉 | Total
-        tableHeaders = ["#", "Club", "Gold", "Silver", "Bronze", "Total"];
+        tableHeaders = [
+          "#",
+          isNationRanking
+            ? "Country"
+            : isMixedRanking
+              ? "Nation / Club"
+              : "Club",
+          "Gold",
+          "Silver",
+          "Bronze",
+          "Total",
+        ];
         tableBody = entries.map((entry) => [
           entry.rank,
           getEntityName(entry),
@@ -1497,7 +1559,9 @@ export default function CompetitionRankings() {
                 ? "Nations"
                 : selectedSystem.entityType === "crew"
                   ? "Crews (boat slots)"
-                  : "Clubs"}
+                  : selectedSystem.entityType === "mixed"
+                    ? "Nations + Clubs"
+                    : "Clubs"}
             {" • "}
             <span className="font-medium">Groups by:</span>{" "}
             {selectedSystem.groupBy === "gender"

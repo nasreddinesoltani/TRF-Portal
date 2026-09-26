@@ -37,6 +37,7 @@ import {
   buildStartListTableBody,
   sortStartListLanes,
 } from "../lib/startListPdf";
+import { resolveLaneEntryLabel } from "../lib/nationLabel";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -543,6 +544,8 @@ const RaceDetail = () => {
         lane?.athlete?.nationalityCode,
         lane?.crew?.[0]?.representingNation,
         lane?.crew?.[0]?.nationalityCode,
+        lane?.club?.country,
+        lane?.club?.code,
       ];
       const first = candidates.find(
         (item) => item !== undefined && item !== null && String(item).trim(),
@@ -1477,14 +1480,18 @@ const RaceDetail = () => {
           ? calculatePoints(effectivePos, activeRankingSystem)
           : 0;
 
-      const c = lane.representingNation || lane.athlete?.representingNation || lane.athlete?.nationalityCode || lane.crew?.[0]?.representingNation || lane.crew?.[0]?.nationalityCode;
-      const country = getCountry(c)?.iocCode || c || "-";
+      const c = lane.representingNation || lane.athlete?.representingNation || lane.athlete?.nationalityCode || lane.crew?.[0]?.representingNation || lane.crew?.[0]?.nationalityCode || lane?.club?.country;
+      // NOTE: must be `lane`, not the start-list's `laneForRow` (different closure).
+      const country = getCountry(c)?.iocCode || c || lane?.club?.code || "-";
       if (isInternational) {
         // International results: medals-based, no club column, no points column.
+        // The Country column shows the athlete's country plus the crew slot
+        // ("TUN 2"). The club code is only a fallback when the athlete has
+        // no country at all.
         return [
           String(pos),
           String(lane.lane || ""),
-          String(country),
+          resolveLaneEntryLabel(String(country), lane),
           String(athleteName),
           String(timeStr),
         ];
@@ -1533,12 +1540,21 @@ const RaceDetail = () => {
       (l) => Boolean(l?.athlete) || (Array.isArray(l?.crew) && l.crew.length > 0),
     );
     const startListTableBody = fullStartListTableBody.map((row, idx) => {
-      const c = startListVisibleLanes[idx]?.representingNation || startListVisibleLanes[idx]?.athlete?.representingNation || startListVisibleLanes[idx]?.athlete?.nationalityCode || startListVisibleLanes[idx]?.crew?.[0]?.representingNation || startListVisibleLanes[idx]?.crew?.[0]?.nationalityCode;
-      const country = getCountry(c)?.iocCode || c || "-";
+      const laneForRow = startListVisibleLanes[idx];
+      const c = laneForRow?.representingNation || laneForRow?.athlete?.representingNation || laneForRow?.athlete?.nationalityCode || laneForRow?.crew?.[0]?.representingNation || laneForRow?.crew?.[0]?.nationalityCode || laneForRow?.club?.country;
+      const country = getCountry(c)?.iocCode || c || laneForRow?.club?.code || "-";
       if (isInternational) {
         // International start list: [Lane, Country, Name, DOB] — no club, no license.
         // row from buildStartListTableBody = [idx, club, name, license, dob, event]
-        return [row[0], String(country), row[2], row[4]];
+        // The Country cell shows the athlete's country plus the crew slot
+        // ("TUN 2"). The club code is only a fallback when the athlete has
+        // no country at all.
+        return [
+          row[0],
+          resolveLaneEntryLabel(String(country), laneForRow),
+          row[2],
+          row[4],
+        ];
       }
       // National: [Lane, Club, Country, Name, License, DOB]
       return [row[0], row[1], String(country), ...row.slice(2, 5)];
@@ -1713,7 +1729,12 @@ const RaceDetail = () => {
             l?.athlete?.representingNation ||
             l?.athlete?.nationalityCode ||
             l?.crew?.[0]?.representingNation ||
-            l?.crew?.[0]?.nationalityCode;
+            l?.crew?.[0]?.nationalityCode ||
+            // Legend is keyed on countries, so it must also cover the club
+            // country / club code the Country column falls back to.
+            l?.club?.country ||
+            l?.club?.code ||
+            "";
 
           const uniqueNations = Array.from(
             new Set(
@@ -2173,18 +2194,34 @@ const RaceDetail = () => {
                                 )}
                                 {(() => {
                                   const nationCode = resolveLaneCountry(lane);
-                                  if (!nationCode) return null;
+                                  const clubCodeValue = lane?.club?.code || null;
+                                  // International events may contain club entries whose
+                                  // athlete carries no nation — still show the club.
+                                  const canRender = isInternational
+                                    ? Boolean(nationCode || clubCodeValue)
+                                    : Boolean(nationCode);
+                                  if (!canRender) return null;
+                                  const nationText = isInternational
+                                    ? resolveLaneEntryLabel(
+                                        nationCode
+                                          ? countryLabel(nationCode) || nationCode
+                                          : "",
+                                        lane,
+                                      )
+                                    : countryLabel(nationCode) || nationCode;
                                   return (
                                     <Badge
                                       variant="outline"
                                       className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0 border-indigo-200 text-indigo-700 bg-indigo-50"
                                     >
-                                      <img
-                                        src={countryFlag(nationCode)}
-                                        alt={nationCode}
-                                        className="inline-block w-[18px] h-[12px] align-text-bottom"
-                                      />
-                                      {countryLabel(nationCode) || nationCode}
+                                      {nationCode ? (
+                                        <img
+                                          src={countryFlag(nationCode)}
+                                          alt={nationCode}
+                                          className="inline-block w-[18px] h-[12px] align-text-bottom"
+                                        />
+                                      ) : null}
+                                      {nationText}
                                     </Badge>
                                   );
                                 })()}
@@ -2396,20 +2433,32 @@ const RaceDetail = () => {
                             )}
                             {(() => {
                               const nationCode = resolveLaneCountry(lane);
-                              if (!nationCode) return null;
+                              const clubCodeValue = lane?.club?.code || null;
+                              const canRender = isInternational
+                                ? Boolean(nationCode || clubCodeValue)
+                                : Boolean(nationCode);
+                              if (!canRender) return null;
+                              const nationText = isInternational
+                                ? resolveLaneEntryLabel(
+                                    nationCode
+                                      ? countryLabel(nationCode) || nationCode
+                                      : "",
+                                    lane,
+                                  )
+                                : countryLabel(nationCode) || nationCode;
                               return (
                                 <Badge
                                   variant="outline"
                                   className="text-[10px] font-bold px-1.5 py-0 border-indigo-200 text-indigo-700 bg-indigo-50"
                                 >
-                                  <img
-                                    src={countryFlag(nationCode)}
-                                    alt={nationCode}
-                                    className="inline-block w-[18px] h-[12px] align-text-bottom"
-                                  />
-                                  <span className="ml-1">
-                                    {countryLabel(nationCode) || nationCode}
-                                  </span>
+                                  {nationCode ? (
+                                    <img
+                                      src={countryFlag(nationCode)}
+                                      alt={nationCode}
+                                      className="inline-block w-[18px] h-[12px] align-text-bottom"
+                                    />
+                                  ) : null}
+                                  <span className="ml-1">{nationText}</span>
                                 </Badge>
                               );
                             })()}

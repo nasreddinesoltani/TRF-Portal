@@ -19,6 +19,10 @@ import {
   buildStartListTableBody,
   sortStartListLanes,
 } from "../lib/startListPdf";
+import {
+  resolveLaneEntryLabel,
+  resolveEntryLabel,
+} from "../lib/nationLabel";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -951,7 +955,44 @@ const buildAssignmentKey = ({
 const buildEventAssignmentKey = ({ categoryId, boatClassId }) =>
   [categoryId || "-", boatClassId || "-"].join("::");
 
-const SearchResultsList = ({ term, results, loading, error, onPick }) => {
+// Athlete ids that already belong to the CURRENT event (category + boat class).
+// Entries with no boatClass (e.g. manually added ones) are treated as belonging
+// to the current selection. Crew entries keep their first rower in athleteId,
+// so every crew member is collected as well.
+const collectCurrentEventAthleteIds = (entries, boatClassId) => {
+  const currentBoatClassId = boatClassId || null;
+  const ids = new Set();
+  (Array.isArray(entries) ? entries : []).forEach((entry) => {
+    const entryBoatClassId = toDocumentId(entry.boatClass) || null;
+    if (
+      currentBoatClassId &&
+      entryBoatClassId &&
+      entryBoatClassId !== currentBoatClassId
+    ) {
+      return;
+    }
+    const primaryId = toDocumentId(entry.athlete) || entry.athleteId;
+    if (primaryId) {
+      ids.add(primaryId);
+    }
+    (Array.isArray(entry.crew) ? entry.crew : []).forEach((member) => {
+      const memberId = toDocumentId(member);
+      if (memberId) {
+        ids.add(memberId);
+      }
+    });
+  });
+  return ids;
+};
+
+const SearchResultsList = ({
+  term,
+  results,
+  loading,
+  error,
+  onPick,
+  registrations,
+}) => {
   if (!term) {
     return null;
   }
@@ -981,6 +1022,7 @@ const SearchResultsList = ({ term, results, loading, error, onPick }) => {
       {results.map((athlete) => {
         const athleteId = toDocumentId(athlete);
         const name = formatAthleteName(athlete);
+        const existingIn = registrations?.get(athleteId);
         return (
           <button
             key={athleteId}
@@ -993,6 +1035,11 @@ const SearchResultsList = ({ term, results, loading, error, onPick }) => {
               {athlete.licenseNumber ? (
                 <span className="ml-2 text-xs text-slate-500">
                   {athlete.licenseNumber}
+                </span>
+              ) : null}
+              {existingIn && existingIn.length > 0 ? (
+                <span className="ml-2 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                  Registered in {existingIn.join(", ")}
                 </span>
               ) : null}
             </span>
@@ -1149,16 +1196,25 @@ const EntriesTable = ({
                         {entry.clubCode}
                       </span>
                     ) : null}
-                    {entry.athlete?.representingNation ? (
+                    {(entry.athlete?.representingNation || entry.club || entry.clubCode) ? (
                       <span className="flex-shrink-0 inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-700 border border-indigo-200 min-w-[3.5rem] justify-center">
-                        <img
-                          src={countryFlag(entry.athlete.representingNation)}
-                          alt={entry.athlete.representingNation || ""}
-                          className="inline-block w-[18px] h-[12px] align-text-bottom"
-                        />
+                        {entry.athlete?.representingNation ? (
+                          <img
+                            src={countryFlag(entry.athlete.representingNation)}
+                            alt={entry.athlete.representingNation || ""}
+                            className="inline-block w-[18px] h-[12px] align-text-bottom"
+                          />
+                        ) : null}
                         <span>
-                          {countryLabel(entry.athlete.representingNation) ||
-                            entry.athlete.representingNation}
+                          {resolveEntryLabel({
+                            club: entry.club,
+                            clubCode: entry.clubCode,
+                            nation:
+                              countryLabel(entry.athlete?.representingNation) ||
+                              entry.athlete?.representingNation,
+                            crewNumber: entry.crewNumber,
+                            isCrewLane: true,
+                          })}
                         </span>
                       </span>
                     ) : null}
@@ -3477,12 +3533,35 @@ const CompetitionRaces = () => {
       return;
     }
 
+    // Special handling for boat class change to reload entries for that boat
+    // class. Without this, `entries` still holds the previous boat class and
+    // the search filter hides athletes who are legitimately selectable here.
+    if (name === "boatClass") {
+      setPendingManualCrew([]);
+      setValidationErrors([]);
+      setValidationWarnings([]);
+      if (autoGenState.category) {
+        handleCategorySelect(
+          autoGenState.category,
+          null,
+          null,
+          value,
+        );
+      } else {
+        setAutoGenState((previous) => ({
+          ...previous,
+          boatClass: value,
+        }));
+      }
+      return;
+    }
+
     setAutoGenState((previous) => ({
       ...previous,
       [name]: type === "checkbox" ? checked : value,
     }));
-    // Clear pending crew if category or boat class changes to avoid mismatched segments
-    if (name === "category" || name === "boatClass") {
+    // Clear pending crew if category changes to avoid mismatched segments
+    if (name === "category") {
       setPendingManualCrew([]);
     }
     // Clear validation on change
@@ -4554,19 +4633,21 @@ const CompetitionRaces = () => {
         );
 
         const finalizeAndSet = (finalCrew) => {
+          // Flag instead of toasting inside the updater: a setState updater runs
+          // during React's render phase, so calling toast there updated the
+          // Toaster while CompetitionRaces was rendering.
+          let duplicateDetected = false;
           setEntries((previous) => {
-            const isAlreadyInList = previous.some((entry) => {
-              if (entry.athleteId === athleteId) return true;
-              if (Array.isArray(entry.crew) && entry.crew.length > 0) {
-                return entry.crew.some((m) => toDocumentId(m) === athleteId);
-              }
-              if (entry.athlete && toDocumentId(entry.athlete) === athleteId)
-                return true;
-              return false;
-            });
+            // Scoped to the CURRENT event (category + boat class), matching the
+            // search filter. An athlete already in the list for a different boat
+            // class (e.g. JM 1x while JM 2x is selected) can still be added.
+            const existingIds = collectCurrentEventAthleteIds(
+              previous,
+              autoGenState.boatClass,
+            );
 
-            if (isAlreadyInList) {
-              toast.warn("Athlete is already in the start list");
+            if (existingIds.has(athleteId)) {
+              duplicateDetected = true;
               return previous;
             }
             const seed = previous.length + 1;
@@ -4870,6 +4951,10 @@ const CompetitionRaces = () => {
 
             return [...previous, newEntry];
           });
+
+          if (duplicateDetected) {
+            toast.warn("Athlete is already in the start list");
+          }
         };
 
         if (missingIds.length === 0) {
@@ -6221,16 +6306,103 @@ const CompetitionRaces = () => {
     });
   }, [races]);
 
+  const athleteRegisteredInMap = useMemo(() => {
+    const map = new Map();
+    const byCategory = registrationStats?.byCategory;
+    if (!Array.isArray(byCategory)) {
+      return map;
+    }
+
+    const categoryLabel = (categoryId) => {
+      if (!categoryId) return null;
+      const cat = categories.find((c) => toDocumentId(c) === categoryId);
+      if (!cat) return null;
+      return cat.abbreviation || cat.titles?.en || cat.name || null;
+    };
+    const boatClassLabel = (boatClassId) => {
+      if (!boatClassId) return null;
+      const bc = boatClasses.find((b) => toDocumentId(b) === boatClassId);
+      if (!bc) return null;
+      return bc.code || bc.names?.en || bc.name || null;
+    };
+
+    byCategory.forEach((catData) => {
+      const categoryId = toDocumentId(catData.id || catData._id);
+      const catLabel = categoryLabel(categoryId);
+      if (!Array.isArray(catData.entries)) {
+        return;
+      }
+      catData.entries.forEach((entry) => {
+        if (entry?.status === "withdrawn" || entry?.status === "rejected") {
+          return;
+        }
+        const boatClassId = toDocumentId(entry.boatClass);
+        const key = buildEventAssignmentKey({ categoryId, boatClassId });
+        const label =
+          [catLabel, boatClassLabel(boatClassId)].filter(Boolean).join(" ") ||
+          "Entry";
+
+        const athleteIds = new Set();
+        const primary = toDocumentId(entry.athlete) || entry.athleteId;
+        if (primary) {
+          athleteIds.add(primary);
+        }
+        (Array.isArray(entry.crew) ? entry.crew : []).forEach((member) => {
+          const memberId = toDocumentId(member);
+          if (memberId) {
+            athleteIds.add(memberId);
+          }
+        });
+
+        athleteIds.forEach((athleteId) => {
+          if (!map.has(athleteId)) {
+            map.set(athleteId, new Map());
+          }
+          map.get(athleteId).set(key, label);
+        });
+      });
+    });
+
+    return map;
+  }, [registrationStats, categories, boatClasses]);
+
+  const currentEventKey = buildEventAssignmentKey({
+    categoryId: autoGenState.category || null,
+    boatClassId: autoGenState.boatClass || null,
+  });
+
+  // Only surface registrations in OTHER events. The current event is either
+  // already in the start list or a genuine duplicate the backend rejects.
+  const entrySearchRegistrations = useMemo(() => {
+    const map = new Map();
+    athleteRegisteredInMap.forEach((events, athleteId) => {
+      const others = Array.from(events.entries())
+        .filter(([key]) => key !== currentEventKey)
+        .map(([, label]) => label);
+      if (others.length > 0) {
+        map.set(athleteId, Array.from(new Set(others)));
+      }
+    });
+    return map;
+  }, [athleteRegisteredInMap, currentEventKey]);
+
   const filteredEntryResults = useMemo(() => {
     if (!entries.length) {
       return entrySearchResults;
     }
-    const existingIds = new Set(entries.map((entry) => entry.athleteId));
+
+    // Only block athletes already added to the CURRENT event (category + boat
+    // class) so someone entered in JM1x stays selectable for JM2x.
+    const existingIds = collectCurrentEventAthleteIds(
+      entries,
+      autoGenState.boatClass,
+    );
+
     return entrySearchResults.filter((athlete) => {
       const id = toDocumentId(athlete);
       return id && !existingIds.has(id);
     });
-  }, [entries, entrySearchResults]);
+  }, [entries, entrySearchResults, autoGenState.boatClass]);
 
   const exportStartListPDF = useCallback(
     async (racesToExport = null) => {
@@ -6634,7 +6806,12 @@ const CompetitionRaces = () => {
             l?.athlete?.representingNation ||
             l?.athlete?.nationalityCode ||
             l?.crew?.[0]?.representingNation ||
-            l?.crew?.[0]?.nationalityCode;
+            l?.crew?.[0]?.nationalityCode ||
+            // Legend is keyed on countries, so it must also cover the club
+            // country / club code the Country column falls back to.
+            l?.club?.country ||
+            l?.club?.code ||
+            "";
 
           const uniqueCountries = isInternationalCompetition
             ? Array.from(
@@ -6716,9 +6893,16 @@ const CompetitionRaces = () => {
                     lane?.athlete?.representingNation ||
                     lane?.athlete?.nationalityCode ||
                     lane?.crew?.[0]?.representingNation ||
-                    lane?.crew?.[0]?.nationalityCode;
-                  const country = getCountry(c)?.iocCode || c || "-";
-                  return [row[0], country, row[2], row[4], row[5]];
+                    lane?.crew?.[0]?.nationalityCode ||
+                    lane?.club?.country;
+                  const country = getCountry(c)?.iocCode || c || lane?.club?.code || "-";
+                  return [
+                    row[0],
+                    resolveLaneEntryLabel(country, lane),
+                    row[2],
+                    row[4],
+                    row[5],
+                  ];
                 });
               })()
             : null;
@@ -7356,7 +7540,12 @@ const CompetitionRaces = () => {
             l?.athlete?.representingNation ||
             l?.athlete?.nationalityCode ||
             l?.crew?.[0]?.representingNation ||
-            l?.crew?.[0]?.nationalityCode;
+            l?.crew?.[0]?.nationalityCode ||
+            // Legend is keyed on countries, so it must also cover the club
+            // country / club code the Country column falls back to.
+            l?.club?.country ||
+            l?.club?.code ||
+            "";
 
           const uniqueCountries = isInternationalCompetition
             ? Array.from(
@@ -7435,9 +7624,17 @@ const CompetitionRaces = () => {
                     lane?.athlete?.representingNation ||
                     lane?.athlete?.nationalityCode ||
                     lane?.crew?.[0]?.representingNation ||
-                    lane?.crew?.[0]?.nationalityCode;
-                  const country = getCountry(c)?.iocCode || c || "-";
-                  return [row[0] || "", country, row[2] || "", "", "", ""];
+                    lane?.crew?.[0]?.nationalityCode ||
+                    lane?.club?.country;
+                  const country = getCountry(c)?.iocCode || c || lane?.club?.code || "-";
+                  return [
+                    row[0] || "",
+                    resolveLaneEntryLabel(country, lane),
+                    row[2] || "",
+                    "",
+                    "",
+                    "",
+                  ];
                 });
               })()
             : tableBody.map((row) => [
@@ -8055,7 +8252,12 @@ const CompetitionRaces = () => {
           l?.athlete?.representingNation ||
           l?.athlete?.nationalityCode ||
           l?.crew?.[0]?.representingNation ||
-          l?.crew?.[0]?.nationalityCode;
+          l?.crew?.[0]?.nationalityCode ||
+          // Legend is keyed on countries, so it must also cover the club
+          // country / club code the Country column falls back to.
+          l?.club?.country ||
+          l?.club?.code ||
+          "";
 
         const uniqueCountries = isInternationalCompetition
           ? Array.from(
@@ -8232,11 +8434,18 @@ const CompetitionRaces = () => {
                 lane.athlete?.representingNation ||
                 lane.athlete?.nationalityCode ||
                 lane.crew?.[0]?.representingNation ||
-                lane.crew?.[0]?.nationalityCode;
-              const country = getCountry(c)?.iocCode || c || "-";
+                lane.crew?.[0]?.nationalityCode ||
+                lane?.club?.country;
+              const country = getCountry(c)?.iocCode || c || lane?.club?.code || "-";
               const idx = sortedLanes.indexOf(lane);
               const row = tableBody[idx];
-              return [row[0], row[1], country, row[3], row[4]];
+              return [
+                row[0],
+                row[1],
+                resolveLaneEntryLabel(country, lane),
+                row[3],
+                row[4],
+              ];
             })
           : null;
 
@@ -8975,7 +9184,12 @@ const CompetitionRaces = () => {
           l?.athlete?.representingNation ||
           l?.athlete?.nationalityCode ||
           l?.crew?.[0]?.representingNation ||
-          l?.crew?.[0]?.nationalityCode;
+          l?.crew?.[0]?.nationalityCode ||
+          // Legend is keyed on countries, so it must also cover the club
+          // country / club code the Country column falls back to.
+          l?.club?.country ||
+          l?.club?.code ||
+          "";
 
         const uniqueCountries = isInternationalCompetition
           ? Array.from(
@@ -9168,11 +9382,18 @@ const CompetitionRaces = () => {
                 lane.athlete?.representingNation ||
                 lane.athlete?.nationalityCode ||
                 lane.crew?.[0]?.representingNation ||
-                lane.crew?.[0]?.nationalityCode;
-              const country = getCountry(c)?.iocCode || c || "-";
+                lane.crew?.[0]?.nationalityCode ||
+                lane?.club?.country;
+              const country = getCountry(c)?.iocCode || c || lane?.club?.code || "-";
               const idx = sortedLanes.indexOf(lane);
               const row = tableBody[idx];
-              return [row[0], row[1], country, row[3], row[4]];
+              return [
+                row[0],
+                row[1],
+                resolveLaneEntryLabel(country, lane),
+                row[3],
+                row[4],
+              ];
             })
           : null;
 
@@ -12200,11 +12421,13 @@ const CompetitionRaces = () => {
     categoryId,
     statsOverride = null,
     explicitJourney = null,
+    explicitBoatClass = null,
   ) => {
     setAutoGenState((prev) => ({
       ...prev,
       category: categoryId,
       ...(explicitJourney !== null ? { journeyIndex: explicitJourney } : {}),
+      ...(explicitBoatClass !== null ? { boatClass: explicitBoatClass } : {}),
     }));
 
     // Always clear previous entries when switching categories or journeys
@@ -12418,6 +12641,7 @@ const CompetitionRaces = () => {
           athlete: entry.athlete,
           crew: entry.crew,
           clubId: resolvedClub?._id || resolvedClub || entry.club?._id,
+          club: resolvedClub || entry.club || null,
           clubName: resolveClubLabel(resolvedClub) || entry.club?.name,
           clubCode: resolvedClub?.code || entry.club?.code,
           category: entry.category,
@@ -12485,6 +12709,14 @@ const CompetitionRaces = () => {
       );
 
       setAutoGenState((prev) => {
+        // An explicit boat-class choice (e.g. the user switching 1x -> 2x)
+        // takes precedence over the auto-detect logic below.
+        if (explicitBoatClass) {
+          return {
+            ...prev,
+            boatClass: explicitBoatClass,
+          };
+        }
         if (uniqueBoatClasses.size === 1) {
           const singleBoatClassId = uniqueBoatClasses.values().next().value;
           // Always lock to the single available boat class
@@ -13215,6 +13447,7 @@ const CompetitionRaces = () => {
                     loading={entrySearchLoading}
                     error={entrySearchError}
                     onPick={handleAddEntry}
+                    registrations={entrySearchRegistrations}
                   />
 
                   <PendingManualCrewDisplay

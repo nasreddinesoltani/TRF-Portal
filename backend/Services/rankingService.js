@@ -21,6 +21,55 @@ import RankingSystem, {
   DEFAULT_POINT_TABLE,
 } from "../Models/rankingSystemModel.js";
 import CompetitionPenalty from "../Models/competitionPenaltyModel.js";
+import Country from "../Models/countryModel.js";
+
+// === Nation-code normalization ===========================================
+// Athletes store IOC-style codes ("UAE", "LBA"), Club.country carries its
+// own 3-letter spelling and Country.code is the registry's own form. Without
+// normalization the SAME nation can produce two mixed-table rows (e.g.
+// "UAE" from an athlete vs "ARE" from a club). The alias map resolves every
+// spelling registered on a Country document (code / iocCode / codeAlpha2) to
+// one canonical IOC code (falling back to Country.code when no IOC code is
+// stored). Unknown codes pass through uppercased.
+let nationAliasMap = null;
+let nationAliasPromise = null;
+
+export function loadNationAliases() {
+  if (!nationAliasPromise) {
+    nationAliasPromise = Country.find({})
+      .select("code iocCode codeAlpha2")
+      .lean()
+      .then((docs) => {
+        const map = new Map();
+        for (const doc of docs || []) {
+          const canonical = String(doc?.iocCode || doc?.code || "")
+            .trim()
+            .toUpperCase();
+          if (!canonical) continue;
+          for (const alias of [doc.code, doc.iocCode, doc.codeAlpha2]) {
+            const key = String(alias || "").trim().toUpperCase();
+            if (key) {
+              map.set(key, canonical);
+            }
+          }
+        }
+        nationAliasMap = map;
+        return map;
+      })
+      .catch((error) => {
+        console.warn("Nation alias preload failed:", error?.message || error);
+        nationAliasMap = new Map();
+        return nationAliasMap;
+      });
+  }
+  return nationAliasPromise;
+}
+
+export function normalizeNationCode(code) {
+  const raw = String(code || "").trim().toUpperCase();
+  if (!raw) return "";
+  return nationAliasMap?.get(raw) || raw;
+}
 
 /**
  * Get points for a finish position using the ranking system's point table
@@ -205,6 +254,10 @@ export async function buildCompetitionRanking(
   rankingSystemId = null,
   options = {},
 ) {
+  // Preload nation-code aliases (IOC/ISO/alpha-2 spellings -> one canonical
+  // code) so mixed/nation keys built below all agree on the same code.
+  await loadNationAliases();
+
   // Load competition with stages
   const competition = await Competition.findById(competitionId)
     .populate("allowedCategories")
@@ -254,11 +307,23 @@ export async function buildCompetitionRanking(
   // Filter by journey mode
   let filteredRaces = races;
   if (config.journeyMode === "final_only") {
-    // Get final stage index
-    const finalStageIndex = competition.stages?.findIndex((s) => s.isFinalDay);
-    if (finalStageIndex >= 0) {
-      filteredRaces = races.filter((r) => r.journeyIndex === finalStageIndex);
-    }
+    // Only the final journey counts — heats must not add medals.
+    // Stage `order` is 1-based and matches `race.journeyIndex` (the same
+    // convention used in competitionRegistrationController), so match on the
+    // stage order instead of its array index (which is 0-based).
+    const stageEntries = (competition.stages || []).map((stage, idx) => ({
+      stage,
+      order: Number(stage?.order) || idx + 1,
+    }));
+    const finalStage = stageEntries.find(({ stage }) => stage?.isFinalDay);
+    const maxJourney = races.length
+      ? Math.max(...races.map((r) => Number(r.journeyIndex) || 1))
+      : 1;
+    const finalJourney = finalStage ? finalStage.order : maxJourney;
+
+    filteredRaces = filteredRaces.filter(
+      (r) => (Number(r.journeyIndex) || 1) === finalJourney,
+    );
   }
 
   // Filter by allowed boat classes if specified in ranking system
@@ -783,7 +848,7 @@ function getEffectiveEventGroupKey(race) {
   return `${categoryId}::${boatClassId}::J${journeyPart}`;
 }
 
-function getLaneCompetitorKeys(lane, race, entityType) {
+export function getLaneCompetitorKeys(lane, race, entityType) {
   if (entityType === "athlete") {
     const athletes =
       lane?.crew?.length > 0 ? lane.crew : lane?.athlete ? [lane.athlete] : [];
@@ -802,19 +867,203 @@ function getLaneCompetitorKeys(lane, race, entityType) {
       .filter(Boolean);
   }
 
-  if (entityType === "nation") {
-    // Use the lane's representingNation, falling back to athlete data
+  if (entityType === "mixed") {
+    // Mixed nation+club medal table ("International Medal Table"):
+    // - A lane whose club is a national team (type:"country", e.g. UAE-C)
+    //   credits the NATION row (UAE).
+    // - A lane whose club is a regular club (e.g. SIMSC) credits BOTH:
+    //     (a) the CLUB row (SIMSC) — the club's own account, and
+    //     (b) the club's NATION row (UAE) — nations collect the medals of
+    //         their clubs. The nation is resolved from the athlete first,
+    //         then the club (Club.country for national teams).
+    // - A lane with no club at all falls back to athlete nation.
+    // Nations and clubs are rows of the SAME table, sorted Olympic-style
+    // (gold -> silver -> bronze) by the shared medals sort.
+    const club = lane?.club;
+    if (club) {
+      const clubCode = String(club?.code || "").trim();
+      const clubType = club?.type ? String(club.type).trim().toLowerCase() : "";
+      if (clubType === "country" || /-C$/i.test(clubCode)) {
+        const rawClubCountry = String(club?.country || "").trim();
+        const derived = clubCode.replace(/-C$/i, "").trim();
+        const nationCode = normalizeNationCode(
+          rawClubCountry || derived || lane?.representingNation || null,
+        );
+        if (!nationCode) {
+          return [];
+        }
+        const crewIds = (lane?.crew || [])
+          .map((member) => member?._id?.toString?.() || member?.toString?.())
+          .filter(Boolean)
+          .sort();
+        let crewIdentity = "";
+        if (crewIds.length > 0) {
+          const crewNumber = Number(lane?.crewNumber);
+          crewIdentity =
+            Number.isInteger(crewNumber) && crewNumber > 0
+              ? `:slot:${crewNumber}`
+              : `:crew:${crewIds.join("+")}`;
+        } else {
+          const athleteId =
+            lane?.athlete?._id?.toString?.() || lane?.athlete?.toString?.();
+          crewIdentity = athleteId ? `:athlete:${athleteId}` : "";
+        }
+        return [
+          {
+            key: `mixed:nation:${nationCode}${crewIdentity}`,
+            mixedKind: "nation",
+            mixedCode: nationCode,
+          },
+        ];
+      }
+      // Regular club entry -> the club's own row, PLUS the club's nation row.
+      // The nation counts the medal too (e.g. SIMSC's gold is also UAE's gold).
+      const clubId = club?._id?.toString?.() || club?.toString?.();
+      if (!clubId) {
+        return [];
+      }
+      const crewIds = (lane?.crew || [])
+        .map((athlete) => athlete?._id?.toString?.() || athlete?.toString?.())
+        .filter(Boolean)
+        .sort();
+      let clubKey;
+      if (crewIds.length > 0) {
+        const crewNumber = lane?.crewNumber;
+        if (crewNumber != null && Number.isInteger(Number(crewNumber))) {
+          const catId =
+            race?.category?._id?.toString?.() ||
+            race?.category?.toString?.() ||
+            "nocat";
+          const boatClassId =
+            race?.boatClass?._id?.toString?.() ||
+            race?.boatClass?.toString?.() ||
+            "noboat";
+          clubKey = `mixed:club:${clubId}:cat:${catId}:boat:${boatClassId}:slot:${Number(crewNumber)}`;
+        } else {
+          clubKey = `mixed:club:${clubId}:crew:${crewIds.join("+")}`;
+        }
+      } else {
+        const athleteId =
+          lane?.athlete?._id?.toString?.() || lane?.athlete?.toString?.();
+        clubKey = athleteId
+          ? `mixed:club:${clubId}:athlete:${athleteId}`
+          : `mixed:club:${clubId}:fallback:${race?._id?.toString?.() || "race"}:${lane?.lane || 0}`;
+      }
+      const clubCompetitor = {
+        key: clubKey,
+        mixedKind: "club",
+        mixedCode: clubId,
+        clubId,
+      };
+      // --- Nation side of the same result ---
+      // Athlete nation wins; otherwise the club's nation (Club.country).
+      // Never reuse the club's own code (e.g. "SIMSC") as a nation.
+      let clubNationCode = lane?.representingNation || null;
+      if (!clubNationCode) {
+        const athlete = lane?.athlete || lane?.crew?.[0];
+        clubNationCode =
+          athlete?.nationalityCode || athlete?.representingNation || null;
+      }
+      if (!clubNationCode) {
+        const rawClubCountry = String(club?.country || "").trim();
+        if (rawClubCountry) {
+          clubNationCode = rawClubCountry;
+        }
+      }
+      clubNationCode = normalizeNationCode(clubNationCode);
+      if (!clubNationCode) {
+        return [clubCompetitor];
+      }
+      let nationIdentity = "";
+      if (crewIds.length > 0) {
+        const crewNumber = Number(lane?.crewNumber);
+        nationIdentity =
+          Number.isInteger(crewNumber) && crewNumber > 0
+            ? `:slot:${crewNumber}`
+            : `:crew:${crewIds.join("+")}`;
+      } else {
+        const athleteId =
+          lane?.athlete?._id?.toString?.() || lane?.athlete?.toString?.();
+        nationIdentity = athleteId ? `:athlete:${athleteId}` : "";
+      }
+      return [
+        clubCompetitor,
+        {
+          key: `mixed:nation:${clubNationCode}${nationIdentity}`,
+          mixedKind: "nation",
+          mixedCode: clubNationCode,
+        },
+      ];
+    }
+    // No club on the lane -> nation row from athlete data.
     let nationCode = lane?.representingNation;
     if (!nationCode) {
       const athlete = lane?.athlete || lane?.crew?.[0];
       nationCode =
         athlete?.nationalityCode || athlete?.representingNation || null;
     }
+    nationCode = normalizeNationCode(nationCode);
     if (!nationCode) {
       return [];
     }
-    // Single key per nation per lane (not per crew member)
-    return [{ key: `nation:${nationCode}`, nationCode }];
+    return [{ key: `mixed:nation:${nationCode}`, mixedKind: "nation", mixedCode: nationCode }];
+  }
+
+  if (entityType === "nation") {
+    // Use the lane's representingNation, falling back to athlete data.
+    // Last resort: the club's nation (Club.country, or the national team's
+    // country code derived from a type:"country" club code like "UAE-C") —
+    // a lane whose athlete carries no nation still counts for its club's nation.
+    let nationCode = lane?.representingNation;
+    if (!nationCode) {
+      const athlete = lane?.athlete || lane?.crew?.[0];
+      nationCode =
+        athlete?.nationalityCode || athlete?.representingNation || null;
+    }
+    if (!nationCode && lane?.club) {
+      const clubType = lane.club?.type
+        ? String(lane.club.type).trim().toLowerCase()
+        : "";
+      const rawClubCountry = String(lane.club?.country || "").trim();
+      if (rawClubCountry) {
+        nationCode = rawClubCountry;
+      } else if (clubType === "country") {
+        const clubCode = String(lane.club?.code || "").trim();
+        const derived = clubCode.replace(/-C$/i, "").trim();
+        if (derived) {
+          nationCode = derived;
+        }
+      }
+    }
+    nationCode = normalizeNationCode(nationCode);
+    if (!nationCode) {
+      return [];
+    }
+
+    // Crew identity — a nation may enter several crews in the same event
+    // (e.g. two TUN crews in U17W2x). Keying on the nation alone merges them
+    // into a single competitor, which silently drops the second crew's medal.
+    // Use the crew slot when stored, otherwise fall back to the athlete set
+    // (singles are keyed per athlete).
+    const crewIds = (lane?.crew || [])
+      .map((member) => member?._id?.toString?.() || member?.toString?.())
+      .filter(Boolean)
+      .sort();
+
+    let crewIdentity = "";
+    if (crewIds.length > 0) {
+      const crewNumber = Number(lane?.crewNumber);
+      crewIdentity =
+        Number.isInteger(crewNumber) && crewNumber > 0
+          ? `:slot:${crewNumber}`
+          : `:crew:${crewIds.join("+")}`;
+    } else {
+      const athleteId =
+        lane?.athlete?._id?.toString?.() || lane?.athlete?.toString?.();
+      crewIdentity = athleteId ? `:athlete:${athleteId}` : "";
+    }
+
+    return [{ key: `nation:${nationCode}${crewIdentity}`, nationCode }];
   }
 
   const clubId = lane?.club?._id?.toString?.() || lane?.club?.toString?.();
@@ -951,6 +1200,8 @@ function buildMergedEventCandidates(races, entityType) {
             entityId: competitor.entityId,
             clubId: competitor.clubId,
             nationCode: competitor.nationCode,
+            mixedKind: competitor.mixedKind,
+            mixedCode: competitor.mixedCode,
           }),
         );
       }
@@ -988,16 +1239,26 @@ function calculateGroupRanking(group, config) {
       .filter((c) => c.status === "ok" && Number.isFinite(c.elapsedMs))
       .sort((a, b) => a.elapsedMs - b.elapsedMs);
 
-    timedFinishers.forEach((candidate, index) => {
-      candidate.effectivePosition = index + 1;
-      candidate.points = getPointsForPosition(
-        candidate.effectivePosition,
-        config,
-      );
+    // Several candidates can stem from the SAME physical result: mixed mode
+    // emits a club row + a nation row per lane, athlete mode emits one
+    // candidate per crew member. Positions must follow the unique race
+    // results — otherwise duplicate candidates push every later lane down
+    // and corrupt medal counts.
+    const positionByResult = new Map();
+    let lastResultPosition = 0;
+    timedFinishers.forEach((candidate) => {
+      const resultKey = `${candidate.sourceRace?._id || candidate.sourceRace}:${candidate.lane?.lane ?? ""}`;
+      if (!positionByResult.has(resultKey)) {
+        lastResultPosition += 1;
+        positionByResult.set(resultKey, lastResultPosition);
+      }
+      const position = positionByResult.get(resultKey);
+      candidate.effectivePosition = position;
+      candidate.points = getPointsForPosition(position, config);
       candidate.appliedDnfRule = false;
     });
 
-    const lastFinisherPosition = timedFinishers.length;
+    const lastFinisherPosition = lastResultPosition;
 
     for (const candidate of mergedCandidates) {
       if (candidate.points === undefined) {
@@ -1102,6 +1363,86 @@ function calculateGroupRanking(group, config) {
         const status = candidate.status;
         if (status && entry.statusCounts[status] !== undefined) {
           entry.statusCounts[status]++;
+        }
+      } else if (entityType === "mixed") {
+        const mixedKind = candidate.mixedKind || "nation";
+        const mixedKey =
+          mixedKind === "club"
+            ? `mixed-club:${candidate.mixedCode || candidate.clubId || candidate.entityId}`
+            : `mixed-nation:${candidate.mixedCode || candidate.nationCode || candidate.entityId}`;
+        if (!candidate.mixedCode && !candidate.nationCode && !candidate.clubId) {
+          continue;
+        }
+
+        if (!pointsMap.has(mixedKey)) {
+          if (mixedKind === "club") {
+            const clubDoc = lane.club;
+            const clubEntity = clubDoc
+              ? {
+                  _id: clubDoc._id,
+                  code: clubDoc.code,
+                  name:
+                    clubDoc.name ||
+                    clubDoc.names?.fr ||
+                    clubDoc.names?.en ||
+                    clubDoc.code ||
+                    null,
+                  nameAr: clubDoc.nameAr || clubDoc.names?.ar || null,
+                }
+              : null;
+            pointsMap.set(mixedKey, {
+              entityId: mixedKey,
+              entityType: "mixed",
+              entityKind: "club",
+              entity: clubEntity,
+              club: lane.club,
+              clubId: candidate.clubId,
+              totalPoints: 0,
+              raceResults: [],
+              positionCounts: {},
+              totalTime: 0,
+              statusCounts: { dns: 0, dnf: 0, dsq: 0, abs: 0 },
+            });
+          } else {
+            const nationCode =
+              candidate.mixedCode || candidate.nationCode;
+            pointsMap.set(mixedKey, {
+              entityId: mixedKey,
+              entityType: "mixed",
+              entityKind: "nation",
+              entity: { code: nationCode, name: nationCode },
+              nationCode: nationCode,
+              totalPoints: 0,
+              raceResults: [],
+              positionCounts: {},
+              totalTime: 0,
+              statusCounts: { dns: 0, dnf: 0, dsq: 0, abs: 0 },
+            });
+          }
+        }
+
+        const entry = pointsMap.get(mixedKey);
+        entry.totalPoints += candidate.points;
+        entry.totalTime += candidate.elapsedMs || 0;
+        entry.raceResults.push({
+          ...raceResult,
+          athletes: athletes.map((a) => ({
+            _id: a._id,
+            firstName: a.firstName,
+            lastName: a.lastName,
+            fullName:
+              a.fullName || `${a.firstName || ""} ${a.lastName || ""}`.trim(),
+          })),
+        });
+
+        if (candidate.effectivePosition) {
+          entry.positionCounts[candidate.effectivePosition] =
+            (entry.positionCounts[candidate.effectivePosition] || 0) + 1;
+        }
+
+        const mixedStatus = candidate.status;
+        if (mixedStatus && entry.statusCounts[mixedStatus] !== undefined) {
+          entry.statusCounts[mixedStatus]++;
         }
       } else if (entityType === "nation") {
         const nationCode = candidate.nationCode;
@@ -1435,10 +1776,13 @@ export async function getRankingSummary(
     summary.rankings[groupKey] = entries.map((entry) => ({
       rank: entry.rank,
       entityType: entry.entityType,
+      entityKind: entry.entityKind,
       entityId: entry.entityId,
       entity: entry.entity,
       club: entry.club, // For athlete rankings - their club
       clubId: entry.clubId,
+      nationCode: entry.nationCode,
+      medals: entry.medals || null,
       totalPoints: entry.totalPoints,
       basePoints: entry.basePoints,
       penaltyPoints: entry.penaltyPoints,

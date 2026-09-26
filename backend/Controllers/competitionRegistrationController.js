@@ -427,7 +427,7 @@ const resolveClubContext = async (req, { requireClub = false } = {}) => {
   let clubDoc = null;
   if (targetClubId) {
     clubDoc = await Club.findById(targetClubId)
-      .select("name nameAr code type")
+      .select("name nameAr code type country")
       .lean();
     if (!clubDoc) {
       throw new Error("Club not found");
@@ -767,7 +767,7 @@ const populateEntryDoc = async (entryDoc) =>
   entryDoc.populate([
     {
       path: "club",
-      select: "name nameAr code type",
+      select: "name nameAr code type country",
     },
     {
       path: "athlete",
@@ -775,7 +775,7 @@ const populateEntryDoc = async (entryDoc) =>
         "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isForeign nationalityCode representingNation",
       populate: {
         path: "memberships.club",
-        select: "name nameAr code type",
+        select: "name nameAr code type country",
       },
     },
     {
@@ -784,7 +784,7 @@ const populateEntryDoc = async (entryDoc) =>
         "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isForeign nationalityCode representingNation",
       populate: {
         path: "memberships.club",
-        select: "name nameAr code type",
+        select: "name nameAr code type country",
       },
     },
     {
@@ -852,7 +852,7 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
     .populate([
       {
         path: "club",
-        select: "name nameAr code type",
+        select: "name nameAr code type country",
       },
       {
         path: "athlete",
@@ -860,7 +860,7 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
           "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isForeign nationalityCode representingNation",
         populate: {
           path: "memberships.club",
-          select: "name nameAr code type",
+          select: "name nameAr code type country",
         },
       },
       {
@@ -869,7 +869,7 @@ export const getRegistrationSummary = asyncHandler(async (req, res) => {
           "firstName lastName firstNameAr lastNameAr licenseNumber gender birthDate categoryAssignments memberships isForeign nationalityCode representingNation",
         populate: {
           path: "memberships.club",
-          select: "name nameAr code type",
+          select: "name nameAr code type country",
         },
       },
       {
@@ -1244,7 +1244,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
         )
         .populate({
           path: "memberships.club",
-          select: "name nameAr code type",
+          select: "name nameAr code type country",
         })
         .lean();
     }
@@ -1258,7 +1258,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
         )
         .populate({
           path: "memberships.club",
-          select: "name nameAr code type",
+          select: "name nameAr code type country",
         })
         .lean();
     }
@@ -1278,7 +1278,7 @@ export const listEligibleAthletes = asyncHandler(async (req, res) => {
         )
         .populate({
           path: "memberships.club",
-          select: "name nameAr code type",
+          select: "name nameAr code type country",
         })
         .lean();
     }
