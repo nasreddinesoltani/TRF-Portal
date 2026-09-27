@@ -42,21 +42,23 @@ export const formatLaneNationLabel = (label, lane) =>
   });
 
 // ============================================================
-//  Country labels for international events
+//  Country / Club labels for international events
 //
 //  International competitions accept BOTH national teams and clubs
 //  (scope.participationMode can be "mixed"). The Country column
-//  therefore always shows the country of the athlete / crew,
-//  followed by the crew slot for crew boats:
+//  therefore shows WHO the entry represents, followed by the
+//  crew slot for crew boats:
 //
-//    * country known            -> the country   ("TUN 2")
-//    * country on the club      -> that country  ("UAE 1")
-//    * country team record      -> team country  ("UAE 2")
-//    * no country anywhere      -> the club code ("EPT 2") — last resort
+//    * representingType nation/individual -> the country  ("TUN 2")
+//    * FOREIGN club (populated country != host) -> the club code ("SIMSC")
+//    * domestic club member                 -> their nationality ("TUN")
+//    * country-team record                  -> that country  ("UAE 1")
+//    * no club / no country known           -> nationality, then club code
 //
-//  A regular club code is club identity, never a country, so it must
-//  never outrank a resolved nation. Legends are keyed on countries,
-//  so printing a club code here would leave the entry unlabelled.
+//  `representingType` (enum: "club" | "nation" | "individual") and the
+//  club's `country` field distinguish a foreign club registration from a
+//  domestic one: a foreign club carries an explicit non-host country, so
+//  its code is printed; a domestic club member is shown their nationality.
 // ============================================================
 
 const CLUB_TYPES_WITH_CLUB_CODE = [
@@ -84,6 +86,7 @@ export const resolveEntryLabel = ({
   club,
   clubCode,
   nation,
+  representingType,
   crewNumber,
   isCrewLane,
 } = {}) => {
@@ -91,29 +94,31 @@ export const resolveEntryLabel = ({
   const nationLabel =
     nation === undefined || nation === null ? "" : String(nation).trim();
 
-  // Precedence for the "Country" column of an international event:
-  //   1. the country already resolved for the athlete / crew
-  //   2. the country attached to the club record
-  //   3. the club code of a national-team record, minus its "-C" suffix
-  //   4. the club code — LAST RESORT only
-  //
-  // A regular club code is club identity, never a country. It must never
-  // outrank a resolved nation, otherwise start lists print club codes
-  // (e.g. "EPT") in the Country column and those entries end up missing
-  // from the legend, which is keyed on countries.
+  // Precedence for the "Country" column of an international event.
+  // A club is treated as a FOREIGN club (print its code) only when it
+  // carries an explicit populated country that is not the host nation
+  // ("TUN"). Domestic club members are shown their nationality instead.
+  const isNationEntry =
+    representingType === "nation" || representingType === "individual";
   const isTeam = isCountryTeam(club, code);
   const nationBase = nationLabel && nationLabel !== "-" ? nationLabel : "";
   const clubCountry = String(club?.country || "").trim();
+  const isHostCountry = clubCountry.toUpperCase().trim().startsWith("TUN");
+  const isForeignClub =
+    !isTeam && !!club && !!clubCountry && !isHostCountry;
 
   let base;
-  if (nationBase) {
-    base = nationBase;
-  } else if (clubCountry) {
-    base = clubCountry;
-  } else if (isTeam) {
-    base = code.replace(/-C$/i, "").trim();
-  } else if (code) {
+  if (isNationEntry) {
+    base = nationBase || code || clubCountry || "";
+  } else if (isForeignClub) {
     base = code;
+  } else if (nationBase) {
+    base = nationBase;
+  } else if (isTeam) {
+    base = clubCountry || code.replace(/-C$/i, "").trim();
+  } else if (code) {
+    // Domestic club member (or club with no country info): show host nationality
+    base = (isHostCountry || (!clubCountry && !isForeignClub)) ? "TUN" : code;
   } else {
     base = "";
   }
@@ -127,6 +132,7 @@ export const resolveLaneEntryLabel = (nation, lane) =>
     club: lane?.club,
     clubCode: lane?.club?.code,
     nation,
+    representingType: lane?.representingType,
     crewNumber: lane?.crewNumber,
     isCrewLane: laneIsCrewBoat(lane),
   });

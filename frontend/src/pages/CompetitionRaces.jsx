@@ -1206,15 +1206,17 @@ const EntriesTable = ({
                           />
                         ) : null}
                         <span>
-                          {resolveEntryLabel({
-                            club: entry.club,
-                            clubCode: entry.clubCode,
-                            nation:
-                              countryLabel(entry.athlete?.representingNation) ||
-                              entry.athlete?.representingNation,
-                            crewNumber: entry.crewNumber,
-                            isCrewLane: true,
-                          })}
+                           {resolveEntryLabel({
+                             club: entry.club,
+                             clubCode: entry.clubCode,
+                             nation:
+                               countryLabel(entry.athlete?.representingNation) ||
+                               entry.athlete?.representingNation ||
+                               entry.athlete?.nationalityCode,
+                              crewNumber: entry.crewNumber,
+                              isCrewLane:
+                                Array.isArray(entry.crew) && entry.crew.length > 1,
+                            })}
                         </span>
                       </span>
                     ) : null}
@@ -6801,17 +6803,21 @@ const CompetitionRaces = () => {
             .filter(Boolean)
             .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
 
-          const laneCountry = (l) =>
-            l?.representingNation ||
-            l?.athlete?.representingNation ||
-            l?.athlete?.nationalityCode ||
-            l?.crew?.[0]?.representingNation ||
-            l?.crew?.[0]?.nationalityCode ||
-            // Legend is keyed on countries, so it must also cover the club
-            // country / club code the Country column falls back to.
-            l?.club?.country ||
-            l?.club?.code ||
-            "";
+           const laneCountry = (l) =>
+            resolveEntryLabel({
+              club: l?.club,
+              clubCode: l?.club?.code,
+              nation:
+                l?.representingNation ||
+                l?.athlete?.representingNation ||
+                l?.athlete?.nationalityCode ||
+                l?.crew?.[0]?.representingNation ||
+                l?.crew?.[0]?.nationalityCode ||
+                l?.club?.country ||
+                "",
+              representingType: l?.representingType,
+              isCrewLane: false,
+            });
 
           const uniqueCountries = isInternationalCompetition
             ? Array.from(
@@ -6832,22 +6838,35 @@ const CompetitionRaces = () => {
               : 0;
           const bottomMargin = 35 + legendBoxHeight + 14;
 
-          // Store clubs/countries for this page
-          if (isInternationalCompetition) {
-            pageClubsMap.set(
-              raceIndex + 1,
-              uniqueCountries.map((c) => {
-                const cntry = getCountry(c);
-                const iocCode = cntry?.iocCode || c;
-                const label = countryLabel(c) || cntry?.name || c;
-                return {
-                  code: iocCode,
-                  name: label,
-                  names: { fr: label, en: label },
-                  nameAr: "",
-                };
-              }),
-            );
+            // Store clubs/countries for this page
+           if (isInternationalCompetition) {
+             const clubNameForCode = (code) =>
+               (race.lanes || []).find((l) => l.club?.code === code)
+                 ?.club?.name || null;
+             pageClubsMap.set(
+               raceIndex + 1,
+               uniqueCountries.map((c) => {
+                 const cntry = getCountry(c);
+                 if (cntry) {
+                   return {
+                     code: cntry.iocCode || c,
+                     name: countryLabel(c) || cntry?.name || c,
+                     names: {
+                       fr: countryLabel(c) || cntry?.name || c,
+                       en: countryLabel(c) || cntry?.name || c,
+                     },
+                     nameAr: "",
+                   };
+                 }
+                 const clubName = clubNameForCode(c);
+                 return {
+                   code: c,
+                   name: clubName || c,
+                   names: { fr: clubName, en: clubName || c },
+                   nameAr: "",
+                 };
+               }),
+             );
           } else {
             pageClubsMap.set(raceIndex + 1, uniqueClubs);
           }
@@ -7535,17 +7554,21 @@ const CompetitionRaces = () => {
             .filter(Boolean)
             .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
 
-          const laneCountry = (l) =>
-            l?.representingNation ||
-            l?.athlete?.representingNation ||
-            l?.athlete?.nationalityCode ||
-            l?.crew?.[0]?.representingNation ||
-            l?.crew?.[0]?.nationalityCode ||
-            // Legend is keyed on countries, so it must also cover the club
-            // country / club code the Country column falls back to.
-            l?.club?.country ||
-            l?.club?.code ||
-            "";
+           const laneCountry = (l) =>
+            resolveEntryLabel({
+              club: l?.club,
+              clubCode: l?.club?.code,
+              nation:
+                l?.representingNation ||
+                l?.athlete?.representingNation ||
+                l?.athlete?.nationalityCode ||
+                l?.crew?.[0]?.representingNation ||
+                l?.crew?.[0]?.nationalityCode ||
+                l?.club?.country ||
+                "",
+              representingType: l?.representingType,
+              isCrewLane: false,
+            });
 
           const uniqueCountries = isInternationalCompetition
             ? Array.from(
@@ -7566,21 +7589,34 @@ const CompetitionRaces = () => {
               : 0;
           const bottomMargin = 35 + legendBoxHeight + 20;
 
-          if (isInternationalCompetition) {
-            pageClubsMap.set(
-              raceIndex + 1,
-              uniqueCountries.map((c) => {
-                const cntry = getCountry(c);
-                const iocCode = cntry?.iocCode || c;
-                const label = countryLabel(c) || cntry?.name || c;
-                return {
-                  code: iocCode,
-                  name: label,
-                  names: { fr: label, en: label },
-                  nameAr: "",
-                };
-              }),
-            );
+           if (isInternationalCompetition) {
+             const clubNameForCode = (code) =>
+               (race.lanes || []).find((l) => l.club?.code === code)
+                 ?.club?.name || null;
+             pageClubsMap.set(
+               raceIndex + 1,
+               uniqueCountries.map((c) => {
+                 const cntry = getCountry(c);
+                 if (cntry) {
+                   return {
+                     code: cntry.iocCode || c,
+                     name: countryLabel(c) || cntry?.name || c,
+                     names: {
+                       fr: countryLabel(c) || cntry?.name || c,
+                       en: countryLabel(c) || cntry?.name || c,
+                     },
+                     nameAr: "",
+                   };
+                 }
+                 const clubName = clubNameForCode(c);
+                 return {
+                   code: c,
+                   name: clubName || c,
+                   names: { fr: clubName, en: clubName || c },
+                   nameAr: "",
+                 };
+               }),
+             );
           } else {
             pageClubsMap.set(raceIndex + 1, uniqueClubs);
           }
@@ -8259,22 +8295,36 @@ const CompetitionRaces = () => {
           l?.club?.code ||
           "";
 
-        const uniqueCountries = isInternationalCompetition
-          ? Array.from(
-              new Set(exportableLanes.map(laneCountry).filter(Boolean)),
-            ).sort()
-          : [];
+         const uniqueCountries = isInternationalCompetition
+           ? Array.from(
+               new Set(exportableLanes.map(laneCountry).filter(Boolean)),
+             ).sort()
+           : [];
 
-        // Unified legend entries (countries for international, clubs otherwise)
-        const legendEntries = isInternationalCompetition
+         const clubNameForCode = (code) =>
+           (exportableLanes || []).find((l) => l.club?.code === code)
+             ?.club?.name || null;
+
+         // Unified legend entries (countries for international, clubs otherwise)
+         const legendEntries = isInternationalCompetition
           ? uniqueCountries.map((c) => {
               const cntry = getCountry(c);
-              const iocCode = cntry?.iocCode || c;
-              const label = countryLabel(c) || cntry?.name || c;
+              if (cntry) {
+                return {
+                  code: cntry.iocCode || c,
+                  name: countryLabel(c) || cntry?.name || c,
+                  names: {
+                    fr: countryLabel(c) || cntry?.name || c,
+                    en: countryLabel(c) || cntry?.name || c,
+                  },
+                  nameAr: "",
+                };
+              }
+              const clubName = clubNameForCode(c);
               return {
-                code: iocCode,
-                name: label,
-                names: { fr: label, en: label },
+                code: c,
+                name: clubName || c,
+                names: { fr: clubName, en: clubName || c },
                 nameAr: "",
               };
             })
@@ -9191,22 +9241,36 @@ const CompetitionRaces = () => {
           l?.club?.code ||
           "";
 
-        const uniqueCountries = isInternationalCompetition
-          ? Array.from(
-              new Set(allLanes.map(laneCountry).filter(Boolean)),
-            ).sort()
-          : [];
+         const uniqueCountries = isInternationalCompetition
+           ? Array.from(
+               new Set(allLanes.map(laneCountry).filter(Boolean)),
+             ).sort()
+           : [];
 
-        // Unified legend entries (countries for international, clubs otherwise)
-        const legendEntries = isInternationalCompetition
+         const clubNameForCode = (code) =>
+           (allLanes || []).find((l) => l.club?.code === code)
+             ?.club?.name || null;
+
+         // Unified legend entries (countries for international, clubs otherwise)
+         const legendEntries = isInternationalCompetition
           ? uniqueCountries.map((c) => {
               const cntry = getCountry(c);
-              const iocCode = cntry?.iocCode || c;
-              const label = countryLabel(c) || cntry?.name || c;
+              if (cntry) {
+                return {
+                  code: cntry.iocCode || c,
+                  name: countryLabel(c) || cntry?.name || c,
+                  names: {
+                    fr: countryLabel(c) || cntry?.name || c,
+                    en: countryLabel(c) || cntry?.name || c,
+                  },
+                  nameAr: "",
+                };
+              }
+              const clubName = clubNameForCode(c);
               return {
-                code: iocCode,
-                name: label,
-                names: { fr: label, en: label },
+                code: c,
+                name: clubName || c,
+                names: { fr: clubName, en: clubName || c },
                 nameAr: "",
               };
             })

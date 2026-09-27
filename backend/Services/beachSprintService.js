@@ -1078,7 +1078,10 @@ async function generateEntriesByTeamWorkbook(competitionId) {
     const entryDate = formatDateYMD(entry.submittedAt || entry.createdAt);
 
     const eventCode = buildEventCode(entry.category, entry.boatClass);
-    const crewNumber = entry.crewNumber || 1;
+    const crewNumber =
+      Array.isArray(entry.crew) && entry.crew.length > 1
+        ? entry.crewNumber || 1
+        : undefined;
 
     // Build the ordered athlete list for this entry (single or crew).
     const athletes =

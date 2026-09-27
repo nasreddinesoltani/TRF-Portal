@@ -37,7 +37,7 @@ import {
   buildStartListTableBody,
   sortStartListLanes,
 } from "../lib/startListPdf";
-import { resolveLaneEntryLabel } from "../lib/nationLabel";
+import { resolveLaneEntryLabel, resolveEntryLabel, isCountryTeam } from "../lib/nationLabel";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -1724,17 +1724,21 @@ const RaceDetail = () => {
         const lineHeight = 4;
 
         if (isInternational) {
-          const laneCountry = (l) =>
-            l?.representingNation ||
-            l?.athlete?.representingNation ||
-            l?.athlete?.nationalityCode ||
-            l?.crew?.[0]?.representingNation ||
-            l?.crew?.[0]?.nationalityCode ||
-            // Legend is keyed on countries, so it must also cover the club
-            // country / club code the Country column falls back to.
-            l?.club?.country ||
-            l?.club?.code ||
-            "";
+           const laneCountry = (l) =>
+            resolveEntryLabel({
+              club: l?.club,
+              clubCode: l?.club?.code,
+              nation:
+                l?.representingNation ||
+                l?.athlete?.representingNation ||
+                l?.athlete?.nationalityCode ||
+                l?.crew?.[0]?.representingNation ||
+                l?.crew?.[0]?.nationalityCode ||
+                l?.club?.country ||
+                "",
+              representingType: l?.representingType,
+              isCrewLane: false,
+            });
 
           const uniqueNations = Array.from(
             new Set(
@@ -2192,39 +2196,69 @@ const RaceDetail = () => {
                                     {getClubDisplayName(lane.club)}
                                   </span>
                                 )}
-                                {(() => {
-                                  const nationCode = resolveLaneCountry(lane);
-                                  const clubCodeValue = lane?.club?.code || null;
-                                  // International events may contain club entries whose
-                                  // athlete carries no nation — still show the club.
-                                  const canRender = isInternational
-                                    ? Boolean(nationCode || clubCodeValue)
-                                    : Boolean(nationCode);
-                                  if (!canRender) return null;
-                                  const nationText = isInternational
-                                    ? resolveLaneEntryLabel(
-                                        nationCode
-                                          ? countryLabel(nationCode) || nationCode
-                                          : "",
-                                        lane,
-                                      )
-                                    : countryLabel(nationCode) || nationCode;
-                                  return (
-                                    <Badge
-                                      variant="outline"
-                                      className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0 border-indigo-200 text-indigo-700 bg-indigo-50"
-                                    >
-                                      {nationCode ? (
-                                        <img
-                                          src={countryFlag(nationCode)}
-                                          alt={nationCode}
-                                          className="inline-block w-[18px] h-[12px] align-text-bottom"
-                                        />
-                                      ) : null}
-                                      {nationText}
-                                    </Badge>
-                                  );
-                                })()}
+                                  {(() => {
+                                    const nationCode = resolveLaneCountry(lane);
+                                    const clubCodeValue = lane?.club?.code || null;
+                                    const isNationEntry =
+                                      lane?.representingType ===
+                                        "nation" ||
+                                      lane?.representingType ===
+                                        "individual";
+                                    const isClubEntry =
+                                      !isNationEntry && !!clubCodeValue;
+                                    const clubCountry =
+                                      lane?.club?.country || "";
+                                    const isHostCountry =
+                                      clubCountry.toUpperCase().trim().startsWith("TUN") ||
+                                      lane?.club?.iocCode?.toUpperCase() ===
+                                        "TUN";
+                                    const isForeignClub =
+                                      !isCountryTeam(lane.club, clubCodeValue) &&
+                                      !!clubCodeValue &&
+                                      !!clubCountry &&
+                                      !isHostCountry;
+                                    // International events may contain club entries whose
+                                    // athlete carries no nation — still show the club.
+                                    const canRender = isInternational
+                                      ? Boolean(nationCode || clubCodeValue)
+                                      : Boolean(nationCode);
+                                    if (!canRender) return null;
+                                    if (
+                                      isClubEntry &&
+                                      !isCountryTeam(lane.club, clubCodeValue) &&
+                                      isForeignClub
+                                    ) {
+                                      return (
+                                        <Badge
+                                          variant="outline"
+                                          className="text-[10px] font-bold px-1.5 py-0 border-slate-300 text-slate-700 bg-slate-50"
+                                        >
+                                          {clubCodeValue}
+                                        </Badge>
+                                      );
+                                    }
+                                     const teamCountry = isCountryTeam(lane.club, clubCodeValue)
+                                       ? lane.club?.country ||
+                                         clubCodeValue.replace(/-C$/i, "").trim()
+                                       : nationCode;
+                                     const label =
+                                       countryLabel(teamCountry) || teamCountry;
+                                    return (
+                                      <Badge
+                                        variant="outline"
+                                        className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0 border-indigo-200 text-indigo-700 bg-indigo-50"
+                                      >
+                                        {nationCode ? (
+                                          <img
+                                            src={countryFlag(nationCode)}
+                                            alt={nationCode}
+                                            className="inline-block w-[18px] h-[12px] align-text-bottom"
+                                          />
+                                        ) : null}
+                                        {label}
+                                      </Badge>
+                                    );
+                                  })()}
                                 {laneWithdrawn && (
                                   <Badge className="h-5 border-rose-200 bg-rose-100 px-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100">
                                     Withdrawn
@@ -2431,37 +2465,60 @@ const RaceDetail = () => {
                                 {lane.club?.code || "???"}
                               </Badge>
                             )}
-                            {(() => {
-                              const nationCode = resolveLaneCountry(lane);
-                              const clubCodeValue = lane?.club?.code || null;
-                              const canRender = isInternational
-                                ? Boolean(nationCode || clubCodeValue)
-                                : Boolean(nationCode);
-                              if (!canRender) return null;
-                              const nationText = isInternational
-                                ? resolveLaneEntryLabel(
-                                    nationCode
-                                      ? countryLabel(nationCode) || nationCode
-                                      : "",
-                                    lane,
-                                  )
-                                : countryLabel(nationCode) || nationCode;
-                              return (
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] font-bold px-1.5 py-0 border-indigo-200 text-indigo-700 bg-indigo-50"
-                                >
-                                  {nationCode ? (
-                                    <img
-                                      src={countryFlag(nationCode)}
-                                      alt={nationCode}
-                                      className="inline-block w-[18px] h-[12px] align-text-bottom"
-                                    />
-                                  ) : null}
-                                  <span className="ml-1">{nationText}</span>
-                                </Badge>
-                              );
-                            })()}
+                              {(() => {
+                                const nationCode = resolveLaneCountry(lane);
+                                const clubCodeValue = lane?.club?.code || null;
+                                const isNationEntry =
+                                  lane?.representingType === "nation" ||
+                                  lane?.representingType === "individual";
+                                const isClubEntry =
+                                  !isNationEntry && !!clubCodeValue;
+                                 const clubCountry = lane?.club?.country || "";
+                                 const isHostCountry =
+                                   clubCountry.toUpperCase().trim().startsWith("TUN") ||
+                                   lane?.club?.iocCode?.toUpperCase() ===
+                                     "TUN";
+                                 const isForeignClub =
+                                   !isCountryTeam(lane.club, clubCodeValue) &&
+                                   !!clubCodeValue &&
+                                   !!clubCountry &&
+                                   !isHostCountry;
+                                 const canRender = isInternational
+                                   ? Boolean(nationCode || clubCodeValue)
+                                   : Boolean(nationCode);
+                                 if (!canRender) return null;
+                                 if (
+                                   isClubEntry &&
+                                   !isCountryTeam(lane.club, clubCodeValue) &&
+                                   isForeignClub
+                                 ) {
+                                  return (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] font-bold px-1.5 py-0 border-slate-300 text-slate-700 bg-slate-50"
+                                    >
+                                      {clubCodeValue}
+                                    </Badge>
+                                  );
+                                }
+                                const label =
+                                  countryLabel(nationCode) || nationCode;
+                                return (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-bold px-1.5 py-0 border-indigo-200 text-indigo-700 bg-indigo-50"
+                                  >
+                                    {nationCode ? (
+                                      <img
+                                        src={countryFlag(nationCode)}
+                                        alt={nationCode}
+                                        className="inline-block w-[18px] h-[12px] align-text-bottom"
+                                      />
+                                    ) : null}
+                                    <span className="ml-1">{label}</span>
+                                  </Badge>
+                                );
+                              })()}
                             {!isInternational && (
                               <span className="text-xs text-slate-500 truncate">
                                 {getClubDisplayName(lane.club)}

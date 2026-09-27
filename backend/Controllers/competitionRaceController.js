@@ -548,7 +548,12 @@ const chunkArray = (items, size) => {
 
 const ORDERABLE_STRATEGIES = ["random", "seeded"];
 
-const resolveEntriesForAutoGeneration = async (entries, competition) => {
+const resolveEntriesForAutoGeneration = async (
+  entries,
+  competition,
+  categoryId,
+  boatClassId,
+) => {
   const competitionSeason = competition.season;
   if (!Array.isArray(entries) || !entries.length) {
     throw new Error("Entries payload must contain at least one entry");
@@ -634,14 +639,27 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
       { crew: { $in: allInvolvedIds } },
     ],
   })
-    .select("athlete crew crewNumber representingNation representingType")
+    .select("athlete crew crewNumber representingNation representingType category boatClass")
     .lean();
+
+  const getEntityKey = (ce) => {
+    if (ce.representingType === "nation" || ce.representingType === "individual") {
+      return `N:${ce.representingNation || ""}`;
+    }
+    return `C:${ce.club ? String(ce.club) : ""}`;
+  };
+  const scope = `${String(categoryId)}::${String(boatClassId)}`;
+  const entryKey = (id, entityKey) => `${String(id)}::${scope}::${entityKey}`;
 
   const crewNumberMap = new Map();
   const representingMap = new Map();
   for (const ce of compEntries) {
+    const entityKey = getEntityKey(ce);
     if (ce.athlete) {
-      crewNumberMap.set(ce.athlete.toString(), ce.crewNumber);
+      const num = Number(ce.crewNumber);
+      if (Number.isFinite(num) && num > 0) {
+        crewNumberMap.set(entryKey(ce.athlete.toString(), entityKey), num);
+      }
       if (ce.representingNation) {
         representingMap.set(ce.athlete.toString(), {
           representingNation: ce.representingNation,
@@ -651,7 +669,10 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
     }
     if (Array.isArray(ce.crew)) {
       ce.crew.forEach((mid) => {
-        crewNumberMap.set(mid.toString(), ce.crewNumber);
+        const num = Number(ce.crewNumber);
+        if (Number.isFinite(num) && num > 0) {
+          crewNumberMap.set(entryKey(mid.toString(), entityKey), num);
+        }
         if (ce.representingNation) {
           representingMap.set(mid.toString(), {
             representingNation: ce.representingNation,
@@ -709,11 +730,15 @@ const resolveEntriesForAutoGeneration = async (entries, competition) => {
       entry.clubId,
     );
 
-    // Use crewNumber from request if provided, otherwise fallback to CompetitionEntry lookup
+    // Use crewNumber from request if provided, otherwise fallback to the
+    // CompetitionEntry lookup scoped by category + boat class so an athlete
+    // cannot inherit another event's slot number.
+    const scope = `${String(categoryId)}::${String(boatClassId)}`;
+    const lookupKey = (id) => `${String(id)}::${scope}`;
     const crewNumber =
       entry.crewNumber !== undefined
         ? entry.crewNumber
-        : crewNumberMap.get(representative._id.toString());
+        : crewNumberMap.get(lookupKey(representative._id.toString()));
 
     const isCrewEntry =
       Array.isArray(entry.crewIds) && entry.crewIds.length > 1;
@@ -807,6 +832,8 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
   const resolvedEntries = await resolveEntriesForAutoGeneration(
     entries,
     competition,
+    categoryId,
+    boatClassId,
   );
 
   const maxLanes = getMaxLanesForDiscipline(competition.discipline);

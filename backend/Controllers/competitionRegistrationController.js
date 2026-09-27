@@ -1589,32 +1589,49 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
 
   // Fetch all active entries (pending + approved only — not withdrawn/rejected)
   // to determine crew slot continuity across journeys.
-  const existingActiveEntries = await CompetitionEntry.find({
+  // Scope by club for domestic competitions; include all entities for international.
+  const entryQuery = {
     competition: competition._id,
-    club: clubContext.clubId,
     category: { $in: Array.from(allCategoryIds) },
     status: { $nin: ["withdrawn", "rejected"] },
-  }).select("category boatClass crewNumber crew athlete");
+  };
+  if (!isInternational) {
+    entryQuery.club = clubContext.clubId;
+  }
+  const existingActiveEntries = await CompetitionEntry.find(entryQuery)
+    .select("category boatClass crewNumber crew athlete club representingType representingNation");
 
-  // Build a SLOT MAP per (catId_boatClassId):
+  // Build a SLOT MAP per (catId_boatClassId_entity):
   //   slotMap[key] = Map<crewNumber, Set<athleteId>>
-  // A "slot" is a persistent crew identity. An incoming crew REUSES a slot when it
-  // shares at least one athlete with that slot's current crew set. This is the
-  // mechanism that makes EPT 1 persist across journeys even when athletes rotate.
+  // The entity key (nation or club) ensures each nation/club numbers its crews
+  // independently (1, 2, 3, ...) rather than all crews sharing one counter.
   const slotMap = new Map();
 
-  const getCounterKey = (catId, boatClassId) => {
-    return `${catId}_${boatClassId || "null"}`;
+  const getEntityKey = (e) => {
+    if (e.representingType === "nation" || e.representingType === "individual") {
+      return `N:${e.representingNation || ""}`;
+    }
+    const cid = e.club
+      ? String(e.club)
+      : isInternational
+      ? e.representingNation || ""
+      : String(clubContext.clubId);
+    return `C:${cid}`;
+  };
+
+  const getCounterKey = (catId, boatClassId, e) => {
+    return `${catId}_${boatClassId || "null"}_${getEntityKey(e)}`;
   };
 
   for (const entry of existingActiveEntries) {
     const crewArr =
       Array.isArray(entry.crew) && entry.crew.length > 1 ? entry.crew : null;
     if (!crewArr) continue; // skip singles and invalid entries
-    const key = getCounterKey(entry.category, entry.boatClass);
+    const key = getCounterKey(entry.category, entry.boatClass, entry);
     if (!slotMap.has(key)) slotMap.set(key, new Map());
     const slots = slotMap.get(key);
-    const slotNum = entry.crewNumber || 0;
+    const slotNum = Number(entry.crewNumber);
+    if (!Number.isFinite(slotNum) || slotNum <= 0) continue; // crew entries must carry a valid slot number
     const athleteIds = new Set(crewArr.map((id) => id.toString()));
     if (slots.has(slotNum)) {
       // Union athlete sets across journeys for the same slot
@@ -1875,7 +1892,11 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
       // Slot-reuse: find the best-matching existing slot by athlete overlap.
       // If the incoming crew shares at least one athlete with an existing slot,
       // it CONTINUES that slot (same crewNumber). Otherwise it gets a new number.
-      const counterKey = getCounterKey(entry.categoryId, entry.boatClassId);
+      const counterKey = getCounterKey(
+        entry.categoryId,
+        entry.boatClassId,
+        entry,
+      );
       if (!slotMap.has(counterKey)) slotMap.set(counterKey, new Map());
       const slots = slotMap.get(counterKey);
 
@@ -2328,7 +2349,7 @@ export const updateEntry = asyncHandler(async (req, res) => {
   }
 
   if (crewNumber !== undefined) {
-    entry.crewNumber = Number(crewNumber);
+    entry.crewNumber = crewNumber === null ? null : Number(crewNumber);
     updated = true;
   }
 

@@ -70,7 +70,7 @@ const competitionEntrySchema = new mongoose.Schema(
     },
     crewNumber: {
       type: Number,
-      default: 1,
+      default: undefined,
     },
     seed: {
       type: Number,
