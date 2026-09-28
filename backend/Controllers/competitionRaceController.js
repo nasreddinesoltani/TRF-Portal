@@ -105,6 +105,20 @@ const toStringId = (value) => {
   return null;
 };
 
+// De-duplicates ids while preserving the original order. Crew order is
+// meaningful (index 0 = bow, last = stern), so this must not sort.
+const toUniqueIds = (values) => {
+  const seen = new Set();
+  return (values || []).filter((id) => {
+    const key = id ? id.toString() : "";
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
 const toSortedUniqueIds = (values) =>
   Array.from(new Set((values || []).filter(Boolean))).sort();
 
@@ -600,9 +614,9 @@ const resolveEntriesForAutoGeneration = async (
 
     let crewIds = [];
     if (Array.isArray(entry.crew)) {
-      crewIds = entry.crew
-        .map((c) => toObjectId(c.id || c._id || c))
-        .filter((id) => id !== null);
+      crewIds = toUniqueIds(
+        entry.crew.map((c) => toObjectId(c.id || c._id || c)).filter((id) => id !== null),
+      );
     }
 
     const licenseNumber = normaliseString(entry.licenseNumber);
@@ -683,17 +697,12 @@ const resolveEntriesForAutoGeneration = async (
     return `C:${ce.club ? String(ce.club) : ""}`;
   };
   const scope = `${String(categoryId)}::${String(boatClassId)}`;
-  const entryKey = (id, entityKey) => `${String(id)}::${scope}::${entityKey}`;
+  const entryScopeKey = (ce) =>
+    `${String(ce?.category ?? "")}::${String(ce?.boatClass ?? "")}`;
 
-  const crewNumberMap = new Map();
   const representingMap = new Map();
   for (const ce of compEntries) {
-    const entityKey = getEntityKey(ce);
     if (ce.athlete) {
-      const num = Number(ce.crewNumber);
-      if (Number.isFinite(num) && num > 0) {
-        crewNumberMap.set(entryKey(ce.athlete.toString(), entityKey), num);
-      }
       if (ce.representingNation) {
         representingMap.set(ce.athlete.toString(), {
           representingNation: ce.representingNation,
@@ -703,10 +712,6 @@ const resolveEntriesForAutoGeneration = async (
     }
     if (Array.isArray(ce.crew)) {
       ce.crew.forEach((mid) => {
-        const num = Number(ce.crewNumber);
-        if (Number.isFinite(num) && num > 0) {
-          crewNumberMap.set(entryKey(mid.toString(), entityKey), num);
-        }
         if (ce.representingNation) {
           representingMap.set(mid.toString(), {
             representingNation: ce.representingNation,
@@ -716,6 +721,35 @@ const resolveEntriesForAutoGeneration = async (
       });
     }
   }
+
+  // Crew numbers must come from the CompetitionEntry for THIS category and
+  // boat class, otherwise an athlete can inherit a slot number belonging to a
+  // different event. The previous key was written as
+  // `${id}::${scope}::${entityKey}` but read back as `${id}::${scope}`, so
+  // this lookup never matched and crew numbers were silently dropped.
+  const findCrewNumber = (athleteId) => {
+    const id = String(athleteId);
+    for (const ce of compEntries) {
+      if (entryScopeKey(ce) !== scope) {
+        continue;
+      }
+      const memberIds = [];
+      if (ce.athlete) {
+        memberIds.push(String(ce.athlete));
+      }
+      if (Array.isArray(ce.crew)) {
+        ce.crew.forEach((m) => memberIds.push(String(m)));
+      }
+      if (!memberIds.includes(id)) {
+        continue;
+      }
+      const num = Number(ce.crewNumber);
+      if (Number.isFinite(num) && num > 0) {
+        return num;
+      }
+    }
+    return undefined;
+  };
 
   const athleteById = new Map();
   const athleteByLicense = new Map();
@@ -764,15 +798,19 @@ const resolveEntriesForAutoGeneration = async (
       entry.clubId,
     );
 
-    // Use crewNumber from request if provided, otherwise fallback to the
-    // CompetitionEntry lookup scoped by category + boat class so an athlete
-    // cannot inherit another event's slot number.
-    const scope = `${String(categoryId)}::${String(boatClassId)}`;
-    const lookupKey = (id) => `${String(id)}::${scope}`;
+    // Prefer an explicit crew number from the request, but only when it is a
+    // real value: a blank text field arrives as "" and must not shadow the
+    // stored crew number.
+    const requestedCrewNumber =
+      entry.crewNumber === undefined || entry.crewNumber === null
+        ? undefined
+        : Number(entry.crewNumber);
     const crewNumber =
-      entry.crewNumber !== undefined
-        ? entry.crewNumber
-        : crewNumberMap.get(lookupKey(representative._id.toString()));
+      requestedCrewNumber !== undefined &&
+      Number.isFinite(requestedCrewNumber) &&
+      requestedCrewNumber > 0
+        ? requestedCrewNumber
+        : findCrewNumber(representative._id);
 
     const isCrewEntry =
       Array.isArray(entry.crewIds) && entry.crewIds.length > 1;
@@ -969,25 +1007,28 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
     );
 
     const laneNumbers = getLaneNumbers(seatsPerRace);
-    const lanes = sortedChunk.map((entry, laneIndex) => ({
-      lane: laneNumbers[laneIndex],
-      // Only set athlete if it's NOT a crew boat (or crew is empty)
-      // This prevents the frontend from prioritizing the single athlete display over the crew display
-      athlete:
-        Array.isArray(entry.crew) && entry.crew.length > 0
-          ? undefined
-          : entry.athlete?._id,
-      crew: Array.isArray(entry.crew) ? entry.crew.map((c) => c._id) : [],
-      club: entry.clubId || undefined,
-      seed: entry.seed,
-      notes: entry.notes,
-      crewNumber:
-        Array.isArray(entry.crew) && entry.crew.length > 1
-          ? entry.crewNumber
-          : undefined,
-      representingNation: entry.representingNation || undefined,
-      representingType: entry.representingType || undefined,
-    }));
+    const lanes = sortedChunk.map((entry, laneIndex) => {
+      const crewIds = Array.isArray(entry.crew)
+        ? entry.crew.map((c) => c?._id).filter(Boolean)
+        : [];
+
+      return {
+        lane: laneNumbers[laneIndex],
+        // A crew lane carries no separate "athlete", otherwise the frontend and
+        // the PDF would render the single-athlete name instead of the crew.
+        // A lone member of an incomplete crew still has to show up somewhere,
+        // so fall back to that member rather than leaving the lane blank.
+        athlete:
+          crewIds.length > 1 ? undefined : entry.athlete?._id || crewIds[0],
+        crew: crewIds,
+        club: entry.clubId || undefined,
+        seed: entry.seed,
+        notes: entry.notes,
+        crewNumber: crewIds.length > 1 ? entry.crewNumber : undefined,
+        representingNation: entry.representingNation || undefined,
+        representingType: entry.representingType || undefined,
+      };
+    });
 
     const currentOrder = nextOrder + index;
 

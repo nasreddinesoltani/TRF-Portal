@@ -376,8 +376,37 @@ const WizardStepIndicator = ({
   </div>
 );
 
+// International events are country-based, so the trailing label must be the
+// nation (plus the crew slot for 2x/4x) rather than a club code: a national
+// team has no meaningful club, and a Tunisian crew would otherwise print a
+// domestic club such as "CN ..." instead of "TUN 2".
+const getHeatPreviewEntryLabel = (entry, isInternational) => {
+  if (!isInternational) {
+    return entry.clubCode || "";
+  }
+
+  return resolveEntryLabel({
+    club: entry.club,
+    clubCode: entry.clubCode,
+    nation:
+      entry.representingNation ||
+      entry.athlete?.representingNation ||
+      entry.athlete?.nationalityCode ||
+      entry.crew?.[0]?.representingNation ||
+      entry.crew?.[0]?.nationalityCode,
+    representingType: entry.representingType,
+    crewNumber: entry.crewNumber,
+    isCrewLane: Array.isArray(entry.crew) && entry.crew.length > 1,
+  });
+};
+
 // ==================== HEAT DISTRIBUTION PREVIEW ====================
-const HeatDistributionPreview = ({ entries, lanesPerRace, strategy }) => {
+const HeatDistributionPreview = ({
+  entries,
+  lanesPerRace,
+  strategy,
+  isInternational,
+}) => {
   // Must live in the component scope: the render body below reads `laneNumbers`
   // too, not just the `heats` memo.
   const lanes = parseInt(lanesPerRace) || 6;
@@ -449,8 +478,10 @@ const HeatDistributionPreview = ({ entries, lanesPerRace, strategy }) => {
                       entry.athlete?.name ||
                       `Entry ${entry.seed}`}
                   </span>
-                  {entry.clubCode && (
-                    <span className="text-slate-400">{entry.clubCode}</span>
+                  {getHeatPreviewEntryLabel(entry, isInternational) && (
+                    <span className="text-slate-400">
+                      {getHeatPreviewEntryLabel(entry, isInternational)}
+                    </span>
                   )}
                 </div>
               ))}
@@ -5390,12 +5421,19 @@ const CompetitionRaces = () => {
             athleteId,
             athlete: e.athlete,
             crew: e.crew,
+            club: resolvedClub,
             clubId: toDocumentId(resolvedClub) || toDocumentId(clubObj),
             clubCode: resolvedClub?.code || e.clubCode || clubObj?.code,
             clubName:
               resolveClubLabel(resolvedClub) || e.clubName || clubObj?.name,
             crewNumber: e.crewNumber,
             status: e.status,
+            representingNation:
+              e.representingNation ||
+              e.athlete?.representingNation ||
+              e.athlete?.nationalityCode ||
+              undefined,
+            representingType: e.representingType,
             seed:
               overrides.seed !== undefined ? overrides.seed : e.seed || idx + 1,
             notes:
@@ -13720,6 +13758,7 @@ const CompetitionRaces = () => {
                           entries={relevantEntries}
                           lanesPerRace={autoGenState.lanesPerRace}
                           strategy={autoGenState.strategy}
+                          isInternational={isInternationalCompetition}
                         />
                       </div>
                     )}

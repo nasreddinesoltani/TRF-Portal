@@ -51,6 +51,20 @@ const roleIsJury = (role) => role === "jury_president";
 const roleIsClubManager = (role) => role === "club_manager";
 const hasManagementPrivileges = (role) => roleIsAdmin(role) || roleIsJury(role);
 
+// De-duplicates ids while preserving the original order. Crew order is
+// meaningful (index 0 = bow, last = stern), so this must not sort.
+const toUniqueIds = (values) => {
+  const seen = new Set();
+  return (values || []).filter((id) => {
+    const key = id ? id.toString() : "";
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
 const toSortedUniqueIds = (values) =>
   Array.from(new Set((values || []).filter(Boolean))).sort();
 
@@ -1482,7 +1496,7 @@ export const createCompetitionEntries = asyncHandler(async (req, res) => {
   const parsedEntries = entries.map((entry) => {
     const athleteId = toObjectId(entry.athleteId || entry.athlete);
     const crewIds = Array.isArray(entry.crewIds)
-      ? entry.crewIds.map(toObjectId).filter(Boolean)
+      ? toUniqueIds(entry.crewIds.map(toObjectId).filter(Boolean))
       : [];
 
     // If athleteId is provided but no crewIds, treat as single crew
