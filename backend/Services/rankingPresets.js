@@ -275,8 +275,12 @@ export const RANKING_PRESETS = {
 
   /**
    * International Medal Table (mixed nations + clubs)
-   * - ONE table where national teams count as nations and regular clubs
-   *   keep their own row — a club's medals ALSO count toward its nation.
+   * - ONE table where every entry is credited to exactly ONE account:
+   *   national teams rank as nations, foreign clubs rank as themselves.
+   * - A HOST-NATION club (e.g. Tunisian) has no row of its own — its medals
+   *   build the host nation row (TUN).
+   * - A FOREIGN club (e.g. SIMSC) keeps its own row and NEVER credits its
+   *   country, so club medals never inflate a nation that did not enter.
    * - Counts medals (gold/silver/bronze) instead of points
    * - Sorted by most golds, then silvers, then bronzes (like Olympic medal table)
    * - Medals belong to the final only — heat results must not add medals.
@@ -289,7 +293,7 @@ export const RANKING_PRESETS = {
       ar: "الجدول الدولي للميداليات",
     },
     description:
-      "Nations and clubs in a single table: national teams rank as nations, clubs rank themselves, and each club's medals also count for its nation. Sorted by gold medals, then silver, then bronze. Medals only (top 3 positions, final journey).",
+      "Nations and foreign clubs in a single table: national teams rank as nations, host-nation clubs build the host nation row, and foreign clubs rank themselves without crediting their country. Sorted by gold medals, then silver, then bronze. Medals only (top 3 positions, final journey).",
     groupBy: "global",
     entityType: "mixed",
     boatClassFilter: "all",

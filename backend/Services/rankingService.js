@@ -71,6 +71,34 @@ export function normalizeNationCode(code) {
   return nationAliasMap?.get(raw) || raw;
 }
 
+// The federation's own nation. International competitions declare their host
+// country in `scope.hostCountry` as an ISO alpha-3 code (enforced on create);
+// national-scope events (the default) have no such field, so the federation
+// nation is used — the same host assumption the race label resolver makes in
+// frontend/src/lib/nationLabel.js.
+export const DEFAULT_HOST_NATION_CODE = "TUN";
+
+export function resolveHostNationCode(competition) {
+  return (
+    normalizeNationCode(competition?.scope?.hostCountry) ||
+    DEFAULT_HOST_NATION_CODE
+  );
+}
+
+// A club belongs to the host nation when it carries no country (legacy /
+// incomplete records) or when its country IS the host country. National teams
+// (type "country", or the "*-C" code convention) are never treated as host
+// clubs: they are credited to their own nation only.
+export function isHostNationClub(club, hostNationCode) {
+  const type = club?.type ? String(club.type).trim().toLowerCase() : "";
+  if (type === "country") return false;
+  if (/-C$/i.test(String(club?.code || "").trim())) return false;
+
+  const country = normalizeNationCode(club?.country);
+  if (!country) return true;
+  return country === normalizeNationCode(hostNationCode);
+}
+
 /**
  * Get points for a finish position using the ranking system's point table
  * @param {number} position - Finish position (1-based)
@@ -292,6 +320,9 @@ export async function buildCompetitionRanking(
       : config.includeMastersDefault !== false;
   const includePenalties = options.includePenalties === true;
 
+  // Which nation the host country's own clubs credit in "mixed" medal tables.
+  const hostNationCode = resolveHostNationCode(competition);
+
   // Load all completed races for this competition
   const races = await CompetitionRace.find({
     competition: competitionId,
@@ -437,7 +468,9 @@ export async function buildCompetitionRanking(
   const groupMetadata = {};
 
   for (const [groupKey, groupData] of Object.entries(groups)) {
-    const calculated = calculateGroupRanking(groupData, config);
+    const calculated = calculateGroupRanking(groupData, config, {
+      hostNationCode,
+    });
 
     if (
       includePenalties &&
@@ -848,7 +881,10 @@ function getEffectiveEventGroupKey(race) {
   return `${categoryId}::${boatClassId}::J${journeyPart}`;
 }
 
-export function getLaneCompetitorKeys(lane, race, entityType) {
+export function getLaneCompetitorKeys(lane, race, entityType, options = {}) {
+  const hostNationCode =
+    options.hostNationCode || DEFAULT_HOST_NATION_CODE;
+
   if (entityType === "athlete") {
     const athletes =
       lane?.crew?.length > 0 ? lane.crew : lane?.athlete ? [lane.athlete] : [];
@@ -868,14 +904,15 @@ export function getLaneCompetitorKeys(lane, race, entityType) {
   }
 
   if (entityType === "mixed") {
-    // Mixed nation+club medal table ("International Medal Table"):
-    // - A lane whose club is a national team (type:"country", e.g. UAE-C)
-    //   credits the NATION row (UAE).
-    // - A lane whose club is a regular club (e.g. SIMSC) credits BOTH:
-    //     (a) the CLUB row (SIMSC) — the club's own account, and
-    //     (b) the club's NATION row (UAE) — nations collect the medals of
-    //         their clubs. The nation is resolved from the athlete first,
-    //         then the club (Club.country for national teams).
+    // Mixed nation+club medal table ("International Medal Table"). Each lane
+    // credits exactly ONE account:
+    // - A national team (type:"country", e.g. UAE-C) -> the NATION row (UAE).
+    // - A DOMESTIC / host-nation club (e.g. a Tunisian club, including legacy
+    //   records with no country) -> the HOST NATION row (TUN) only. Domestic
+    //   clubs get no club row, so the table shows "Tunisia" rather than one row
+    //   per Tunisian club.
+    // - A FOREIGN club (e.g. SIMSC from the UAE) -> its OWN club row only. Its
+    //   country is never credited, so SIMSC medals never inflate the UAE row.
     // - A lane with no club at all falls back to athlete nation.
     // Nations and clubs are rows of the SAME table, sorted Olympic-style
     // (gold -> silver -> bronze) by the shared medals sort.
@@ -916,8 +953,13 @@ export function getLaneCompetitorKeys(lane, race, entityType) {
           },
         ];
       }
-      // Regular club entry -> the club's own row, PLUS the club's nation row.
-      // The nation counts the medal too (e.g. SIMSC's gold is also UAE's gold).
+      // Regular club entry. Exactly one account is credited:
+      // - DOMESTIC (host-nation) club -> the HOST NATION row only (TUN).
+      //   Domestic clubs get no club row, so the table shows "Tunisia" and
+      //   not one row per Tunisian club.
+      // - FOREIGN club (e.g. SIMSC from the UAE) -> its OWN club row only.
+      //   Its country is never credited, so SIMSC medals never inflate UAE.
+      const isHostClub = isHostNationClub(club, hostNationCode);
       const clubId = club?._id?.toString?.() || club?.toString?.();
       if (!clubId) {
         return [];
@@ -955,22 +997,10 @@ export function getLaneCompetitorKeys(lane, race, entityType) {
         mixedCode: clubId,
         clubId,
       };
-      // --- Nation side of the same result ---
-      // Athlete nation wins; otherwise the club's nation (Club.country).
-      // Never reuse the club's own code (e.g. "SIMSC") as a nation.
-      let clubNationCode = lane?.representingNation || null;
-      if (!clubNationCode) {
-        const athlete = lane?.athlete || lane?.crew?.[0];
-        clubNationCode =
-          athlete?.nationalityCode || athlete?.representingNation || null;
+      if (!isHostClub) {
+        return [clubCompetitor];
       }
-      if (!clubNationCode) {
-        const rawClubCountry = String(club?.country || "").trim();
-        if (rawClubCountry) {
-          clubNationCode = rawClubCountry;
-        }
-      }
-      clubNationCode = normalizeNationCode(clubNationCode);
+      const clubNationCode = normalizeNationCode(hostNationCode);
       if (!clubNationCode) {
         return [clubCompetitor];
       }
@@ -987,7 +1017,6 @@ export function getLaneCompetitorKeys(lane, race, entityType) {
         nationIdentity = athleteId ? `:athlete:${athleteId}` : "";
       }
       return [
-        clubCompetitor,
         {
           key: `mixed:nation:${clubNationCode}${nationIdentity}`,
           mixedKind: "nation",
@@ -1162,7 +1191,7 @@ function resolveBetterMergedCandidate(current, candidate) {
   return current;
 }
 
-function buildMergedEventCandidates(races, entityType) {
+function buildMergedEventCandidates(races, entityType, options = {}) {
   const candidateMap = new Map();
 
   for (const race of races) {
@@ -1171,7 +1200,7 @@ function buildMergedEventCandidates(races, entityType) {
       const laneStatus = (lane.result?.status || "ok").toLowerCase();
       if (laneStatus === "hors_course") continue;
 
-      const competitorKeys = getLaneCompetitorKeys(lane, race, entityType);
+      const competitorKeys = getLaneCompetitorKeys(lane, race, entityType, options);
       if (!competitorKeys.length) continue;
 
       const result = lane.result || {};
@@ -1215,9 +1244,12 @@ function buildMergedEventCandidates(races, entityType) {
  * Calculate ranking for a group of races
  * @param {object} group - Group with races and metadata
  * @param {object} config - Ranking system configuration
+ * @param {object} [options] - Extra ranking context
+ * @param {string} [options.hostNationCode] - Nation credited by host-nation
+ *   clubs in "mixed" medal tables
  * @returns {Array} Ranked entries (clubs or athletes based on entityType)
  */
-function calculateGroupRanking(group, config) {
+function calculateGroupRanking(group, config, options = {}) {
   const { races } = group;
   const entityType = config.entityType || "club";
 
@@ -1234,7 +1266,9 @@ function calculateGroupRanking(group, config) {
   }
 
   for (const eventRaces of racesByEvent.values()) {
-    const mergedCandidates = buildMergedEventCandidates(eventRaces, entityType);
+    const mergedCandidates = buildMergedEventCandidates(eventRaces, entityType, {
+      hostNationCode: options.hostNationCode || DEFAULT_HOST_NATION_CODE,
+    });
     const timedFinishers = mergedCandidates
       .filter((c) => c.status === "ok" && Number.isFinite(c.elapsedMs))
       .sort((a, b) => a.elapsedMs - b.elapsedMs);
