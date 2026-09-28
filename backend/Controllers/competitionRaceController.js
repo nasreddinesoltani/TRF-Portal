@@ -33,6 +33,33 @@ const getMaxLanesForDiscipline = (discipline) => {
 
 const MAX_LANES = 8; // Default for backward compatibility
 
+// World Rowing "chevron" lane pattern.
+// Best seed always gets lane 3, then 4, then 2, then 5, then 1, then 6.
+// Take the first N elements for an N-crews race (extends with 7, 8...).
+const LANE_PATTERN = [3, 4, 2, 5, 1, 6, 7, 8];
+
+export function getLaneNumbers(n) {
+  const count = Math.max(1, Math.min(Number(n) || 1, MAX_LANES));
+  return LANE_PATTERN.slice(0, count);
+}
+
+// Generate a race phase label from a round type and a 1-based index.
+// scheme = "numeric"  → "Heat 1", "Heat 2", "Heat 3"
+// scheme = "alphabetic" → "Final A", "Final B", "Final C"
+// scheme = "simple"    → "Heat", "Semi-Final" (type only, no number)
+// A blank round type yields "" so consumers keep their own fallback
+// (e.g. journey-based logic) instead of showing a bare race index.
+export function getRacePhase(phaseType, index, scheme = "numeric") {
+  const t = (phaseType || "").trim();
+  if (!t) return "";
+  if (scheme === "simple") return t;
+  if (scheme === "alphabetic") {
+    const letter = String.fromCharCode(65 + (index - 1)); // A, B, C...
+    return `${t} ${letter}`;
+  }
+  return `${t} ${index}`;
+}
+
 const toObjectId = (value) => {
   if (!value) {
     return null;
@@ -473,6 +500,13 @@ const sanitiseRacePayload = (body, discipline = "classic") => {
       : undefined;
   }
 
+  if (body.eventNumber !== undefined) {
+    const eventNumberValue = Number(body.eventNumber);
+    if (Number.isFinite(eventNumberValue) && eventNumberValue >= 1) {
+      payload.eventNumber = eventNumberValue;
+    }
+  }
+
   if (body.journeyIndex !== undefined) {
     const journeyIndex = Number(body.journeyIndex);
     if (!Number.isInteger(journeyIndex) || journeyIndex < 1) {
@@ -782,6 +816,9 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
     startTime,
     intervalMinutes = 0,
     distance,
+    eventNumber,
+    phaseType,
+    phaseScheme = "numeric",
   } = req.body || {};
 
   const categoryId = toObjectId(category);
@@ -931,9 +968,9 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
       (a, b) => (a.seed || 0) - (b.seed || 0),
     );
 
+    const laneNumbers = getLaneNumbers(seatsPerRace);
     const lanes = sortedChunk.map((entry, laneIndex) => ({
-      // Lane number matches the position (1, 2, 3...) based on seed order
-      lane: laneIndex + 1,
+      lane: laneNumbers[laneIndex],
       // Only set athlete if it's NOT a crew boat (or crew is empty)
       // This prevents the frontend from prioritizing the single athlete display over the crew display
       athlete:
@@ -970,12 +1007,13 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
         `${categoryId.toString()}::${
           boatClassId ? boatClassId.toString() : "open"
         }::J${journeyValue}`,
+      eventNumber: Number.isFinite(Number(eventNumber)) && Number(eventNumber) >= 1
+        ? Number(eventNumber)
+        : undefined,
       journeyIndex: journeyValue,
       sessionLabel: normaliseString(sessionLabel),
-      name: `${prefixLabel} ${index + 1}`, // Keep name as "Heat 1", "Heat 2" etc. relative to this batch
-      // Stamp the competitive round from the race prefix (e.g. "Heat" → phase "Heat").
-      // Falls back to empty when no explicit prefix was provided.
-      phase: normaliseString(racePrefix) || "",
+      name: `${prefixLabel} ${index + 1}`,
+      phase: getRacePhase(phaseType, index + 1, phaseScheme),
       order: currentOrder,
       startTime: currentStartTime,
       distanceOverride: distance ? Number(distance) : undefined,

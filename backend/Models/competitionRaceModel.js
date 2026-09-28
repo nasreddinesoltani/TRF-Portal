@@ -157,11 +157,17 @@ const raceSchema = new mongoose.Schema(
       trim: true,
     },
     // Competitive round/stage of the race (e.g. "Heat 1", "Semi-Final", "Final A", "Final B").
-    // Free text so organisers can use any naming convention. Drives the phase label in PDFs.
+    // Auto-generated from the round type and numbering scheme during race generation.
     phase: {
       type: String,
       trim: true,
       default: "",
+    },
+    // Manual event number assigned to this category across the whole competition
+    // (e.g. M1x = 16, JW1x = 13). Set during auto-generation and shown in PDFs.
+    eventNumber: {
+      type: Number,
+      min: 1,
     },
     order: {
       type: Number,

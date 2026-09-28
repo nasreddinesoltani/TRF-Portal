@@ -123,6 +123,20 @@ export const buildStartListTableBody = ({
           (Array.isArray(lane?.crew) && lane.crew.length > 0),
       );
 
+  // A start list can span several original races. When it does, a bare lane
+  // number would repeat per race, so qualify it with the source race order
+  // (mirrors the results exports, e.g. "3 (R2)").
+  const visibleRaceOrders = new Set(
+    visibleLanes.map(
+      (lane) =>
+        getLaneMeta(lane, referenceRace, originalRaceLookup, toDocumentId)
+          .raceOrder,
+    ),
+  );
+  const isCombinedStartList =
+    visibleRaceOrders.size > 1 &&
+    !visibleRaceOrders.has(Number.MAX_SAFE_INTEGER);
+
   const tableBody = visibleLanes.map((lane, rowIdx) => {
     const athlete = resolveAthlete(lane?.athlete, athleteLookup, toDocumentId);
 
@@ -192,7 +206,17 @@ export const buildStartListTableBody = ({
       lCat,
     );
 
-    return [rowIdx + 1, clubLabel, athleteName, license, dob, lEvent];
+    // Use the real lane number so the printed sheet matches the chevron
+    // assignment (3, 4, 2, 5, 1, 6 ...) instead of a 1..N row counter.
+    const laneNumber = laneMeta.laneNumber;
+    const hasRealLane = Number.isInteger(laneNumber) && laneNumber > 0;
+    const displayLane = hasRealLane
+      ? isCombinedStartList
+        ? `${laneNumber} (R${laneMeta.raceOrder})`
+        : String(laneNumber)
+      : String(rowIdx + 1);
+
+    return [displayLane, clubLabel, athleteName, license, dob, lEvent];
   });
 
   return { tableBody, lanes: visibleLanes };

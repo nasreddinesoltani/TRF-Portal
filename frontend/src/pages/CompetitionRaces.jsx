@@ -15,6 +15,7 @@ import { Select } from "../components/ui/select";
 import { Label } from "../components/ui/label";
 import { DataGrid } from "../components/DataGrid";
 import { generateRaceCode, formatCategoryAbbreviation } from "../lib/rowing";
+import { getLaneNumbers } from "../lib/lanePattern";
 import {
   buildStartListTableBody,
   sortStartListLanes,
@@ -377,9 +378,13 @@ const WizardStepIndicator = ({
 
 // ==================== HEAT DISTRIBUTION PREVIEW ====================
 const HeatDistributionPreview = ({ entries, lanesPerRace, strategy }) => {
+  // Must live in the component scope: the render body below reads `laneNumbers`
+  // too, not just the `heats` memo.
+  const lanes = parseInt(lanesPerRace) || 6;
+  const laneNumbers = getLaneNumbers(lanes);
+
   const heats = useMemo(() => {
     if (!entries.length || !lanesPerRace) return [];
-    const lanes = parseInt(lanesPerRace) || 6;
     const sortedEntries =
       strategy === "seeded"
         ? [...entries].sort(
@@ -392,7 +397,7 @@ const HeatDistributionPreview = ({ entries, lanesPerRace, strategy }) => {
       result.push(sortedEntries.slice(i, i + lanes));
     }
     return result;
-  }, [entries, lanesPerRace, strategy]);
+  }, [entries, lanesPerRace, lanes, strategy]);
 
   if (!entries.length) {
     return (
@@ -437,7 +442,7 @@ const HeatDistributionPreview = ({ entries, lanesPerRace, strategy }) => {
                   className="flex items-center gap-2 rounded-md bg-white px-2 py-1 text-xs border border-slate-100"
                 >
                   <span className="w-5 h-5 rounded bg-slate-100 flex items-center justify-center font-bold text-slate-500">
-                    {laneIndex + 1}
+                    {laneNumbers[laneIndex] ?? laneIndex + 1}
                   </span>
                   <span className="truncate flex-1 font-medium text-slate-700">
                     {entry.athlete?.fullName ||
@@ -2585,14 +2590,16 @@ const CompetitionRaces = () => {
     boatClass: "",
     journeyIndex: "1",
     sessionLabel: "",
-    racePrefix: "",
-    strategy: "random",
+    strategy: "seeded",
     lanesPerRace: DEFAULT_LANES_PER_RACE.toString(),
     overwriteExisting: true,
     startRaceNumber: "",
     startTime: "",
     intervalMinutes: "10",
     distance: "",
+    eventNumber: "",
+    phaseType: "",
+    phaseScheme: "",
     allowMultipleEntries: false,
     allowJuniorsInSenior: false,
     allowMastersInSenior: false,
@@ -2706,8 +2713,9 @@ const CompetitionRaces = () => {
         startTime: startTimeStr || prev.startTime,
         startRaceNumber: startRaceNum.toString(),
         sessionLabel: firstRace.sessionLabel || prev.sessionLabel,
-        racePrefix:
-          firstRace.name?.replace(/\s*\d+$/, "").trim() || prev.racePrefix,
+        eventNumber: firstRace.eventNumber
+          ? String(firstRace.eventNumber)
+          : prev.eventNumber,
       }));
     }
   }, [autoGenState.category, autoGenState.boatClass, races]);
@@ -2728,6 +2736,7 @@ const CompetitionRaces = () => {
     eventGroupId: "",
     distance: "",
     phase: "",
+    eventNumber: "",
   });
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [pendingManualCrew, setPendingManualCrew] = useState([]);
@@ -3670,6 +3679,8 @@ const CompetitionRaces = () => {
           startTime: "",
           eventGroupId: "",
           distance: "",
+          phase: "",
+          eventNumber: "",
         });
         return;
       }
@@ -3681,6 +3692,8 @@ const CompetitionRaces = () => {
         eventGroupId: race?.eventGroupId || "",
         distance: race?.distance != null ? String(race.distance) : "",
         phase: race?.phase || "",
+        eventNumber:
+          race?.eventNumber != null ? String(race.eventNumber) : "",
       });
     },
     [formatDateTimeLocalValue, races],
@@ -3704,8 +3717,8 @@ const CompetitionRaces = () => {
       return;
     }
 
-    const orderValue = Number(scheduleState.order);
-    if (!Number.isInteger(orderValue) || orderValue < 1) {
+    const eventNumberValue = Number(scheduleState.eventNumber);
+    if (!Number.isInteger(eventNumberValue) || eventNumberValue < 1) {
       toast.error("Event number must be a positive integer");
       return;
     }
@@ -3726,7 +3739,8 @@ const CompetitionRaces = () => {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            order: orderValue,
+            eventNumber: eventNumberValue,
+            order: Number(scheduleState.order),
             startTime: scheduleState.startTime,
             eventGroupId: scheduleState.eventGroupId?.trim() || undefined,
             distance: scheduleState.distance
@@ -5851,7 +5865,11 @@ const CompetitionRaces = () => {
       boatClass: autoGenState.boatClass || undefined,
       journeyIndex,
       sessionLabel: autoGenState.sessionLabel.trim() || undefined,
-      racePrefix: autoGenState.racePrefix.trim() || undefined,
+      eventNumber: autoGenState.eventNumber
+        ? Number(autoGenState.eventNumber)
+        : undefined,
+      phaseType: autoGenState.phaseType || undefined,
+      phaseScheme: autoGenState.phaseScheme || undefined,
       strategy: normaliseStrategy(autoGenState.strategy),
       lanesPerRace,
       overwriteExisting: Boolean(autoGenState.overwriteExisting),
@@ -6611,6 +6629,20 @@ const CompetitionRaces = () => {
               .join(" / ") ||
             race.order ||
             "1";
+          // Official programme number, shown on the left of line 1. Races
+          // generated before event numbers existed fall back to `orderStr`.
+          const eventNumberStr = Array.from(
+            new Set(
+              allOrigRaces
+                .map((r) => Number(r?.eventNumber))
+                .filter((n) => Number.isFinite(n) && n >= 1),
+            ),
+          )
+            .sort((a, b) => a - b)
+            .join(" / ");
+          const headerLeftLabel = eventNumberStr
+            ? `Event ${eventNumberStr}`
+            : String(orderStr);
 
           // Compute Phase: Journey by journeyIndex, Final only when configured max journey is reached.
           const showJourney = shouldShowJourney(competition, allOrigRaces);
@@ -6678,10 +6710,10 @@ const CompetitionRaces = () => {
           doc.line(leftMargin, yPos, rightMargin, yPos);
           yPos += 5;
 
-          // --- Line 1: Race order | Start List | Race code (14pt bold) ---
+          // --- Line 1: Event number | Start List | Race code (14pt bold) ---
           doc.setFontSize(12);
           doc.setFont(fontName, "bold");
-          doc.text(String(orderStr), leftMargin, yPos);
+          doc.text(headerLeftLabel, leftMargin, yPos);
           doc.text("Start List", center, yPos, { align: "center" });
           doc.text(
             rightHeaderCode ||
@@ -6696,14 +6728,11 @@ const CompetitionRaces = () => {
             },
           );
 
-          // --- Line 2: (Event) | Category + Boat Class ---
+          // --- Line 2: Category + Boat Class (centred across full width) ---
           yPos += 5;
-          const eventLabel = "(Event)";
           doc.setFontSize(8);
           doc.setFont(fontName, "normal");
-          doc.text(eventLabel, leftMargin, yPos);
-          const eventLabelWidth = doc.getTextWidth(eventLabel);
-          const eventStartX = leftMargin + eventLabelWidth + 3;
+          const eventStartX = leftMargin;
           const eventLineMaxWidth = rightMargin - eventStartX;
           const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
           fullEventName =
@@ -7373,6 +7402,20 @@ const CompetitionRaces = () => {
               .join(" / ") ||
             race.order ||
             "1";
+          // Official programme number, shown on the left of line 1. Races
+          // generated before event numbers existed fall back to `orderStr`.
+          const eventNumberStr = Array.from(
+            new Set(
+              allOrigRaces
+                .map((r) => Number(r?.eventNumber))
+                .filter((n) => Number.isFinite(n) && n >= 1),
+            ),
+          )
+            .sort((a, b) => a - b)
+            .join(" / ");
+          const headerLeftLabel = eventNumberStr
+            ? `Event ${eventNumberStr}`
+            : String(orderStr);
 
           const showJourney = shouldShowJourney(competition, allOrigRaces);
           const explicitNonFinalPhases = Array.from(
@@ -7436,7 +7479,7 @@ const CompetitionRaces = () => {
 
           doc.setFontSize(12);
           doc.setFont(fontName, "bold");
-          doc.text(String(orderStr), leftMargin, yPos);
+          doc.text(headerLeftLabel, leftMargin, yPos);
           doc.text("Jury Start List", center, yPos, { align: "center" });
           doc.text(
             rightHeaderCode ||
@@ -7452,12 +7495,9 @@ const CompetitionRaces = () => {
           );
 
           yPos += 5;
-          const eventLabel = "(Event)";
           doc.setFontSize(8);
           doc.setFont(fontName, "normal");
-          doc.text(eventLabel, leftMargin, yPos);
-          const eventLabelWidth = doc.getTextWidth(eventLabel);
-          const eventStartX = leftMargin + eventLabelWidth + 3;
+          const eventStartX = leftMargin;
           const eventLineMaxWidth = rightMargin - eventStartX;
           const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
           fullEventName =
@@ -8091,6 +8131,20 @@ const CompetitionRaces = () => {
             .join(" / ") ||
           race.order ||
           "1";
+        // Official programme number, shown on the left of line 1. Races
+        // generated before event numbers existed fall back to `orderStr`.
+        const eventNumberStr = Array.from(
+          new Set(
+            allOrigRaces
+              .map((r) => Number(r?.eventNumber))
+              .filter((n) => Number.isFinite(n) && n >= 1),
+          ),
+        )
+          .sort((a, b) => a - b)
+          .join(" / ");
+        const headerLeftLabel = eventNumberStr
+          ? `Event ${eventNumberStr}`
+          : String(orderStr);
 
         // Compute Phase: Journey by journeyIndex, Final only when configured max journey is reached.
         const showJourney = shouldShowJourney(competition, allOrigRaces);
@@ -8159,10 +8213,10 @@ const CompetitionRaces = () => {
         doc.line(leftMargin, yPos, rightMargin, yPos);
         yPos += 5;
 
-        // --- Line 1: Race order | Results | Race code ---
+        // --- Line 1: Event number | Results | Race code ---
         doc.setFontSize(12);
         doc.setFont(fontName, "bold");
-        doc.text(String(orderStr), leftMargin, yPos);
+        doc.text(headerLeftLabel, leftMargin, yPos);
         doc.text("Results", center, yPos, { align: "center" });
         doc.text(
           rightHeaderCode ||
@@ -8177,14 +8231,11 @@ const CompetitionRaces = () => {
           },
         );
 
-        // --- Line 2: (Event) | Category + Boat Class ---
+        // --- Line 2: Category + Boat Class (centred across full width) ---
         yPos += 5;
-        const eventLabel = "(Event)";
         doc.setFontSize(8);
         doc.setFont(fontName, "normal");
-        doc.text(eventLabel, leftMargin, yPos);
-        const eventLabelWidth = doc.getTextWidth(eventLabel);
-        const eventStartX = leftMargin + eventLabelWidth + 3;
+        const eventStartX = leftMargin;
         const eventLineMaxWidth = rightMargin - eventStartX;
         const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
         fullEventName =
@@ -9055,6 +9106,20 @@ const CompetitionRaces = () => {
             .join(" / ") ||
           race.order ||
           "1";
+        // Official programme number, shown on the left of line 1. Races
+        // generated before event numbers existed fall back to `orderStr`.
+        const eventNumberStr = Array.from(
+          new Set(
+            allOrigRaces
+              .map((r) => Number(r?.eventNumber))
+              .filter((n) => Number.isFinite(n) && n >= 1),
+          ),
+        )
+          .sort((a, b) => a - b)
+          .join(" / ");
+        const headerLeftLabel = eventNumberStr
+          ? `Event ${eventNumberStr}`
+          : String(orderStr);
 
         // Compute Phase: Journey by journeyIndex, Final only when configured max journey is reached.
         const showJourney = shouldShowJourney(competition, allOrigRaces);
@@ -9110,10 +9175,10 @@ const CompetitionRaces = () => {
         doc.line(leftMargin, yPos, rightMargin, yPos);
         yPos += 5;
 
-        // --- Line 1: Race order | Results | Race code ---
+        // --- Line 1: Event number | Results | Race code ---
         doc.setFontSize(12);
         doc.setFont(fontName, "bold");
-        doc.text(String(orderStr), leftMargin, yPos);
+        doc.text(headerLeftLabel, leftMargin, yPos);
         doc.text("Results", center, yPos, { align: "center" });
         doc.text(
           rightHeaderCode ||
@@ -9128,14 +9193,11 @@ const CompetitionRaces = () => {
           },
         );
 
-        // --- Line 2: (Event) | Category + Boat Class ---
+        // --- Line 2: Category + Boat Class (centred across full width) ---
         yPos += 5;
-        const eventLabel = "(Event)";
         doc.setFontSize(8);
         doc.setFont(fontName, "normal");
-        doc.text(eventLabel, leftMargin, yPos);
-        const eventLabelWidth = doc.getTextWidth(eventLabel);
-        const eventStartX = leftMargin + eventLabelWidth + 3;
+        const eventStartX = leftMargin;
         const eventLineMaxWidth = rightMargin - eventStartX;
         const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
         fullEventName =
@@ -9852,7 +9914,7 @@ const CompetitionRaces = () => {
           eventCode,
           eventName,
           eventNameAr,
-          eventNumber: Number(race?.order) || null,
+          eventNumber: Number(race?.eventNumber) || Number(race?.order) || null,
           clubCode,
           clubName,
           clubNameFr,
@@ -10162,12 +10224,10 @@ const CompetitionRaces = () => {
         doc.setTextColor(0, 0, 0);
         doc.setFont(fontName, "bold");
         doc.setFontSize(11);
-        doc.text(eventNo, leftMargin, yPos + 4);
+        // The official programme number leads the block; the event name below
+        // is centred across the full width.
+        doc.text(`Event ${eventNo}`, leftMargin, yPos + 4);
         doc.text(eventCode, rightMargin, yPos + 4, { align: "right" });
-
-        doc.setFontSize(8);
-        doc.setFont(fontName, "normal");
-        doc.text("(Event)", leftMargin, yPos + 8);
 
         doc.setFont(fontName, "bold");
         doc.setFontSize(12);
@@ -12571,8 +12631,9 @@ const CompetitionRaces = () => {
             ? firstRace.order.toString()
             : prev.startRaceNumber,
           sessionLabel: firstRace.sessionLabel || prev.sessionLabel,
-          racePrefix:
-            firstRace.name?.replace(/\s*\d+$/, "").trim() || prev.racePrefix,
+          eventNumber: firstRace.eventNumber
+            ? String(firstRace.eventNumber)
+            : prev.eventNumber,
           boatClass: raceBoatClassId || prev.boatClass,
           journeyIndex: firstRace.journeyIndex
             ? firstRace.journeyIndex.toString()
@@ -13102,7 +13163,7 @@ const CompetitionRaces = () => {
                 />
 
                 {/* Main Configuration Grid */}
-                <div className="grid gap-3 lg:grid-cols-3 mb-4">
+                <div className="grid gap-3 sm:grid-cols-3 mb-4">
                   {/* Event Selection Card */}
                   <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
                     <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
@@ -13220,113 +13281,183 @@ const CompetitionRaces = () => {
                     </div>
                   </div>
 
-                  {/* Race Settings Card */}
-                  <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
-                    <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                      <span className="text-base">⚙️</span> Settings
-                    </h3>
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <Label
-                            htmlFor="autoStrategy"
-                            className="text-xs text-slate-500"
-                          >
-                            Strategy
-                          </Label>
-                          <Select
-                            id="autoStrategy"
-                            name="strategy"
-                            value={autoGenState.strategy}
-                            onChange={handleAutoGenFieldChange}
-                            className="h-8 text-xs"
-                          >
-                            <option value="random">Random</option>
-                            <option value="seeded">Seeded</option>
-                          </Select>
+{/* Race Settings Card */}
+                    <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
+                      <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                        <span className="text-base">⚙️</span> Settings
+                      </h3>
+                      <div className="space-y-3">
+                        {/* Event & Round — 3-col */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <Label
+                              htmlFor="autoEventNumber"
+                              className="text-xs text-slate-500 font-medium"
+                            >
+                              Event #
+                            </Label>
+                            <Input
+                              id="autoEventNumber"
+                              name="eventNumber"
+                              type="number"
+                              min="1"
+                              value={autoGenState.eventNumber}
+                              onChange={handleAutoGenFieldChange}
+                              placeholder="e.g. 16"
+                              className="h-9 text-sm"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label
+                              htmlFor="autoPhaseType"
+                              className="text-xs text-slate-500 font-medium"
+                            >
+                              Round type
+                            </Label>
+                            <Select
+                              id="autoPhaseType"
+                              name="phaseType"
+                              value={autoGenState.phaseType}
+                              onChange={handleAutoGenFieldChange}
+                              className="h-9 text-sm"
+                            >
+                              <option value="">—</option>
+                              <option value="Heat">Heat</option>
+                              <option value="Semi-Final">Semi-Final</option>
+                              <option value="Repechage">Repechage</option>
+                              <option value="Final">Final</option>
+                              <option value="Qualification">
+                                Qualification
+                              </option>
+                              <option value="Time Trial">Time Trial</option>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label
+                              htmlFor="autoPhaseScheme"
+                              className="text-xs text-slate-500 font-medium"
+                            >
+                              Numbering
+                            </Label>
+                            <Select
+                              id="autoPhaseScheme"
+                              name="phaseScheme"
+                              value={autoGenState.phaseScheme}
+                              onChange={handleAutoGenFieldChange}
+                              className="h-9 text-sm"
+                            >
+                              <option value="">—</option>
+                              <option value="numeric">1, 2, 3…</option>
+                              <option value="alphabetic">A, B, C…</option>
+                              <option value="simple">Type only</option>
+                            </Select>
+                          </div>
                         </div>
+
+                        {/* Strategy & Race # — 2-col */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label
+                              htmlFor="autoStrategy"
+                              className="text-xs text-slate-500 font-medium"
+                            >
+                              Strategy
+                            </Label>
+                            <Select
+                              id="autoStrategy"
+                              name="strategy"
+                              value={autoGenState.strategy}
+                              onChange={handleAutoGenFieldChange}
+                              className="h-9 text-sm"
+                            >
+                              <option value="seeded">Seeded</option>
+                              <option value="random">Random</option>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label
+                              htmlFor="autoStartNumber"
+                              className="text-xs text-slate-500 font-medium"
+                            >
+                              Race #
+                            </Label>
+                            <Input
+                              id="autoStartNumber"
+                              name="startRaceNumber"
+                              type="number"
+                              min="1"
+                              value={autoGenState.startRaceNumber}
+                              onChange={handleAutoGenFieldChange}
+                              placeholder="Auto"
+                              className="h-9 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Distance — 1-col */}
                         <div className="space-y-1">
                           <Label
-                            htmlFor="autoPrefix"
-                            className="text-xs text-slate-500"
+                            htmlFor="autoDistance"
+                            className="text-xs text-slate-500 font-medium"
                           >
-                            Race Prefix
+                            Distance (m)
                           </Label>
                           <Input
-                            id="autoPrefix"
-                            name="racePrefix"
-                            value={autoGenState.racePrefix}
+                            id="autoDistance"
+                            name="distance"
+                            type="number"
+                            min="0"
+                            step="100"
+                            value={autoGenState.distance}
                             onChange={handleAutoGenFieldChange}
-                            placeholder="Heat"
-                            className="h-8 text-xs"
+                            placeholder="Default"
+                            className="h-9 text-sm"
                           />
                         </div>
-                      </div>
-                      <div className="space-y-1">
-                        <Label
-                          htmlFor="autoSession"
-                          className="text-xs text-slate-500"
-                        >
-                          Session Label
-                        </Label>
-                        <Input
-                          id="autoSession"
-                          name="sessionLabel"
-                          value={autoGenState.sessionLabel}
-                          onChange={handleAutoGenFieldChange}
-                          placeholder="Morning programme"
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label
-                          htmlFor="autoDistance"
-                          className="text-xs text-slate-500"
-                        >
-                          Distance (m)
-                        </Label>
-                        <Input
-                          id="autoDistance"
-                          name="distance"
-                          type="number"
-                          min="0"
-                          step="100"
-                          value={autoGenState.distance}
-                          onChange={handleAutoGenFieldChange}
-                          placeholder="Default"
-                          className="h-8 text-xs"
-                        />
+
+                        {/* Overwrite toggle */}
+                        <label className="flex items-center gap-3 p-2 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors">
+                          <input
+                            id="autoOverwrite"
+                            name="overwriteExisting"
+                            type="checkbox"
+                            checked={autoGenState.overwriteExisting}
+                            onChange={handleAutoGenFieldChange}
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-slate-700">
+                            Overwrite existing races
+                          </span>
+                        </label>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Timing Card */}
-                  <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
-                    <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                      <Icons.Clock /> Schedule
-                    </h3>
-                    <div className="space-y-2">
-                      <div className="space-y-1">
-                        <Label
-                          htmlFor="autoStartTime"
-                          className="text-xs text-slate-500"
-                        >
-                          Start Time
-                        </Label>
-                        <Input
-                          id="autoStartTime"
-                          name="startTime"
-                          type="datetime-local"
-                          value={autoGenState.startTime}
-                          onChange={handleAutoGenFieldChange}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
+                    {/* Timing Card */}
+                    <div className="space-y-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
+                      <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                        <Icons.Clock /> Schedule
+                      </h3>
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor="autoStartTime"
+                            className="text-xs text-slate-500 font-medium"
+                          >
+                            Start Time
+                          </Label>
+                          <Input
+                            id="autoStartTime"
+                            name="startTime"
+                            type="datetime-local"
+                            value={autoGenState.startTime}
+                            onChange={handleAutoGenFieldChange}
+                            className="h-9 text-sm"
+                          />
+                        </div>
                         <div className="space-y-1">
                           <Label
                             htmlFor="autoInterval"
-                            className="text-xs text-slate-500"
+                            className="text-xs text-slate-500 font-medium"
                           >
                             Interval (min)
                           </Label>
@@ -13337,45 +13468,28 @@ const CompetitionRaces = () => {
                             min="0"
                             value={autoGenState.intervalMinutes}
                             onChange={handleAutoGenFieldChange}
-                            className="h-8 text-xs"
+                            className="h-9 text-sm"
                           />
                         </div>
                         <div className="space-y-1">
                           <Label
-                            htmlFor="autoStartNumber"
-                            className="text-xs text-slate-500"
+                            htmlFor="autoSession"
+                            className="text-xs text-slate-500 font-medium"
                           >
-                            Start Race #
+                            Session Label
                           </Label>
                           <Input
-                            id="autoStartNumber"
-                            name="startRaceNumber"
-                            type="number"
-                            min="1"
-                            value={autoGenState.startRaceNumber}
+                            id="autoSession"
+                            name="sessionLabel"
+                            value={autoGenState.sessionLabel}
                             onChange={handleAutoGenFieldChange}
-                            placeholder="Auto"
-                            className="h-8 text-xs"
+                            placeholder="Morning programme"
+                            className="h-9 text-sm"
                           />
                         </div>
                       </div>
-                      {/* Overwrite toggle */}
-                      <label className="flex items-center gap-3 p-2 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors">
-                        <input
-                          id="autoOverwrite"
-                          name="overwriteExisting"
-                          type="checkbox"
-                          checked={autoGenState.overwriteExisting}
-                          onChange={handleAutoGenFieldChange}
-                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-slate-700">
-                          Overwrite existing races
-                        </span>
-                      </label>
                     </div>
                   </div>
-                </div>
 
                 {/* Advanced Options (Collapsible) */}
                 <div className="mb-4">
@@ -14517,8 +14631,10 @@ const CompetitionRaces = () => {
                                 key={raceId || `schedule-race-${raceIndex}`}
                                 value={raceId}
                               >
-                                {race.order}. {eventCode} -{" "}
-                                {race.name || "Race"}{" "}
+                                {race.eventNumber
+                                  ? `${race.eventNumber}. `
+                                  : ""}
+                                {eventCode} - {race.name || "Race"}{" "}
                                 {startTimeStr ? `(${startTimeStr})` : ""}
                               </option>
                             );
@@ -14526,9 +14642,21 @@ const CompetitionRaces = () => {
                         </Select>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="space-y-2">
-                          <Label htmlFor="scheduleOrder">Event #</Label>
+                          <Label htmlFor="scheduleEventNumber">Event #</Label>
+                          <Input
+                            id="scheduleEventNumber"
+                            name="eventNumber"
+                            type="number"
+                            min="1"
+                            value={scheduleState.eventNumber}
+                            onChange={handleScheduleFieldChange}
+                            disabled={!scheduleState.raceId}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="scheduleOrder">Race #</Label>
                           <Input
                             id="scheduleOrder"
                             name="order"

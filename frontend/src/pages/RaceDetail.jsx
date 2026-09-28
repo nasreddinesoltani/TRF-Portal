@@ -1237,27 +1237,27 @@ const RaceDetail = () => {
     yPos += 5;
 
     // --- Event Details (aligned with race management full results PDF) ---
-    // Line 1: Race order | Results/Start List | Race code
+    // Line 1: Event number | Results/Start List | Race code
+    // The event number is the official programme number, so it leads the sheet.
+    // Races generated before event numbers existed fall back to "Race N".
+    const headerEventNumber = Number(pseudoRace?.eventNumber);
+    const headerLeftLabel =
+      Number.isFinite(headerEventNumber) && headerEventNumber >= 1
+        ? `Event ${headerEventNumber}`
+        : `Race ${sequenceOrderStr || pseudoRace.order || "1"}`;
     doc.setFontSize(12);
     doc.setFont(fontName, "bold");
-    doc.text(
-      String(sequenceOrderStr || pseudoRace.order || "1"),
-      leftMargin,
-      yPos,
-    );
+    doc.text(headerLeftLabel, leftMargin, yPos);
     doc.text(isResults ? "Results" : "Start List", center, yPos, {
       align: "center",
     });
     doc.text(formattedHeaderCode, rightMargin, yPos, { align: "right" });
 
-    // Line 2: (Event) | Category + Boat Class
+    // Line 2: Category + Boat Class (centred across the full width)
     yPos += 5;
-    const eventLabel = "(Event)";
     doc.setFontSize(8);
     doc.setFont(fontName, "normal");
-    doc.text(eventLabel, leftMargin, yPos);
-    const eventLabelWidth = doc.getTextWidth(eventLabel);
-    const eventStartX = leftMargin + eventLabelWidth + 3;
+    const eventStartX = leftMargin;
     const eventLineMaxWidth = rightMargin - eventStartX;
     const eventLineCenter = eventStartX + eventLineMaxWidth / 2;
     fullEventName =
@@ -1962,6 +1962,11 @@ const RaceDetail = () => {
             </Button>
             <div>
               <div className="flex items-center gap-2">
+                {race?.eventNumber ? (
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Event {race.eventNumber}
+                  </span>
+                ) : null}
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                   Race {race?.order}
                 </span>
