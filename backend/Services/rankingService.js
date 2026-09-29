@@ -269,6 +269,26 @@ export function calculateCombinedTimeRanking(races) {
 }
 
 /**
+ * A race's `phase` is the competitive round label generated at race-creation
+ * time, e.g. "Heat 1", "Semi-Final 1", "Final A", "Final B" or, with the
+ * "simple" numbering scheme, a bare "Heat" / "Semi-Final" / "Final".
+ */
+const readPhase = (race) => String(race?.phase || "").trim();
+
+/**
+ * True for the A final only — the race that actually decides a medal.
+ *
+ * Accepts the alphabetic label ("Final A") and the simple label ("Final"),
+ * and deliberately rejects "Final B" / "Final C" and anything that only
+ * contains the word, such as "Semi-Final 1".
+ */
+const isFinalARace = (race) => {
+  const phase = readPhase(race);
+  if (!phase) return false;
+  return /^final(\s+a)?$/i.test(phase);
+};
+
+/**
  * Build competition ranking based on a ranking system configuration
  *
  * @param {string} competitionId - Competition ID
@@ -338,7 +358,10 @@ export async function buildCompetitionRanking(
   // Filter by journey mode
   let filteredRaces = races;
   if (config.journeyMode === "final_only") {
-    // Only the final journey counts — heats must not add medals.
+    // Medals belong to the A final. Selecting the whole final JOURNEY is not
+    // enough: a final day can also hold heats, repechages and B/C finals, and
+    // when no stage is flagged as the final day the last journey is simply
+    // whichever journey happens to be highest — often a heat journey.
     // Stage `order` is 1-based and matches `race.journeyIndex` (the same
     // convention used in competitionRegistrationController), so match on the
     // stage order instead of its array index (which is 0-based).
@@ -352,9 +375,18 @@ export async function buildCompetitionRanking(
       : 1;
     const finalJourney = finalStage ? finalStage.order : maxJourney;
 
-    filteredRaces = filteredRaces.filter(
+    const finalJourneyRaces = filteredRaces.filter(
       (r) => (Number(r.journeyIndex) || 1) === finalJourney,
     );
+
+    // Only trust the phase labels when the journey actually carries them:
+    // races created before the phase field existed have none, and those keep
+    // the journey-based behaviour instead of being dropped to an empty table.
+    const hasPhaseLabels = finalJourneyRaces.some((r) => readPhase(r));
+
+    filteredRaces = hasPhaseLabels
+      ? finalJourneyRaces.filter(isFinalARace)
+      : finalJourneyRaces;
   }
 
   // Filter by allowed boat classes if specified in ranking system

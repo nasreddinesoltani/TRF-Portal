@@ -219,7 +219,7 @@ export const RANKING_PRESETS = {
     scoringMode: "medals",
     includeMastersDefault: true,
     discipline: null,
-    // Medals belong to the final only — heat results must not add medals.
+    // Medals belong to the A final only — heats and B/C finals add nothing.
     journeyMode: "final_only",
     maxScoringPosition: 3,
     dnfGetsPointsIfFewFinishers: false,
@@ -257,7 +257,7 @@ export const RANKING_PRESETS = {
     scoringMode: "medals",
     includeMastersDefault: true,
     discipline: null,
-    // Medals belong to the final only — heat results must not add medals.
+    // Medals belong to the A final only — heats and B/C finals add nothing.
     journeyMode: "final_only",
     maxScoringPosition: 3,
     dnfGetsPointsIfFewFinishers: false,
@@ -300,7 +300,7 @@ export const RANKING_PRESETS = {
     scoringMode: "medals",
     includeMastersDefault: true,
     discipline: null,
-    // Medals belong to the final only — heat results must not add medals.
+    // Medals belong to the A final only — heats and B/C finals add nothing.
     journeyMode: "final_only",
     maxScoringPosition: 3,
     dnfGetsPointsIfFewFinishers: false,

@@ -21,7 +21,7 @@ export const GROUP_BY_OPTIONS = [
 // Which journeys to count
 export const JOURNEY_MODE_OPTIONS = [
   "all", // All journeys count toward ranking
-  "final_only", // Only final journey results count
+  "final_only", // Only the A final ("Final A") counts; heats and B/C finals do not
   "best_n", // Best N results count (requires bestNCount field)
 ];
 

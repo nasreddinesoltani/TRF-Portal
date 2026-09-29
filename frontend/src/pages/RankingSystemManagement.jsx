@@ -24,7 +24,7 @@ const GROUP_BY_OPTIONS = [
 
 const JOURNEY_MODE_OPTIONS = [
   { value: "all", label: "All Journeys" },
-  { value: "final_only", label: "Final Journey Only" },
+  { value: "final_only", label: "Final A Only" },
   { value: "best_n", label: "Best N Results" },
 ];
 
