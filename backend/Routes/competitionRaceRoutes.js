@@ -9,6 +9,8 @@ import {
   recordRaceResults,
   swapRaceLanes,
   computeCompetitionRankings,
+  getQualifiedCrews,
+  generateFinalJourneyRaces,
   autoGenerateRaces,
   combineRaces,
   listOfficialResultGroups,
@@ -64,6 +66,14 @@ router
   .route("/rankings")
   .get(allowRoles("admin", "jury_president"), computeCompetitionRankings)
   .post(allowRoles("admin", "jury_president"), computeCompetitionRankings);
+
+router
+  .route("/qualified-crews")
+  .get(allowRoles("admin", "jury_president"), getQualifiedCrews);
+
+router
+  .route("/generate-final")
+  .post(allowRoles("admin", "jury_president"), generateFinalJourneyRaces);
 
 router
   .route("/lane-swaps")

@@ -14,6 +14,11 @@ import RankingSystem, {
 } from "../Models/rankingSystemModel.js";
 import OfficialResult from "../Models/officialResultModel.js";
 import CompetitionPenalty from "../Models/competitionPenaltyModel.js";
+import {
+  computeFinalQualification,
+  DEFAULT_QUALIFY_TOP_N,
+  QUALIFYING_LANE_PATTERN,
+} from "../Services/qualificationService.js";
 
 // Lane limits per discipline
 // Classic: 8 lanes (standard water lanes)
@@ -559,9 +564,18 @@ const sanitiseRacePayload = (body, discipline = "classic") => {
     payload.startTime = startTime || undefined;
   }
 
-  if (body.distanceOverride !== undefined) {
-    const distance = Number(body.distanceOverride);
-    if (!Number.isNaN(distance) && distance >= 0) {
+  if (body.distanceOverride !== undefined || body.distance !== undefined) {
+    // "distance" is accepted as an alias — the Quick schedule edit used to
+    // send it and the value was silently dropped.
+    const rawDistance =
+      body.distanceOverride !== undefined ? body.distanceOverride : body.distance;
+    const distance = Number(rawDistance);
+    if (
+      rawDistance !== null &&
+      rawDistance !== "" &&
+      !Number.isNaN(distance) &&
+      distance >= 0
+    ) {
       payload.distanceOverride = distance;
     } else {
       payload.distanceOverride = undefined;
@@ -966,29 +980,18 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
   if (startTime) {
     nextStartTime = new Date(startTime);
   } else {
-    // Auto-schedule: Find the race with the latest start time
-    // Ensure we only look at races with valid start times
-    const lastRace = await CompetitionRace.findOne({
-      competition: competition._id,
-      startTime: { $exists: true, $ne: null },
-    })
-      .sort({ startTime: -1 })
-      .select("startTime")
-      .lean();
-
-    if (lastRace && lastRace.startTime) {
-      // Use provided interval or default to 10 minutes for auto-scheduling
-      if (effectiveInterval <= 0) {
-        effectiveInterval = 10;
-      }
-      // Ensure lastRace.startTime is a Date object
-      const lastTime = new Date(lastRace.startTime);
-      if (!isNaN(lastTime.getTime())) {
-        nextStartTime = new Date(
-          lastTime.getTime() + effectiveInterval * 60000,
-        );
-      }
+    // Auto-schedule: anchor the day at 08:00 local on the journey's stage
+    // date and continue after any race already scheduled that day, so the
+    // first race of a journey starts at 08:00 and times never drift across
+    // days (the old "latest race + interval" rule drifted into the future).
+    if (effectiveInterval <= 0) {
+      effectiveInterval = 10;
     }
+    nextStartTime = await resolveDayScheduleAnchor(
+      competition,
+      journeyValue,
+      effectiveInterval,
+    );
   }
 
   const categoryDoc = await Category.findById(categoryId)
@@ -999,6 +1002,13 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
     categoryDoc?.abbreviation ||
     categoryDoc?.titles?.en ||
     "Race";
+
+  // Official programme number: requested value, the event's existing number,
+  // or the next free number in the competition.
+  const resolvedEventNumber =
+    Number.isFinite(Number(eventNumber)) && Number(eventNumber) >= 1
+      ? Number(eventNumber)
+      : await resolveEventNumber(competition, categoryId, boatClassId);
 
   const racesToInsert = entryChunks.map((chunk, index) => {
     // Sort chunk by seed to ensure seeds are in order within the race
@@ -1048,9 +1058,7 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
         `${categoryId.toString()}::${
           boatClassId ? boatClassId.toString() : "open"
         }::J${journeyValue}`,
-      eventNumber: Number.isFinite(Number(eventNumber)) && Number(eventNumber) >= 1
-        ? Number(eventNumber)
-        : undefined,
+      eventNumber: resolvedEventNumber,
       journeyIndex: journeyValue,
       sessionLabel: normaliseString(sessionLabel),
       name: `${prefixLabel} ${index + 1}`,
@@ -2661,6 +2669,398 @@ export const computeCompetitionRankings = asyncHandler(async (req, res) => {
   });
 
   return res.json(response);
+});
+
+// Resolve the final journey for qualification: explicit stage (isFinalDay),
+// else the highest journeyIndex across ALL races of the competition —
+// including scheduled finals. Deriving it from completed races only would
+// mistake the last preliminary journey for the final and drop its points.
+const resolveFinalJourneyIndex = async (competition, finalStage = null) => {
+  const stage = finalStage
+    ? null
+    : (competition.stages || []).find((s) => s?.isFinalDay);
+  if (finalStage || stage) {
+    const order = Number((finalStage || stage).order);
+    if (Number.isInteger(order) && order >= 1) return order;
+  }
+  const maxJourneyRace = await CompetitionRace.findOne({
+    competition: competition._id,
+  })
+    .sort({ journeyIndex: -1 })
+    .select("journeyIndex")
+    .lean();
+  const journey = Number(maxJourneyRace?.journeyIndex);
+  return Number.isInteger(journey) && journey >= 1 ? journey : null;
+};
+
+// First race of a day anchors at 08:00 local time on the journey's stage
+// date (fallback: competition start date, else today) and continues after
+// any race already scheduled on that same day. This replaces the old
+// "latest race + interval" rule whose drift produced future dates.
+const resolveDayScheduleAnchor = async (
+  competition,
+  journeyIndex,
+  intervalMinutes,
+  excludeJourneyIndex = null,
+) => {
+  const stage = (competition.stages || []).find(
+    (s) => Number(s?.order) === Number(journeyIndex),
+  );
+  const stageDate = stage?.date
+    ? new Date(stage.date)
+    : competition.startDate
+      ? new Date(competition.startDate)
+      : null;
+  let dayStart;
+  if (stageDate && !isNaN(stageDate.getTime())) {
+    dayStart = new Date(
+      stageDate.getFullYear(),
+      stageDate.getMonth(),
+      stageDate.getDate(),
+      0,
+      0,
+      0,
+      0,
+    );
+  } else {
+    dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+  }
+  const anchor = new Date(dayStart.getTime());
+  anchor.setHours(8, 0, 0, 0);
+
+  const dayFilter = {
+    competition: competition._id,
+    startTime: {
+      $gte: dayStart,
+      $lt: new Date(dayStart.getTime() + 86400000),
+    },
+  };
+  if (excludeJourneyIndex != null) {
+    dayFilter.journeyIndex = { $ne: excludeJourneyIndex };
+  }
+  const lastSameDay = await CompetitionRace.findOne(dayFilter)
+    .sort({ startTime: -1 })
+    .select("startTime")
+    .lean();
+  const lastTime = lastSameDay?.startTime
+    ? new Date(lastSameDay.startTime)
+    : null;
+  if (lastTime && !isNaN(lastTime.getTime())) {
+    const candidate = new Date(
+      lastTime.getTime() + Math.max(intervalMinutes, 0) * 60000,
+    );
+    if (candidate > anchor) return candidate;
+  }
+  return anchor;
+};
+
+// Official programme number of an event (category + boatClass): reuse the
+// event's existing number, else the next free number in the competition.
+const resolveEventNumber = async (competition, categoryId, boatClassId) => {
+  const sibling = await CompetitionRace.findOne({
+    competition: competition._id,
+    category: categoryId,
+    boatClass: boatClassId || null,
+    eventNumber: { $ne: null },
+  })
+    .sort({ eventNumber: 1 })
+    .select("eventNumber")
+    .lean();
+  if (sibling?.eventNumber) return sibling.eventNumber;
+  const maxEvent = await CompetitionRace.findOne({
+    competition: competition._id,
+    eventNumber: { $ne: null },
+  })
+    .sort({ eventNumber: -1 })
+    .select("eventNumber")
+    .lean();
+  return (maxEvent?.eventNumber || 0) + 1;
+};
+
+// Qualified crews for the final journey, per event (category + boatClass).
+// Points accumulate over the preliminary journeys per crew slot (e.g. ASL1);
+// DNF crews backfill empty slots; ties at the cut line expand the final.
+// Lanes follow the international seeding chevron ordered by qualification rank.
+export const getQualifiedCrews = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const topNRaw = Number(req.query.topN);
+  const topN =
+    Number.isInteger(topNRaw) && topNRaw >= 1 ? topNRaw : DEFAULT_QUALIFY_TOP_N;
+  const overrideRaw = Number(req.query.finalJourneyIndex);
+  const finalJourneyIndex =
+    Number.isInteger(overrideRaw) && overrideRaw >= 1
+      ? overrideRaw
+      : await resolveFinalJourneyIndex(competition);
+
+  const races = await CompetitionRace.find({
+    competition: competition._id,
+    status: "completed",
+  })
+    .populate("category", "abbreviation titles")
+    .populate("boatClass", "code names")
+    .populate("lanes.club", "name code")
+    .populate("lanes.athlete", "firstName lastName firstNameAr lastNameAr")
+    .populate("lanes.crew", "firstName lastName firstNameAr lastNameAr")
+    .select("category boatClass journeyIndex name order phase status lanes")
+    .lean();
+
+  if (!races.length) {
+    return res.json({
+      competitionId: competition._id,
+      topN,
+      finalJourneyIndex,
+      events: [],
+    });
+  }
+
+  const events = computeFinalQualification(races, { topN, finalJourneyIndex });
+
+  return res.json({
+    competitionId: competition._id,
+    topN,
+    finalJourneyIndex,
+    events,
+  });
+});
+
+// Generate the final journey races pre-seeded with the qualified crews.
+// Every qualified crew is placed on its chevron lane in qualification-rank
+// order; when more crews qualify than the discipline's lane limit allows,
+// the field splits into Final A, Final B, ... by rank.
+export const generateFinalJourneyRaces = asyncHandler(async (req, res) => {
+  const { competitionId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const topNRaw = Number(req.body?.topN);
+  const topN =
+    Number.isInteger(topNRaw) && topNRaw >= 1 ? topNRaw : DEFAULT_QUALIFY_TOP_N;
+  const overrideRaw = Number(req.body?.finalJourneyIndex);
+  const override =
+    Number.isInteger(overrideRaw) && overrideRaw >= 1 ? overrideRaw : null;
+
+  // Final journey: explicit request value, else the stage flagged isFinalDay,
+  // else the highest journey of ANY race (scheduled finals included) — never
+  // just the completed races, or the last preliminary journey would be
+  // mistaken for the final and its points dropped.
+  const finalStage = (competition.stages || []).find(
+    (stage) => stage?.isFinalDay,
+  );
+  const finalJourneyIndex =
+    override || (await resolveFinalJourneyIndex(competition, finalStage));
+  if (!finalJourneyIndex) {
+    return res.status(400).json({
+      message:
+        "No final journey defined: flag a competition stage as isFinalDay or pass finalJourneyIndex.",
+    });
+  }
+
+  const overwriteExisting = req.body?.overwriteExisting === true;
+  const sessionLabel = normaliseString(req.body?.sessionLabel);
+  const intervalRaw = Number(req.body?.intervalMinutes);
+  const intervalMinutes =
+    Number.isFinite(intervalRaw) && intervalRaw >= 0 ? intervalRaw : 10;
+  const requestedStart = req.body?.startTime
+    ? new Date(req.body.startTime)
+    : null;
+
+  const maxLanes = getMaxLanesForDiscipline(competition.discipline);
+
+  const completedRaces = await CompetitionRace.find({
+    competition: competition._id,
+    status: "completed",
+  })
+    .populate("category", "abbreviation titles")
+    .populate("boatClass", "code names")
+    .populate("lanes.club", "name code")
+    .populate("lanes.athlete", "firstName lastName firstNameAr lastNameAr")
+    .populate("lanes.crew", "firstName lastName firstNameAr lastNameAr")
+    .lean();
+
+  if (!completedRaces.length) {
+    return res
+      .status(400)
+      .json({ message: "No completed races to qualify from." });
+  }
+
+  const events = computeFinalQualification(completedRaces, {
+    topN,
+    finalJourneyIndex,
+  });
+
+  const existingFinalRaces = await CompetitionRace.find({
+    competition: competition._id,
+    journeyIndex: finalJourneyIndex,
+  })
+    .select("_id category boatClass")
+    .lean();
+  const existingByEvent = new Map();
+  for (const race of existingFinalRaces) {
+    const key = `${race.category ? race.category.toString() : "unknown"}::${
+      race.boatClass ? race.boatClass.toString() : "open"
+    }`;
+    existingByEvent.set(key, race._id);
+  }
+
+  // Race numbering continues after the rest of the competition unless overridden.
+  let nextOrder = 1;
+  const maxOrderRace = await CompetitionRace.findOne({
+    competition: competition._id,
+  })
+    .sort({ order: -1 })
+    .select("order")
+    .lean();
+  if (maxOrderRace?.order) {
+    nextOrder = maxOrderRace.order + 1;
+  }
+  const startRaceNumber = Number(req.body?.startRaceNumber);
+  if (Number.isInteger(startRaceNumber) && startRaceNumber >= 1) {
+    nextOrder = startRaceNumber;
+  }
+
+  // Scheduling continues after the latest scheduled race unless overridden.
+  let baseStartTime = null;
+  if (requestedStart && !isNaN(requestedStart.getTime())) {
+    baseStartTime = requestedStart;
+  } else {
+    // Anchor the final's first race at 08:00 local on the final stage date,
+    // continuing after other journeys' races on the same day. The final
+    // journey's own races are ignored so regeneration re-anchors cleanly.
+    baseStartTime = await resolveDayScheduleAnchor(
+      competition,
+      finalJourneyIndex,
+      intervalMinutes,
+      finalJourneyIndex,
+    );
+  }
+
+  // Seed the event-number counter so new events take the next free number.
+  let maxEventNumber =
+    (
+      await CompetitionRace.findOne({
+        competition: competition._id,
+        eventNumber: { $ne: null },
+      })
+        .sort({ eventNumber: -1 })
+        .select("eventNumber")
+        .lean()
+    )?.eventNumber || 0;
+
+  const racesToInsert = [];
+  const skipped = [];
+
+  for (const event of events) {
+    if (event.categoryId === "unknown") {
+      skipped.push({ eventKey: event.eventKey, reason: "missing_category" });
+      continue;
+    }
+    if (!event.qualified.length) {
+      skipped.push({ eventKey: event.eventKey, reason: "no_qualified_crews" });
+      continue;
+    }
+    if (existingByEvent.has(event.eventKey)) {
+      if (!overwriteExisting) {
+        skipped.push({
+          eventKey: event.eventKey,
+          reason: "final_races_already_exist",
+        });
+        continue;
+      }
+      const deleteFilter = {
+        competition: competition._id,
+        category: event.categoryId,
+        journeyIndex: finalJourneyIndex,
+      };
+      if (event.boatClassId !== "open") {
+        deleteFilter.boatClass = event.boatClassId;
+      } else {
+        deleteFilter.boatClass = null; // races without a boat class
+      }
+      await CompetitionRace.deleteMany(deleteFilter);
+    }
+
+    const prefixLabel = event.categoryLabel || "Final";
+    // Event number: reuse the event's existing number, else the next free one.
+    const existingEventNumber = (
+      await CompetitionRace.findOne({
+        competition: competition._id,
+        category: event.categoryId,
+        boatClass: event.boatClassId !== "open" ? event.boatClassId : null,
+        eventNumber: { $ne: null },
+      })
+        .sort({ eventNumber: 1 })
+        .select("eventNumber")
+        .lean()
+    )?.eventNumber;
+    const eventNumberForRace = existingEventNumber ?? maxEventNumber + 1;
+    maxEventNumber = Math.max(maxEventNumber, eventNumberForRace);
+
+    chunkArray(event.qualified, maxLanes).forEach((chunk, chunkIndex) => {
+      const phase = getRacePhase("Final", chunkIndex + 1, "alphabetic");
+      const lanes = chunk.map((crew, laneIndex) => {
+        const crewIds = Array.isArray(crew.crew) ? crew.crew : [];
+        return {
+          lane: QUALIFYING_LANE_PATTERN[laneIndex],
+          // Same convention as autoGenerateRaces: a multi-athlete crew lane
+          // carries no separate "athlete"; singles keep their rower visible.
+          athlete: crewIds.length > 1 ? undefined : crewIds[0],
+          crew: crewIds,
+          crewNumber: crewIds.length > 1 ? crew.crewNumber || undefined : undefined,
+          club: crew.club || undefined,
+          seed: crew.seed,
+          representingNation: crew.representingNation || undefined,
+          representingType: crew.representingType || undefined,
+        };
+      });
+      const scheduledIndex = racesToInsert.length;
+      racesToInsert.push({
+        competition: competition._id,
+        category: event.categoryId,
+        boatClass: event.boatClassId !== "open" ? event.boatClassId : undefined,
+        eventGroupId: `${event.categoryId}::${event.boatClassId}::J${finalJourneyIndex}`,
+        eventNumber: eventNumberForRace,
+        journeyIndex: finalJourneyIndex,
+        sessionLabel: sessionLabel || undefined,
+        name: `${prefixLabel} ${phase}`,
+        phase,
+        order: nextOrder,
+        startTime:
+          baseStartTime && !isNaN(baseStartTime.getTime())
+            ? new Date(baseStartTime.getTime() + scheduledIndex * intervalMinutes * 60000)
+            : undefined,
+        status: "scheduled",
+        lanes,
+        createdBy: req.user?.id,
+        updatedBy: req.user?.id,
+      });
+      nextOrder += 1;
+    });
+  }
+
+  if (!racesToInsert.length) {
+    return res.status(409).json({
+      message:
+        "Nothing to generate: no qualified crews, or final races already exist (pass overwriteExisting to replace them).",
+      skipped,
+    });
+  }
+
+  const inserted = await CompetitionRace.insertMany(racesToInsert);
+
+  return res.status(201).json({
+    finalJourneyIndex,
+    topN,
+    created: inserted.map((race) => race.toObject()),
+    skipped,
+  });
 });
 
 // Combine Races (Synchronization approach)

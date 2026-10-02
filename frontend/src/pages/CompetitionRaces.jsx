@@ -285,6 +285,181 @@ const GenerationProgress = ({ isGenerating, progress, stage }) => {
   );
 };
 
+// ==================== FINAL QUALIFICATION MODAL ====================
+const QUALIFICATION_VIA_LABELS = {
+  points: "Points",
+  tie_expansion: "Tie at cut",
+  backfill: "DNF backfill",
+};
+
+const formatQualificationAppearance = (appearance) => {
+  if (appearance.rank != null) {
+    return `J${appearance.journeyIndex}: #${appearance.rank} · ${appearance.points} pts`;
+  }
+  return `J${appearance.journeyIndex}: ${String(appearance.status).toUpperCase()}`;
+};
+
+const FinalQualificationModal = ({
+  open,
+  onClose,
+  data,
+  loading,
+  generating,
+  overwriteExisting,
+  onOverwriteChange,
+  onGenerate,
+}) => {
+  if (!open) return null;
+
+  const events = Array.isArray(data?.events) ? data.events : [];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto py-8">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 animate-in fade-in zoom-in duration-300">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-6">
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">
+              Final Qualification
+            </h3>
+            <p className="text-sm text-slate-500 mt-1">
+              Qualified crews per event by points accumulated over the
+              preliminary journeys. Lanes follow the international seeding
+              order (best rank → lane 3).
+            </p>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            ✕
+          </Button>
+        </div>
+
+        <div className="max-h-[60vh] overflow-y-auto p-6 space-y-4">
+          {loading ? (
+            <div className="py-12 text-center text-sm text-slate-500">
+              Loading qualification...
+            </div>
+          ) : events.length === 0 ? (
+            <div className="py-12 text-center text-sm text-slate-500">
+              No completed preliminary races yet — record results first.
+            </div>
+          ) : (
+            events.map((event) => (
+              <div
+                key={event.eventKey}
+                className="rounded-xl border border-slate-200 overflow-hidden"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 px-4 py-3 border-b border-slate-200">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {event.categoryLabel || "Event"}
+                      {event.boatClassLabel
+                        ? ` — ${event.boatClassLabel}`
+                        : ""}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Final journey: J{event.finalJourneyIndex} ·{" "}
+                      {event.totalQualified} of {event.totalCrews} crews
+                      qualified
+                      {event.backfilling
+                        ? ` · DNF backfill (${event.pointQualifiedCount} scored)`
+                        : ""}
+                    </p>
+                  </div>
+                  {event.exceedsLaneLimit ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
+                      More than 8 boats
+                    </span>
+                  ) : null}
+                </div>
+                {event.totalQualified === 0 ? (
+                  <p className="px-4 py-3 text-xs text-slate-500">
+                    No crew can qualify for the final in this event yet.
+                  </p>
+                ) : (
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-white text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Seed
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Lane
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Crew
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Points
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Qualified via
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Journey results
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {event.qualified.map((crew) => (
+                        <tr key={crew.crewKey}>
+                          <td className="px-3 py-2 text-slate-700">
+                            #{crew.seed}
+                          </td>
+                          <td className="px-3 py-2 font-semibold text-slate-900">
+                            {crew.lane ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-900">
+                            {crew.label || crew.crewKey}
+                          </td>
+                          <td className="px-3 py-2 font-semibold text-slate-900">
+                            {crew.totalPoints}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {QUALIFICATION_VIA_LABELS[crew.qualifiedVia] ||
+                              crew.qualifiedVia}
+                          </td>
+                          <td className="px-3 py-2 text-slate-500">
+                            {(crew.appearances || [])
+                              .map(formatQualificationAppearance)
+                              .join(" · ")}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-6">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={overwriteExisting}
+              onChange={(e) => onOverwriteChange(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Replace existing final races
+          </label>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Close
+            </Button>
+            <Button
+              type="button"
+              onClick={onGenerate}
+              disabled={generating || loading || events.length === 0}
+            >
+              {generating ? "Registering..." : "Register in final journey"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ==================== PRESET CARD ====================
 const PresetCard = ({ preset, isSelected, onSelect }) => (
   <button
@@ -2615,6 +2790,13 @@ const CompetitionRaces = () => {
     settings: true,
     advanced: false,
   });
+  // Final qualification: identify + register qualified crews in the final journey
+  const [showFinalQualification, setShowFinalQualification] = useState(false);
+  const [finalQualificationData, setFinalQualificationData] = useState(null);
+  const [loadingFinalQualification, setLoadingFinalQualification] =
+    useState(false);
+  const [generatingFinal, setGeneratingFinal] = useState(false);
+  const [finalOverwriteExisting, setFinalOverwriteExisting] = useState(false);
 
   const [autoGenState, setAutoGenState] = useState({
     category: "",
@@ -3457,6 +3639,75 @@ const CompetitionRaces = () => {
     globalJourneyFilter,
   ]);
 
+  // ==================== FINAL QUALIFICATION ====================
+  const loadFinalQualification = async () => {
+    setLoadingFinalQualification(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/qualified-crews`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const payload = await response.json().catch(() => null);
+      if (response.status === 401) {
+        handleUnauthorized("Not authorized to access this route");
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(
+          payload?.message || "Failed to load final qualification",
+        );
+      }
+      setFinalQualificationData(payload);
+    } catch (error) {
+      toast.error(error.message || "Failed to load final qualification");
+    } finally {
+      setLoadingFinalQualification(false);
+    }
+  };
+
+  const openFinalQualification = async () => {
+    setShowFinalQualification(true);
+    await loadFinalQualification();
+  };
+
+  const generateFinalJourney = async () => {
+    setGeneratingFinal(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/generate-final`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ overwriteExisting: finalOverwriteExisting }),
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        handleUnauthorized("Not authorized to access this route");
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(
+          payload.message || "Failed to register qualified crews",
+        );
+      }
+      const skippedCount = (payload.skipped || []).length;
+      toast.success(
+        `Registered ${payload.created?.length ?? 0} final race(s) in journey ${payload.finalJourneyIndex}` +
+          (skippedCount ? ` (${skippedCount} event(s) skipped)` : ""),
+      );
+      await loadRaces();
+      await loadFinalQualification();
+    } catch (error) {
+      toast.error(error.message || "Failed to register qualified crews");
+    } finally {
+      setGeneratingFinal(false);
+    }
+  };
+
   useEffect(() => {
     if (authLoading) {
       return;
@@ -3721,7 +3972,8 @@ const CompetitionRaces = () => {
         order: race?.order != null ? String(race.order) : "",
         startTime: formatDateTimeLocalValue(race?.startTime),
         eventGroupId: race?.eventGroupId || "",
-        distance: race?.distance != null ? String(race.distance) : "",
+        distance:
+          race?.distanceOverride != null ? String(race.distanceOverride) : "",
         phase: race?.phase || "",
         eventNumber:
           race?.eventNumber != null ? String(race.eventNumber) : "",
@@ -3774,7 +4026,9 @@ const CompetitionRaces = () => {
             order: Number(scheduleState.order),
             startTime: scheduleState.startTime,
             eventGroupId: scheduleState.eventGroupId?.trim() || undefined,
-            distance: scheduleState.distance
+            // The model field is distanceOverride — the old "distance" key
+            // was silently dropped by the backend sanitizer.
+            distanceOverride: scheduleState.distance
               ? Number(scheduleState.distance)
               : undefined,
             phase: scheduleState.phase?.trim() || "",
@@ -12972,6 +13226,16 @@ const CompetitionRaces = () => {
             >
               🏆 Rankings
             </Button>
+            {canManageRaceSchedule ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={openFinalQualification}
+                disabled={loadingFinalQualification}
+              >
+                🎯 Final Qualification
+              </Button>
+            ) : null}
             <Button type="button" onClick={loadRaces} disabled={loadingRaces}>
               Refresh races
             </Button>
@@ -13150,6 +13414,17 @@ const CompetitionRaces = () => {
                 isGenerating={isGenerating}
                 progress={generationProgress}
                 stage={generationStage}
+              />
+
+              <FinalQualificationModal
+                open={showFinalQualification}
+                onClose={() => setShowFinalQualification(false)}
+                data={finalQualificationData}
+                loading={loadingFinalQualification}
+                generating={generatingFinal}
+                overwriteExisting={finalOverwriteExisting}
+                onOverwriteChange={setFinalOverwriteExisting}
+                onGenerate={generateFinalJourney}
               />
 
               <section className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-lg overflow-hidden relative">
