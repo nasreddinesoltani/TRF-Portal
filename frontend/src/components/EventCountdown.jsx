@@ -1,12 +1,5 @@
 import React, { useEffect, useState } from "react";
 
-/**
- * Live countdown timer to an event's start date.
- *
- * Props:
- *  - targetDate: ISO date string (event start)
- *  - variant: "compact" (default) for cards | "large" for the event page
- */
 const getRemaining = (target) => {
   const diff = new Date(target).getTime() - Date.now();
   if (Number.isNaN(diff)) return null;
@@ -22,7 +15,17 @@ const getRemaining = (target) => {
 
 const pad = (n) => String(n).padStart(2, "0");
 
-const EventCountdown = ({ targetDate, variant = "compact" }) => {
+/**
+ * Live countdown timer to an event's start date.
+ *
+ * Props:
+ *  - targetDate: ISO date string (event start)
+ *  - endDate: optional ISO date string (event end); when the countdown
+ *    is over and endDate has passed too, shows "Event completed"
+ *    instead of "Event in progress".
+ *  - variant: "compact" (default) for cards | "large" for the event page
+ */
+const EventCountdown = ({ targetDate, endDate, variant = "compact" }) => {
   const [remaining, setRemaining] = useState(() => getRemaining(targetDate));
 
   useEffect(() => {
@@ -36,12 +39,20 @@ const EventCountdown = ({ targetDate, variant = "compact" }) => {
   if (!remaining) return null;
 
   if (remaining.done) {
+    const finished =
+      endDate && new Date(endDate).getTime() < Date.now();
     return (
       <div
-        className={`pub-countdown pub-countdown--${variant} pub-countdown--live`}
+        className={`pub-countdown pub-countdown--${variant} ${
+          finished ? "pub-countdown--done" : "pub-countdown--live"
+        }`}
       >
-        <span className="pub-countdown__live-dot" />
-        <span className="pub-countdown__live-text">Event in progress</span>
+        <span
+          className={`pub-countdown__live-dot ${finished ? "pub-countdown__live-dot--done" : ""}`}
+        />
+        <span className="pub-countdown__live-text">
+          {finished ? "Event completed" : "Event in progress"}
+        </span>
       </div>
     );
   }

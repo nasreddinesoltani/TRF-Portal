@@ -15,7 +15,14 @@ import {
   Trophy,
   Waves,
 } from "lucide-react";
-import { INTERNATIONAL_EVENTS } from "../lib/events";
+import { INTERNATIONAL_EVENTS, getEventStatus } from "../lib/events";
+import {
+  formatEntryAffiliation,
+  formatEntryName,
+  formatEventLabel,
+  getAffiliationMode,
+  getPodiumEntries,
+} from "../lib/format";
 import EventCountdown from "../components/EventCountdown";
 import "../public.css";
 
@@ -62,14 +69,20 @@ const getVenueLabel = (competition) => {
 const getDiscipline = (discipline) =>
   DISCIPLINES[discipline] || FALLBACK_DISCIPLINE;
 
-const getResultEntryTitle = (entry) =>
-  entry?.athleteName || entry?.clubName || entry?.sourceRaceName || "Entry";
+const getResultEntryTitle = (entry) => formatEntryName(entry);
 
-const getResultEntryClub = (entry) => entry?.clubName || "Club";
+const getResultEntryAffiliation = (entry, competition) =>
+  formatEntryAffiliation(
+    entry,
+    getAffiliationMode(competition),
+    competition?.scope?.hostCountry || "",
+  );
 
 const buildPodiumPreview = (groups) => {
+  // Medalists come from the decisive phase (final) of each event so heat
+  // entries never shadow the podium.
   const entries = (groups || []).flatMap((group) =>
-    (group?.entries || []).map((entry) => ({
+    getPodiumEntries(group?.entries).map((entry) => ({
       ...entry,
       eventLabel: group.eventLabel,
     })),
@@ -135,6 +148,17 @@ const RegistrationBadge = ({ status }) => {
 const StatusBadge = ({ type, children }) => (
   <span className={`pub-badge pub-badge--${type}`}>{children}</span>
 );
+
+const INTL_STATUS_BADGES = {
+  upcoming: { type: "upcoming", label: "Upcoming" },
+  ongoing: { type: "ongoing", label: "In Progress" },
+  completed: { type: "completed", label: "Completed" },
+};
+
+const IntlEventStatusBadge = ({ event }) => {
+  const conf = INTL_STATUS_BADGES[getEventStatus(event)] || INTL_STATUS_BADGES.upcoming;
+  return <StatusBadge type={conf.type}>{conf.label}</StatusBadge>;
+};
 
 const PublicHome = () => {
   const navigate = useNavigate();
@@ -404,7 +428,7 @@ const PublicHome = () => {
                       style={{ marginBottom: 18 }}
                     >
                       <Calendar size={16} />
-                      Upcoming International Events
+                      International Events
                     </div>
 
                     <div className="pub-event-list">
@@ -470,7 +494,7 @@ const PublicHome = () => {
                           <Waves size={14} />
                           {event.discipline}
                         </span>
-                        <StatusBadge type="upcoming">International</StatusBadge>
+                        <IntlEventStatusBadge event={event} />
                       </div>
 
                       <h3 className="pub-card__headline">{event.name}</h3>
@@ -488,7 +512,10 @@ const PublicHome = () => {
 
                       <p className="pub-card__text">{event.summary}</p>
 
-                      <EventCountdown targetDate={event.startDate} />
+                      <EventCountdown
+                        targetDate={event.startDate}
+                        endDate={event.endDate}
+                      />
                     </div>
 
                     <div className="pub-card__footer">
@@ -797,13 +824,17 @@ const PublicHome = () => {
                                   {entryIndex + 1}
                                 </div>
                                 <div className="pub-podium__label">
-                                  {entry.eventLabel || "Result"}
+                                  {formatEventLabel(entry.eventLabel) ||
+                                    "Result"}
                                 </div>
                                 <div className="pub-podium__name">
                                   {getResultEntryTitle(entry)}
                                 </div>
                                 <div className="pub-podium__club">
-                                  {getResultEntryClub(entry)}
+                                  {getResultEntryAffiliation(
+                                    entry,
+                                    competition,
+                                  )}
                                 </div>
                                 <div className="pub-podium__time">
                                   {entry.status === "ok"

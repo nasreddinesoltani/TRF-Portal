@@ -109,9 +109,75 @@ export const getPublicCompetitionResults = async (req, res) => {
     const results = await OfficialResult.find({ competition: competitionId })
       .populate("category", "name nameAr code")
       .populate("boatClass", "name nameAr code")
-      .populate("entries.athlete", "firstName lastName firstNameAr lastNameAr")
+      .populate(
+        "entries.athlete",
+        "firstName lastName firstNameAr lastNameAr nationalityCode nationality",
+      )
       .populate("entries.club", "name nameAr code")
       .lean();
+
+    // Annotate each entry with the phase (Heat 1, Final A, ...) of the race
+    // it comes from, so the UI can separate heats from finals, and with the
+    // FULL crew names resolved from that race's lanes (published entries
+    // only keep a single athlete reference, even for doubles/fours).
+    const sourceRaceIds = [
+      ...new Set(
+        results.flatMap((group) =>
+          (group.entries || [])
+            .map((entry) => entry.sourceRace && String(entry.sourceRace))
+            .filter(Boolean),
+        ),
+      ),
+    ];
+
+    const sourceRaces = sourceRaceIds.length
+      ? await CompetitionRace.find({ _id: { $in: sourceRaceIds } })
+          .select("phase name lanes.athlete lanes.crew")
+          .populate("lanes.athlete", "firstName lastName")
+          .populate("lanes.crew", "firstName lastName")
+          .lean()
+      : [];
+
+    // raceId → (athleteId → joined crew label of the lane containing him)
+    const crewByRaceAndAthlete = new Map();
+    const racePhaseById = new Map();
+    for (const race of sourceRaces) {
+      racePhaseById.set(String(race._id), race.phase || "");
+      const byAthlete = new Map();
+      for (const lane of race.lanes || []) {
+        const members = [];
+        if (lane.athlete) members.push(lane.athlete);
+        if (Array.isArray(lane.crew)) members.push(...lane.crew);
+        const label = members
+          .map(
+            (member) =>
+              `${member.firstName || ""} ${member.lastName || ""}`.trim(),
+          )
+          .filter(Boolean)
+          .join(", ");
+        for (const member of members) {
+          if (member?._id) byAthlete.set(String(member._id), label);
+        }
+      }
+      crewByRaceAndAthlete.set(String(race._id), byAthlete);
+    }
+
+    results.forEach((group) => {
+      (group.entries || []).forEach((entry) => {
+        entry.phase = entry.sourceRace
+          ? racePhaseById.get(String(entry.sourceRace)) || ""
+          : "";
+        const crewMap = entry.sourceRace
+          ? crewByRaceAndAthlete.get(String(entry.sourceRace))
+          : null;
+        const athleteId =
+          entry.athlete && entry.athlete._id
+            ? String(entry.athlete._id)
+            : null;
+        entry.crewNames =
+          crewMap && athleteId ? crewMap.get(athleteId) || "" : "";
+      });
+    });
 
     res.json(results);
   } catch (error) {
@@ -147,7 +213,10 @@ export const getPublicCompetitionProgramme = async (req, res) => {
     const races = await CompetitionRace.find({ competition: competitionId })
       .populate("category", "abbreviation titles code gender")
       .populate("boatClass", "name nameAr code")
-      .populate("lanes.athlete", "firstName lastName firstNameAr lastNameAr")
+      .populate(
+        "lanes.athlete",
+        "firstName lastName firstNameAr lastNameAr nationalityCode nationality",
+      )
       .populate("lanes.crew", "firstName lastName firstNameAr lastNameAr")
       .populate("lanes.club", "name nameAr code")
       .sort({ startTime: 1, order: 1 })
@@ -193,6 +262,12 @@ export const getPublicCompetitionProgramme = async (req, res) => {
           clubCode: cCode,
           athleteName: athName,
           athleteNameAr: athNameAr,
+          representingNation:
+            lane.representingNation ||
+            (lane.athlete
+              ? lane.athlete.nationalityCode || lane.athlete.nationality || ""
+              : "") ||
+            "",
           seed: lane.seed,
           result: lane.result
             ? {
@@ -213,6 +288,7 @@ export const getPublicCompetitionProgramme = async (req, res) => {
         journeyIndex: race.journeyIndex,
         sessionLabel: race.sessionLabel,
         name: race.name,
+        phase: race.phase || "",
         order: race.order,
         startTime: race.startTime,
         distanceOverride: race.distanceOverride,

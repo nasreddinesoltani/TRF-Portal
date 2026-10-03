@@ -1162,7 +1162,20 @@ html {
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
+  color: var(--pub-text-secondary);
+}
+
+/* Race status semantics: finished = green, disqualified = red, rest = amber */
+.pub-status--ok {
+  color: var(--pub-success);
+}
+
+.pub-status--bad {
   color: var(--pub-live);
+}
+
+.pub-status--warn {
+  color: var(--pub-gold);
 }
 
 /* ── Detail Page ─────────────────────────────────────────────── */
@@ -2235,4 +2248,602 @@ html {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #fca5a5;
+}
+
+/* Completed state (event is over) */
+.pub-countdown--done {
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--pub-success-soft);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--pub-radius);
+}
+
+.pub-countdown--compact.pub-countdown--done {
+  margin-top: 16px;
+}
+
+.pub-countdown__live-dot--done {
+  background: var(--pub-success);
+  animation: none;
+}
+
+.pub-countdown--done .pub-countdown__live-text {
+  color: #6ee7b7;
+}
+
+/* ── Event Detail Page — enriched sections ─────────────────── */
+.pub-event__arabic {
+  margin: 10px 0 0;
+  font-size: clamp(16px, 2.2vw, 22px);
+  color: var(--pub-text-secondary);
+  direction: rtl;
+}
+
+.pub-event__meta .pub-badge {
+  flex-shrink: 0;
+}
+
+.pub-event__done-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 36px;
+  padding: 20px 24px;
+  background: linear-gradient(
+    135deg,
+    var(--pub-gold-soft),
+    rgba(245, 158, 11, 0.04)
+  );
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: var(--pub-radius-lg);
+}
+
+.pub-event__done-text {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--pub-text);
+}
+
+.pub-event__done-text svg {
+  color: var(--pub-gold);
+  flex-shrink: 0;
+}
+
+.pub-event__done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pub-event__facts {
+  margin-top: 40px;
+}
+
+.pub-event__section {
+  margin-top: 48px;
+}
+
+.pub-event__section .pub-section__header {
+  margin-bottom: 20px;
+}
+
+.pub-event__note {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--pub-text-secondary);
+}
+
+.pub-event__more-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--pub-accent);
+  background: var(--pub-accent-soft);
+  border: 1px solid var(--pub-accent-mid);
+  border-radius: var(--pub-radius-pill);
+  cursor: pointer;
+  transition:
+    background var(--pub-duration) var(--pub-ease),
+    border-color var(--pub-duration) var(--pub-ease),
+    color var(--pub-duration) var(--pub-ease);
+}
+
+.pub-event__more-link:hover {
+  background: var(--pub-accent-mid);
+  border-color: var(--pub-accent-glow);
+  color: var(--pub-text-white);
+}
+
+/* Programme: day blocks & race rows */
+.pub-day-block {
+  margin-bottom: 20px;
+  background: var(--pub-card);
+  border: 1px solid var(--pub-border);
+  border-radius: var(--pub-radius-lg);
+  overflow: hidden;
+}
+
+.pub-day-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background: var(--pub-bg-elevated);
+  border-bottom: 1px solid var(--pub-border);
+}
+
+.pub-day-block__title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--pub-text-white);
+}
+
+.pub-day-block__count {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pub-accent);
+}
+
+.pub-day-block__races {
+  display: flex;
+  flex-direction: column;
+}
+
+.pub-race-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 20px;
+  border-bottom: 1px solid var(--pub-border);
+  transition: background var(--pub-duration) var(--pub-ease);
+}
+
+.pub-race-row:last-child {
+  border-bottom: none;
+}
+
+.pub-race-row:hover {
+  background: var(--pub-card-hover);
+}
+
+.pub-race-row__time {
+  min-width: 52px;
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--pub-accent);
+}
+
+.pub-race-row__label {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--pub-text-white);
+}
+
+.pub-race-row__phase {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--pub-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pub-race-row__status {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: var(--pub-radius-pill);
+}
+
+.pub-race-row__status--scheduled {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.pub-race-row__status--in_progress {
+  color: #fca5a5;
+  background: var(--pub-live-soft);
+}
+
+.pub-race-row__status--completed {
+  color: #6ee7b7;
+  background: var(--pub-success-soft);
+}
+
+.pub-race-row__status--cancelled {
+  color: var(--pub-text-secondary);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+/* Results: compact per-event mini cards */
+.pub-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.pub-result-mini {
+  padding: 16px 18px;
+  background: var(--pub-card);
+  border: 1px solid var(--pub-border);
+  border-radius: var(--pub-radius);
+  transition:
+    border-color var(--pub-duration) var(--pub-ease),
+    transform var(--pub-duration) var(--pub-ease);
+}
+
+.pub-result-mini:hover {
+  border-color: var(--pub-border-hover);
+  transform: translateY(-2px);
+}
+
+.pub-result-mini__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--pub-gold);
+  border-bottom: 1px solid var(--pub-border);
+}
+
+.pub-result-mini__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pub-result-mini__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pub-result-mini__rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: var(--pub-radius-sm);
+}
+
+.pub-result-mini__rank--gold {
+  color: #1a1205;
+  background: var(--pub-gold);
+}
+
+.pub-result-mini__rank--silver {
+  color: #10151f;
+  background: var(--pub-silver);
+}
+
+.pub-result-mini__rank--bronze {
+  color: #fdf3e7;
+  background: var(--pub-bronze);
+}
+
+.pub-result-mini__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--pub-text);
+}
+
+.pub-result-mini__club {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 42%;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--pub-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pub-result-mini__time {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--pub-text-white);
+}
+
+/* Participating nations */
+.pub-nation-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pub-nation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pub-text);
+  background: var(--pub-bg-elevated);
+  border: 1px solid var(--pub-border);
+  border-radius: var(--pub-radius-pill);
+  transition: border-color var(--pub-duration) var(--pub-ease);
+}
+
+.pub-nation-chip:hover {
+  border-color: var(--pub-accent-mid);
+}
+
+.pub-nation-chip__flag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.pub-nation-chip__host {
+  padding: 2px 7px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pub-accent);
+  background: var(--pub-accent-soft);
+  border-radius: var(--pub-radius-pill);
+}
+
+/* Documents & team services rows */
+.pub-doc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  text-align: left;
+  font-family: inherit;
+  background: var(--pub-bg-elevated);
+  border: 1px solid var(--pub-border);
+  border-radius: var(--pub-radius);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    border-color var(--pub-duration) var(--pub-ease),
+    background var(--pub-duration) var(--pub-ease);
+}
+
+.pub-doc-row:hover {
+  border-color: var(--pub-accent-mid);
+  background: var(--pub-card-hover);
+}
+
+.pub-doc-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  color: var(--pub-accent);
+  background: var(--pub-accent-soft);
+  border-radius: var(--pub-radius-sm);
+}
+
+.pub-doc-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pub-doc-row__label {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--pub-text-white);
+}
+
+.pub-doc-row__hint {
+  font-size: 12px;
+  color: var(--pub-text-secondary);
+}
+
+.pub-doc-row__arrow {
+  margin-left: auto;
+  color: var(--pub-text-muted);
+  transition: color var(--pub-duration) var(--pub-ease);
+}
+
+.pub-doc-row:hover .pub-doc-row__arrow {
+  color: var(--pub-accent);
+}
+
+/* Race phases (heats / finals) */
+.pub-badge--heat {
+  color: #fcd34d;
+  background: var(--pub-gold-soft);
+}
+
+.pub-badge--final {
+  color: var(--pub-gold);
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.pub-badge--progression {
+  color: var(--pub-accent);
+  background: var(--pub-accent-soft);
+}
+
+.pub-race-row__phase--heat {
+  color: var(--pub-gold);
+}
+
+.pub-race-row__progression {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pub-accent);
+}
+
+.pub-result-mini__phases {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pub-gold);
+  background: var(--pub-gold-soft);
+  padding: 2px 8px;
+  border-radius: var(--pub-radius-pill);
+}
+
+/* Results grouped by phase (heats vs final) */
+.pub-phase-summary {
+  margin-left: 10px;
+  padding: 3px 10px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pub-gold);
+  background: var(--pub-gold-soft);
+  border-radius: var(--pub-radius-pill);
+}
+
+.pub-phase-block {
+  margin-top: 16px;
+  padding: 14px 16px 16px;
+  background: var(--pub-bg-elevated);
+  border: 1px solid var(--pub-border);
+  border-radius: var(--pub-radius);
+}
+
+.pub-phase-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.pub-phase-block__title {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pub-text-white);
+}
+
+.pub-phase-block__hint {
+  font-size: 11.5px;
+  color: var(--pub-text-secondary);
+}
+
+.pub-phase-block__progression {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--pub-accent);
+}
+
+.pub-qual-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #065f46;
+  background: var(--pub-success);
+  border-radius: var(--pub-radius-sm);
+  vertical-align: middle;
+}
+
+/* PDF export actions */
+.pub-results-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 18px;
+}
+
+.pub-btn-pdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  font-family: inherit;
+  color: var(--pub-accent);
+  background: var(--pub-accent-soft);
+  border: 1px solid var(--pub-accent-mid);
+  border-radius: var(--pub-radius-pill);
+  cursor: pointer;
+  transition:
+    background var(--pub-duration) var(--pub-ease),
+    color var(--pub-duration) var(--pub-ease);
+}
+
+.pub-btn-pdf:hover {
+  background: var(--pub-accent-mid);
+  color: var(--pub-text-white);
+}
+
+.pub-event__more-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pub-phase-block .pub-table-wrap {
+  margin-top: 8px !important;
+}
+
+@media (max-width: 640px) {
+  .pub-race-row {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .pub-race-row__phase {
+    flex-basis: 100%;
+    order: 4;
+  }
+
+  .pub-result-grid {
+    grid-template-columns: 1fr;
+  }
 }

@@ -5,6 +5,7 @@ import {
   Building2,
   Calendar,
   Clock3,
+  Download,
   Filter,
   Loader2,
   Info,
@@ -19,6 +20,24 @@ import {
   Award,
   ShieldCheck,
 } from "lucide-react";
+import {
+  formatEntryClub,
+  formatEntryName,
+  formatEntryAffiliation,
+  formatProgressionRule,
+  formatBoatCode,
+  formatEventLabel,
+  getAffiliationMode,
+  getPodiumEntries,
+  groupEntriesByPhase,
+  groupRacesByEventGroupId,
+  isHeatPhase,
+  formatPhaseSummary,
+} from "../lib/format";
+import {
+  generateRaceResultsPdf,
+  generateFullResultsPdf,
+} from "../lib/publicResultsPdf";
 import "../public.css";
 
 const formatDate = (value) => {
@@ -69,13 +88,15 @@ const getCategoryCode = (category) =>
   category?.abbreviation || category?.code || "";
 
 const getBoatClassLabel = (boatClass) =>
-  boatClass?.names?.en ||
-  boatClass?.name ||
-  boatClass?.nameAr ||
-  boatClass?.code ||
-  "Boat class";
+  formatBoatCode(
+    boatClass?.names?.en ||
+      boatClass?.name ||
+      boatClass?.nameAr ||
+      boatClass?.code ||
+      "Boat class",
+  );
 
-const getBoatClassCode = (boatClass) => boatClass?.code || "";
+const getBoatClassCode = (boatClass) => formatBoatCode(boatClass?.code || "");
 
 const getVenueLabel = (competition) => {
   const venue = competition?.venue || {};
@@ -117,15 +138,9 @@ const getDisciplineLabel = (discipline) => {
   }
 };
 
-const getEntryName = (entry) =>
-  entry?.athleteName ||
-  entry?.athleteNameAr ||
-  entry?.clubName ||
-  entry?.sourceRaceName ||
-  "Entry";
+const getEntryName = (entry) => formatEntryName(entry);
 
-const getEntryClub = (entry) =>
-  entry?.clubCode || entry?.clubName || entry?.clubNameAr || "Club";
+const getEntryClub = (entry) => formatEntryClub(entry);
 
 const getRaceEventLabel = (race) => {
   const categoryLabel = getCategoryLabel(race?.category);
@@ -136,7 +151,7 @@ const getRaceEventLabel = (race) => {
 const getRaceEventCode = (race) => {
   const categoryCode = getCategoryCode(race?.category);
   const boatClassCode = getBoatClassCode(race?.boatClass);
-  return [categoryCode, boatClassCode].filter(Boolean).join(" / ");
+  return formatEventLabel(`${categoryCode} ${boatClassCode}`);
 };
 
 const CompetitionDetail = () => {
@@ -291,6 +306,89 @@ const CompetitionDetail = () => {
       (a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0),
     );
   }, [results]);
+
+  // International championships run by nation display countries; national
+  // competitions display clubs. Mixed regattas show what each entry has.
+  const affiliationMode = useMemo(
+    () => getAffiliationMode(competition),
+    [competition],
+  );
+  const hostCountry = competition?.scope?.hostCountry || "";
+
+  const getAffiliation = (entry) =>
+    formatEntryAffiliation(entry, affiliationMode, hostCountry);
+
+  const affiliationColumnLabel =
+    affiliationMode === "nation"
+      ? "Nation"
+      : affiliationMode === "mixed"
+        ? "Club / Nation"
+        : "Club";
+
+  // Ranking systems are named by the federation ("Club Ranking by Gender");
+  // in by-nation events the same word should read "Nation".
+  const rankingLabel = (name) => {
+    if (!name) return "Official ranking";
+    return affiliationMode === "club" ? name : name.replace(/club/gi, "Nation");
+  };
+
+  const statusClass = (status) => {
+    const value = String(status || "ok").toLowerCase();
+    if (value === "ok") return "pub-status--ok";
+    if (value === "dsq") return "pub-status--bad";
+    return "pub-status--warn";
+  };
+
+  const exportGroupPdf = (group) => {
+    try {
+      generateRaceResultsPdf({
+        competition,
+        group,
+        races: raceGroupsByEventId.get(group.eventGroupId) || {
+          heats: [],
+          final: null,
+        },
+        mode: affiliationMode,
+        hostCountry,
+      });
+    } catch (err) {
+      console.error("Failed to generate the event results PDF:", err);
+    }
+  };
+
+  const exportFullPdf = () => {
+    try {
+      generateFullResultsPdf({
+        competition,
+        groups: results,
+        programme,
+        mode: affiliationMode,
+        hostCountry,
+      });
+    } catch (err) {
+      console.error("Failed to generate the full results PDF:", err);
+    }
+  };
+
+  // Final phase available for each category+boat group, so heat races can
+  // show their progression target.
+  const finalPhaseByGroup = useMemo(() => {
+    const map = new Map();
+    (programme || []).forEach((race) => {
+      if (/^final/i.test(String(race.phase || ""))) {
+        const key = `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`;
+        if (!map.has(key)) map.set(key, race.phase);
+      }
+    });
+    return map;
+  }, [programme]);
+
+  // Programme races indexed per result group, so heat results can show the
+  // FULL crew list of each heat race (published groups only keep a subset).
+  const raceGroupsByEventId = useMemo(
+    () => groupRacesByEventGroupId(programme),
+    [programme],
+  );
 
   const competitionTitle = getCompetitionTitle(competition);
 
@@ -509,6 +607,33 @@ const CompetitionDetail = () => {
                                       {getRaceEventCode(race)}
                                     </span>
                                   ) : null}
+                                  {race.phase ? (
+                                    <span
+                                      className={`pub-badge ${isHeatPhase(race.phase) ? "pub-badge--heat" : "pub-badge--final"}`}
+                                    >
+                                      {race.phase}
+                                    </span>
+                                  ) : null}
+                                  {isHeatPhase(race.phase) &&
+                                  finalPhaseByGroup.get(
+                                    `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`,
+                                  ) ? (
+                                    <span
+                                      className="pub-badge pub-badge--progression"
+                                      title={formatProgressionRule(
+                                        finalPhaseByGroup.get(
+                                          `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`,
+                                        ),
+                                      )}
+                                    >
+                                      →{" "}
+                                      {
+                                        finalPhaseByGroup.get(
+                                          `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`,
+                                        )
+                                      }
+                                    </span>
+                                  ) : null}
                                   <span
                                     className={`pub-race-card__status pub-race-card__status--${String(race.status || "scheduled")}`}
                                   >
@@ -555,7 +680,7 @@ const CompetitionDetail = () => {
                                           {getEntryName(lane)}
                                         </div>
                                         <div className="pub-race-card__lane-club">
-                                          {getEntryClub(lane)}
+                                          {getAffiliation(lane)}
                                         </div>
                                       </div>
                                     ))}
@@ -584,6 +709,18 @@ const CompetitionDetail = () => {
               </h2>
             </div>
 
+            {groupedResults.length > 0 && (
+              <div className="pub-results-toolbar">
+                <button
+                  className="pub-event__more-link"
+                  onClick={exportFullPdf}
+                  type="button"
+                >
+                  <Download size={14} />
+                  Download full results (PDF)
+                </button>
+              </div>
+            )}
             {groupedResults.length === 0 ? (
               <div className="pub-empty">
                 <Award className="pub-empty__icon" />
@@ -596,7 +733,145 @@ const CompetitionDetail = () => {
             ) : (
               <div className="pub-grid" style={{ gap: 18 }}>
                 {groupedResults.map((group) => {
-                  const podium = (group.entries || []).slice(0, 3);
+                  const phaseGroups = groupEntriesByPhase(group.entries);
+                  const entriesHaveHeats = phaseGroups.some((p) =>
+                    isHeatPhase(p.phase),
+                  );
+                  const groupRaces =
+                    raceGroupsByEventId.get(group.eventGroupId) || {
+                      heats: [],
+                      final: null,
+                    };
+                  const heatRaces = groupRaces.heats || [];
+                  const hasHeats =
+                    heatRaces.length > 0 || entriesHaveHeats;
+                  const finalRace = groupRaces.final || null;
+                  const finalPhaseLabel =
+                    finalRace?.phase ||
+                    phaseGroups.find((p) => /^final/i.test(p.phase))?.phase ||
+                    "";
+                  const finalPhase = phaseGroups.find((p) =>
+                    /^final/i.test(p.phase),
+                  );
+                  const heatPhases = phaseGroups.filter((p) =>
+                    isHeatPhase(p.phase),
+                  );
+                  const podium = getPodiumEntries(group.entries).slice(0, 3);
+                  const progressionRule =
+                    formatProgressionRule(finalPhaseLabel);
+
+                  // Crews that reached the final → "Q" badge in heat tables
+                  const finalistNames = new Set();
+                  (finalRace?.lanes || []).forEach((lane) => {
+                    const name = formatEntryName(lane);
+                    if (name) finalistNames.add(name.toLowerCase().trim());
+                  });
+                  (finalPhase?.entries || []).forEach((entry) => {
+                    const name = formatEntryName(entry);
+                    if (name) finalistNames.add(name.toLowerCase().trim());
+                  });
+
+                  const raceLaneRows = (race) =>
+                    (race.lanes || [])
+                      .map((lane) => ({
+                        pos:
+                          lane.result?.finishPosition ??
+                          (Number.isFinite(lane.result?.elapsedMs)
+                            ? null
+                            : "—"),
+                        elapsedMs: lane.result?.elapsedMs,
+                        name: formatEntryName(lane),
+                        affiliation: getAffiliation(lane),
+                        lane: lane.lane,
+                        status: lane.result?.status || "ok",
+                        time:
+                          lane.result?.status === "ok" &&
+                          Number.isFinite(lane.result?.elapsedMs)
+                            ? formatTime(lane.result.elapsedMs)
+                            : lane.result?.status
+                              ? String(lane.result.status).toUpperCase()
+                              : "—",
+                        qualified: finalistNames.has(
+                          formatEntryName(lane).toLowerCase().trim(),
+                        ),
+                      }))
+                      .sort((a, b) => {
+                        const posA =
+                          typeof a.pos === "number"
+                            ? a.pos
+                            : Number.MAX_SAFE_INTEGER;
+                        const posB =
+                          typeof b.pos === "number"
+                            ? b.pos
+                            : Number.MAX_SAFE_INTEGER;
+                        if (posA !== posB) return posA - posB;
+                        return (a.elapsedMs ?? Infinity) - (b.elapsedMs ?? Infinity);
+                      });
+
+                  const entryRows = (entries) =>
+                    (entries || []).map((entry, index) => ({
+                      pos: entry.finishPosition || entry.rank || index + 1,
+                      name: getEntryName(entry),
+                      affiliation: getAffiliation(entry),
+                      lane: entry.lane,
+                      time:
+                        entry.status === "ok"
+                          ? formatTime(entry.elapsedMs)
+                          : "—",
+                      status: String(entry.status || "ok").replace(/_/g, " "),
+                      qualified: finalistNames.has(
+                        getEntryName(entry).toLowerCase().trim(),
+                      ),
+                    }));
+
+                  const renderTable = (rows, keyPrefix, showQualification) => (
+                    <div className="pub-table-wrap" style={{ marginTop: 12 }}>
+                      <table className="pub-table pub-table--compact">
+                        <thead>
+                          <tr>
+                            <th className="col-pos">Pos</th>
+                            <th className="col-name">Athlete / Crew</th>
+                            <th className="col-club">
+                              {affiliationColumnLabel}
+                            </th>
+                            <th className="col-lane">Lane</th>
+                            <th className="col-time">Time</th>
+                            <th className="col-status">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row, index) => (
+                            <tr key={`${keyPrefix}-${index}`}>
+                              <td className="col-pos">{row.pos ?? index + 1}</td>
+                              <td className="col-name">
+                                {row.name}
+                                {showQualification && row.qualified && (
+                                  <span
+                                    className="pub-qual-badge"
+                                    title={`Qualified for ${finalPhaseLabel}`}
+                                  >
+                                    Q
+                                  </span>
+                                )}
+                              </td>
+                              <td className="col-club">{row.affiliation}</td>
+                              <td className="col-lane">
+                                {row.lane || "—"}
+                              </td>
+                              <td className="col-time">{row.time}</td>
+                              <td className="col-status">
+                                <span
+                                  className={`pub-status ${statusClass(row.status)}`}
+                                >
+                                  {row.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
 
                   return (
                     <article
@@ -605,7 +880,22 @@ const CompetitionDetail = () => {
                     >
                       <div className="pub-info-card__title">
                         <Trophy size={16} />
-                        {getRaceEventLabel(group) || group.eventLabel}
+                        {formatEventLabel(group.eventLabel) ||
+                          getRaceEventLabel(group)}
+                        {hasHeats && (
+                          <span className="pub-phase-summary">
+                            {formatPhaseSummary(group.entries)}
+                          </span>
+                        )}
+                        <button
+                          className="pub-btn-pdf"
+                          onClick={() => exportGroupPdf(group)}
+                          type="button"
+                          title="Download this event's results (PDF)"
+                        >
+                          <Download size={12} />
+                          PDF
+                        </button>
                       </div>
 
                       <div
@@ -614,7 +904,7 @@ const CompetitionDetail = () => {
                       >
                         <span className="pub-meta__item">
                           <ShieldCheck size={14} />
-                          {group.rankingSystem?.nameEn || "Official ranking"}
+                          {rankingLabel(group.rankingSystem?.nameEn)}
                         </span>
                         <span className="pub-meta__item">
                           <Users size={14} />
@@ -624,88 +914,118 @@ const CompetitionDetail = () => {
                         </span>
                         <span className="pub-meta__item">
                           <Calendar size={14} />
-                          {group.publishedAt
-                            ? formatDateTime(group.publishedAt)
-                            : "Publication date unavailable"}
+                          {(() => {
+                            const raceDate =
+                              finalRace?.startTime ||
+                              heatRaces[0]?.startTime ||
+                              group.publishedAt;
+                            return raceDate
+                              ? formatDateTime(raceDate)
+                              : "Date unavailable";
+                          })()}
                         </span>
                       </div>
 
-                      <div className="pub-podium pub-podium--compact">
-                        {podium.map((entry, index) => (
-                          <div
-                            key={`${group.eventGroupId || group._id}-${index}`}
-                            className={`pub-podium__block pub-podium__block--${index === 0 ? "gold" : index === 1 ? "silver" : "bronze"}`}
-                          >
-                            <div className="pub-podium__rank">{index + 1}</div>
-                            <div className="pub-podium__label">
-                              {index === 0
-                                ? "Winner"
-                                : index === 1
-                                  ? "Runner-up"
-                                  : "Third"}
+                      {podium.length > 0 && (
+                        <div className="pub-podium pub-podium--compact">
+                          {podium.map((entry, index) => (
+                            <div
+                              key={`${group.eventGroupId || group._id}-${index}`}
+                              className={`pub-podium__block pub-podium__block--${index === 0 ? "gold" : index === 1 ? "silver" : "bronze"}`}
+                            >
+                              <div className="pub-podium__rank">{index + 1}</div>
+                              <div className="pub-podium__label">
+                                {hasHeats && finalPhaseLabel
+                                  ? `Winner · ${finalPhaseLabel}`
+                                  : index === 0
+                                    ? "Winner"
+                                    : index === 1
+                                      ? "Runner-up"
+                                      : "Third"}
+                              </div>
+                              <div className="pub-podium__name">
+                                {getEntryName(entry)}
+                              </div>
+                              <div className="pub-podium__club">
+                                {getAffiliation(entry)}
+                              </div>
+                              <div className="pub-podium__time">
+                                {entry.status === "ok"
+                                  ? formatTime(entry.elapsedMs)
+                                  : String(entry.status || "—").toUpperCase()}
+                              </div>
                             </div>
-                            <div className="pub-podium__name">
-                              {getEntryName(entry)}
-                            </div>
-                            <div className="pub-podium__club">
-                              {getEntryClub(entry)}
-                            </div>
-                            <div className="pub-podium__time">
-                              {entry.status === "ok"
-                                ? formatTime(entry.elapsedMs)
-                                : String(entry.status || "—").toUpperCase()}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
 
-                      <div className="pub-table-wrap" style={{ marginTop: 16 }}>
-                        <table className="pub-table pub-table--compact">
-                          <thead>
-                            <tr>
-                              <th className="col-pos">Pos</th>
-                              <th className="col-name">Athlete / Crew</th>
-                              <th className="col-club">Club</th>
-                              <th className="col-lane">Lane</th>
-                              <th className="col-time">Time</th>
-                              <th className="col-status">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(group.entries || []).map((entry, index) => (
-                              <tr
-                                key={`${group.eventGroupId || group._id}-${entry.lane || index}-${index}`}
-                              >
-                                <td className="col-pos">
-                                  {entry.rank ||
-                                    entry.finishPosition ||
-                                    index + 1}
-                                </td>
-                                <td className="col-name">
-                                  {getEntryName(entry)}
-                                </td>
-                                <td className="col-club">
-                                  {getEntryClub(entry)}
-                                </td>
-                                <td className="col-lane">
-                                  {entry.lane || "—"}
-                                </td>
-                                <td className="col-time">
-                                  {entry.status === "ok"
-                                    ? formatTime(entry.elapsedMs)
-                                    : "—"}
-                                </td>
-                                <td className="col-status">
-                                  {String(entry.status || "ok").replace(
-                                    /_/g,
-                                    " ",
+                      {hasHeats ? (
+                        <>
+                          {finalPhase && (
+                            <div className="pub-phase-block">
+                              <div className="pub-phase-block__header">
+                                <span className="pub-phase-block__title">
+                                  {finalPhase.phase}
+                                </span>
+                                <span className="pub-phase-block__hint">
+                                  Final standings
+                                </span>
+                              </div>
+                              {renderTable(
+                                entryRows(finalPhase.entries),
+                                `${group.eventGroupId}-final`,
+                              )}
+                            </div>
+                          )}
+                          {heatRaces.length > 0
+                            ? heatRaces.map((race) => (
+                                <div
+                                  className="pub-phase-block"
+                                  key={race._id}
+                                >
+                                  <div className="pub-phase-block__header">
+                                    <span className="pub-phase-block__title">
+                                      {race.phase || race.name}
+                                    </span>
+                                    {progressionRule && (
+                                      <span className="pub-phase-block__progression">
+                                        {progressionRule}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {renderTable(
+                                    raceLaneRows(race),
+                                    `${race._id}`,
+                                    true,
                                   )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                                </div>
+                              ))
+                            : heatPhases.map((phaseGroup) => (
+                                <div
+                                  className="pub-phase-block"
+                                  key={phaseGroup.phase}
+                                >
+                                  <div className="pub-phase-block__header">
+                                    <span className="pub-phase-block__title">
+                                      {phaseGroup.phase}
+                                    </span>
+                                    {progressionRule && (
+                                      <span className="pub-phase-block__progression">
+                                        {progressionRule}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {renderTable(
+                                    entryRows(phaseGroup.entries),
+                                    `${group.eventGroupId}-${phaseGroup.phase}`,
+                                    true,
+                                  )}
+                                </div>
+                              ))}
+                        </>
+                      ) : (
+                        renderTable(entryRows(group.entries || ""), "all")
+                      )}
                     </article>
                   );
                 })}

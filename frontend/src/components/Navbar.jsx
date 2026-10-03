@@ -208,7 +208,7 @@ export const Navbar = () => {
             </button>
             <button
               className="pub-nav__link"
-              onClick={() => navigate("/#events")}
+              onClick={() => navigate("/#intl-events")}
             >
               Events
             </button>
