@@ -4,9 +4,9 @@ import {
   ArrowLeft,
   Building2,
   Calendar,
+  ChevronDown,
   Clock3,
   Download,
-  Filter,
   Loader2,
   Info,
   MapPin,
@@ -22,11 +22,15 @@ import {
 } from "lucide-react";
 import {
   formatEntryClub,
+  formatEntryClubShort,
   formatEntryName,
   formatEntryAffiliation,
   formatProgressionRule,
   formatBoatCode,
+  formatBoatClassName,
   formatEventLabel,
+  formatDayLabel,
+  formatTimeOfDay,
   getAffiliationMode,
   getPodiumEntries,
   groupEntriesByPhase,
@@ -165,7 +169,9 @@ const CompetitionDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("programme");
-  const [stageFilter, setStageFilter] = useState("all");
+  // Collapsed-by-default day accordions (programme & results tabs)
+  const [openProgrammeDay, setOpenProgrammeDay] = useState(null);
+  const [openResultDay, setOpenResultDay] = useState(null);
 
   useEffect(() => {
     const hash = location.hash.replace("#", "");
@@ -245,67 +251,28 @@ const CompetitionDetail = () => {
     load();
   }, [id]);
 
-  const stageFilters = useMemo(() => {
-    const filters = new Map();
-
-    (programme || []).forEach((race) => {
-      const key = race.sessionLabel || formatDate(race.startTime);
-      if (!filters.has(key)) {
-        filters.set(key, {
-          key,
-          label: race.sessionLabel || formatDate(race.startTime),
-        });
-      }
-    });
-
-    return [{ key: "all", label: "All stages" }, ...filters.values()];
+  // Races grouped by day, each day sorted by time from first to last.
+  const programmeDays = useMemo(() => {
+    const days = new Map();
+    [...(programme || [])]
+      .sort((a, b) => {
+        const aTime = new Date(a.startTime || 0).getTime();
+        const bTime = new Date(b.startTime || 0).getTime();
+        if (aTime !== bTime) return aTime - bTime;
+        return Number(a.order || 0) - Number(b.order || 0);
+      })
+      .forEach((race) => {
+        const key = formatDayLabel(race.startTime);
+        if (!days.has(key)) days.set(key, []);
+        days.get(key).push(race);
+      });
+    return [...days.entries()].map(([day, races]) => ({ day, races }));
   }, [programme]);
-
-  const filteredProgramme = useMemo(() => {
-    const races =
-      stageFilter === "all"
-        ? programme
-        : programme.filter(
-            (race) =>
-              (race.sessionLabel || formatDate(race.startTime)) === stageFilter,
-          );
-
-    return [...races].sort((a, b) => {
-      const aTime = new Date(a.startTime || 0).getTime();
-      const bTime = new Date(b.startTime || 0).getTime();
-      if (aTime !== bTime) return aTime - bTime;
-      return Number(a.order || 0) - Number(b.order || 0);
-    });
-  }, [programme, stageFilter]);
 
   const isWomenRace = (race) => {
     const gender = race?.category?.gender?.toString().toLowerCase();
     return gender === "women" || gender === "female";
   };
-
-  const programmeColumns = useMemo(() => {
-    const women = [];
-    const men = [];
-
-    filteredProgramme.forEach((race) => {
-      if (isWomenRace(race)) {
-        women.push(race);
-      } else {
-        men.push(race);
-      }
-    });
-
-    return {
-      men,
-      women,
-    };
-  }, [filteredProgramme]);
-
-  const groupedResults = useMemo(() => {
-    return [...results].sort(
-      (a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0),
-    );
-  }, [results]);
 
   // International championships run by nation display countries; national
   // competitions display clubs. Mixed regattas show what each entry has.
@@ -317,6 +284,13 @@ const CompetitionDetail = () => {
 
   const getAffiliation = (entry) =>
     formatEntryAffiliation(entry, affiliationMode, hostCountry);
+
+  // Lane chips are tight: in club mode use the short club code so the
+  // athlete name stays readable.
+  const getLaneAffiliation = (lane) =>
+    affiliationMode === "club"
+      ? formatEntryClubShort(lane)
+      : getAffiliation(lane);
 
   const affiliationColumnLabel =
     affiliationMode === "nation"
@@ -389,6 +363,32 @@ const CompetitionDetail = () => {
     () => groupRacesByEventGroupId(programme),
     [programme],
   );
+
+  // Results grouped by the day their decisive race took place, each day
+  // sorted by time from first to last.
+  const resultDays = useMemo(() => {
+    const days = new Map();
+    (results || []).forEach((group) => {
+      const races =
+        raceGroupsByEventId.get(group.eventGroupId) || {
+          heats: [],
+          final: null,
+        };
+      const decisive =
+        races.final?.startTime || races.heats?.[0]?.startTime || group.publishedAt;
+      const time = new Date(decisive || 0).getTime();
+      const key = formatDayLabel(decisive);
+      if (!days.has(key)) days.set(key, { dayTime: time, items: [] });
+      days.get(key).items.push({ group, time });
+    });
+    return [...days.entries()]
+      .map(([day, { dayTime, items }]) => ({
+        day,
+        dayTime,
+        groups: items.sort((a, b) => a.time - b.time).map((item) => item.group),
+      }))
+      .sort((a, b) => a.dayTime - b.dayTime);
+  }, [results, raceGroupsByEventId]);
 
   const competitionTitle = getCompetitionTitle(competition);
 
@@ -529,21 +529,7 @@ const CompetitionDetail = () => {
               </h2>
             </div>
 
-            <div className="pub-pills">
-              {stageFilters.map((filter) => (
-                <button
-                  key={filter.key}
-                  className={`pub-pill ${stageFilter === filter.key ? "pub-pill--active" : ""}`}
-                  type="button"
-                  onClick={() => setStageFilter(filter.key)}
-                >
-                  {filter.key === "all" ? <Filter size={12} /> : null}
-                  {filter.label}
-                </button>
-              ))}
-            </div>
-
-            {filteredProgramme.length === 0 ? (
+            {programmeDays.length === 0 ? (
               <div className="pub-empty">
                 <Clock3 className="pub-empty__icon" />
                 <h4 className="pub-empty__title">
@@ -554,146 +540,177 @@ const CompetitionDetail = () => {
                 </p>
               </div>
             ) : (
-              <div className="pub-programme-columns">
-                {[
+              programmeDays.map(({ day, races }) => {
+                const isOpen = openProgrammeDay === day;
+                const dayColumns = [
                   {
                     key: "men",
                     label: "Men's Events",
-                    races: programmeColumns.men,
+                    races: races.filter((race) => !isWomenRace(race)),
                   },
                   {
                     key: "women",
                     label: "Women's Events",
-                    races: programmeColumns.women,
+                    races: races.filter((race) => isWomenRace(race)),
                   },
-                ].map((column) => (
-                  <section className="pub-programme-column" key={column.key}>
-                    <div className="pub-programme-column__header">
-                      <div>
-                        <h3 className="pub-programme-column__title">
-                          {column.label}
-                        </h3>
-                        <p className="pub-programme-column__subtitle">
-                          {column.races.length} race
-                          {column.races.length === 1 ? "" : "s"}
-                        </p>
-                      </div>
-                    </div>
+                ].filter((column) => column.races.length > 0);
 
-                    {column.races.length === 0 ? (
-                      <div className="pub-empty pub-empty--compact">
-                        <Clock3 className="pub-empty__icon" />
-                        <h4 className="pub-empty__title">
-                          No {column.label.toLowerCase()}
-                        </h4>
-                        <p className="pub-empty__text">
-                          Published races for this category will appear here.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="pub-grid" style={{ gap: 16 }}>
-                        {column.races.map((race) => (
-                          <article className="pub-race-card" key={race._id}>
-                            <div className="pub-race-card__header">
-                              <div>
-                                <h3 className="pub-race-card__name">
-                                  {getRaceEventLabel(race) ||
-                                    race.name ||
-                                    "Race"}
-                                </h3>
-                                <div className="pub-race-card__badges">
-                                  {getRaceEventCode(race) ? (
-                                    <span className="pub-badge pub-badge--season">
-                                      {getRaceEventCode(race)}
-                                    </span>
-                                  ) : null}
-                                  {race.phase ? (
-                                    <span
-                                      className={`pub-badge ${isHeatPhase(race.phase) ? "pub-badge--heat" : "pub-badge--final"}`}
-                                    >
-                                      {race.phase}
-                                    </span>
-                                  ) : null}
-                                  {isHeatPhase(race.phase) &&
-                                  finalPhaseByGroup.get(
-                                    `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`,
-                                  ) ? (
-                                    <span
-                                      className="pub-badge pub-badge--progression"
-                                      title={formatProgressionRule(
-                                        finalPhaseByGroup.get(
-                                          `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`,
-                                        ),
-                                      )}
-                                    >
-                                      →{" "}
-                                      {
-                                        finalPhaseByGroup.get(
-                                          `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`,
-                                        )
-                                      }
-                                    </span>
-                                  ) : null}
-                                  <span
-                                    className={`pub-race-card__status pub-race-card__status--${String(race.status || "scheduled")}`}
-                                  >
-                                    {String(race.status || "scheduled").replace(
-                                      /_/g,
-                                      " ",
-                                    )}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="pub-race-card__time">
-                                <Calendar size={14} />
-                                {race.startTime
-                                  ? formatDateTime(race.startTime)
-                                  : "To be announced"}
-                              </div>
-                            </div>
-
-                            {race.notes ? (
-                              <p className="pub-race-card__notes">
-                                {race.notes}
+                return (
+                  <div className="pub-day-section" key={day}>
+                    <button
+                      type="button"
+                      className="pub-day-section__header"
+                      onClick={() =>
+                        setOpenProgrammeDay(isOpen ? null : day)
+                      }
+                      aria-expanded={isOpen}
+                    >
+                      <span className="pub-day-section__title">{day}</span>
+                      <span className="pub-day-section__meta">
+                        <span className="pub-day-section__count">
+                          {races.length} race{races.length === 1 ? "" : "s"}
+                        </span>
+                        <ChevronDown
+                          size={16}
+                          className={`pub-day-section__chevron ${isOpen ? "is-open" : ""}`}
+                        />
+                      </span>
+                    </button>
+                    {isOpen && (
+                    <div className="pub-programme-columns">
+                      {dayColumns.map((column) => (
+                        <section
+                          className="pub-programme-column"
+                          key={column.key}
+                        >
+                          <div className="pub-programme-column__header">
+                            <div>
+                              <h3 className="pub-programme-column__title">
+                                {column.label}
+                              </h3>
+                              <p className="pub-programme-column__subtitle">
+                                {column.races.length} race
+                                {column.races.length === 1 ? "" : "s"}
                               </p>
-                            ) : null}
-
-                            {Array.isArray(race.lanes) &&
-                            race.lanes.length > 0 ? (
-                              <div className="pub-race-card__lanes">
-                                <div className="pub-race-card__lanes-title">
-                                  Entries
-                                </div>
-                                <div className="pub-race-card__lane-grid">
-                                  {race.lanes
-                                    .slice()
-                                    .sort((a, b) => a.lane - b.lane)
-                                    .map((lane) => (
-                                      <div
-                                        className="pub-race-card__lane"
-                                        key={`${race._id}-${lane.lane}`}
+                            </div>
+                          </div>
+                          <div className="pub-grid" style={{ gap: 16 }}>
+                            {column.races.map((race) => (
+                              <article className="pub-race-card" key={race._id}>
+                                <div className="pub-race-card__header">
+                                  <div>
+                                    <h3 className="pub-race-card__name">
+                                      {getCategoryLabel(race.category) ||
+                                        getRaceEventLabel(race) ||
+                                        race.name ||
+                                        "Race"}
+                                      {formatBoatClassName(
+                                        race.boatClass?.code,
+                                      ) && (
+                                        <span className="pub-race-card__boat-name">
+                                          {" "}
+                                          —{" "}
+                                          {formatBoatClassName(
+                                            race.boatClass?.code,
+                                          )}
+                                        </span>
+                                      )}
+                                    </h3>
+                                    <div className="pub-race-card__badges">
+                                      {getRaceEventCode(race) ? (
+                                        <span className="pub-badge pub-badge--season pub-badge--code">
+                                          {getRaceEventCode(race)}
+                                        </span>
+                                      ) : null}
+                                      {race.phase ? (
+                                        <span
+                                          className={`pub-badge ${isHeatPhase(race.phase) ? "pub-badge--heat" : "pub-badge--final"}`}
+                                        >
+                                          {race.phase}
+                                        </span>
+                                      ) : null}
+                                      {isHeatPhase(race.phase) &&
+                                      finalPhaseByGroup.get(
+                                        `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`,
+                                      ) ? (
+                                        <span
+                                          className="pub-badge pub-badge--progression"
+                                          title={formatProgressionRule(
+                                            finalPhaseByGroup.get(
+                                              `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`,
+                                            ),
+                                          )}
+                                        >
+                                          →{" "}
+                                          {
+                                            finalPhaseByGroup.get(
+                                              `${race.category?._id || race.category}|${race.boatClass?._id || race.boatClass}`,
+                                            )
+                                          }
+                                        </span>
+                                      ) : null}
+                                      <span
+                                        className={`pub-race-card__status pub-race-card__status--${String(race.status || "scheduled")}`}
                                       >
-                                        <div className="pub-race-card__lane-num">
-                                          {lane.lane}
-                                        </div>
-                                        <div className="pub-race-card__lane-name">
-                                          {getEntryName(lane)}
-                                        </div>
-                                        <div className="pub-race-card__lane-club">
-                                          {getAffiliation(lane)}
-                                        </div>
-                                      </div>
-                                    ))}
+                                        {String(
+                                          race.status || "scheduled",
+                                        ).replace(/_/g, " ")}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="pub-race-card__time">
+                                    <Calendar size={14} />
+                                    {race.startTime
+                                      ? formatTimeOfDay(race.startTime)
+                                      : "To be announced"}
+                                  </div>
                                 </div>
-                              </div>
-                            ) : null}
-                          </article>
-                        ))}
-                      </div>
+
+                                {race.notes ? (
+                                  <p className="pub-race-card__notes">
+                                    {race.notes}
+                                  </p>
+                                ) : null}
+
+                                {Array.isArray(race.lanes) &&
+                                race.lanes.length > 0 ? (
+                                  <div className="pub-race-card__lanes">
+                                    <div className="pub-race-card__lanes-title">
+                                      Entries
+                                    </div>
+                                    <div className="pub-race-card__lane-grid">
+                                      {race.lanes
+                                        .slice()
+                                        .sort((a, b) => a.lane - b.lane)
+                                        .map((lane) => (
+                                          <div
+                                            className="pub-race-card__lane"
+                                            key={`${race._id}-${lane.lane}`}
+                                          >
+                                            <div className="pub-race-card__lane-num">
+                                              {lane.lane}
+                                            </div>
+                                            <div className="pub-race-card__lane-name">
+                                              {getEntryName(lane)}
+                                            </div>
+                                            <div className="pub-race-card__lane-club">
+                                              {getLaneAffiliation(lane)}
+                                            </div>
+                                          </div>
+                                        ))}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </article>
+                            ))}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
                     )}
-                  </section>
-                ))}
-              </div>
+                  </div>
+                );
+              })
             )}
           </section>
         )}
@@ -709,7 +726,7 @@ const CompetitionDetail = () => {
               </h2>
             </div>
 
-            {groupedResults.length > 0 && (
+            {results.length > 0 && (
               <div className="pub-results-toolbar">
                 <button
                   className="pub-event__more-link"
@@ -721,7 +738,7 @@ const CompetitionDetail = () => {
                 </button>
               </div>
             )}
-            {groupedResults.length === 0 ? (
+            {results.length === 0 ? (
               <div className="pub-empty">
                 <Award className="pub-empty__icon" />
                 <h4 className="pub-empty__title">Results not published yet</h4>
@@ -731,8 +748,31 @@ const CompetitionDetail = () => {
                 </p>
               </div>
             ) : (
-              <div className="pub-grid" style={{ gap: 18 }}>
-                {groupedResults.map((group) => {
+              resultDays.map(({ day, groups: dayGroups }) => {
+                const isOpen = openResultDay === day;
+                return (
+                <div className="pub-day-section" key={day}>
+                  <button
+                    type="button"
+                    className="pub-day-section__header"
+                    onClick={() => setOpenResultDay(isOpen ? null : day)}
+                    aria-expanded={isOpen}
+                  >
+                    <span className="pub-day-section__title">{day}</span>
+                    <span className="pub-day-section__meta">
+                      <span className="pub-day-section__count">
+                        {dayGroups.length} event
+                        {dayGroups.length === 1 ? "" : "s"}
+                      </span>
+                      <ChevronDown
+                        size={16}
+                        className={`pub-day-section__chevron ${isOpen ? "is-open" : ""}`}
+                      />
+                    </span>
+                  </button>
+                  {isOpen && (
+                  <div className="pub-grid" style={{ gap: 18 }}>
+                    {dayGroups.map((group) => {
                   const phaseGroups = groupEntriesByPhase(group.entries);
                   const entriesHaveHeats = phaseGroups.some((p) =>
                     isHeatPhase(p.phase),
@@ -759,6 +799,13 @@ const CompetitionDetail = () => {
                   const podium = getPodiumEntries(group.entries).slice(0, 3);
                   const progressionRule =
                     formatProgressionRule(finalPhaseLabel);
+                  const raceDate =
+                    finalRace?.startTime ||
+                    heatRaces[0]?.startTime ||
+                    group.publishedAt;
+                  const labelKey =
+                    formatEventLabel(group.eventLabel) ||
+                    getRaceEventLabel(group);
 
                   // Crews that reached the final → "Q" badge in heat tables
                   const finalistNames = new Set();
@@ -880,8 +927,7 @@ const CompetitionDetail = () => {
                     >
                       <div className="pub-info-card__title">
                         <Trophy size={16} />
-                        {formatEventLabel(group.eventLabel) ||
-                          getRaceEventLabel(group)}
+                        {labelKey}
                         {hasHeats && (
                           <span className="pub-phase-summary">
                             {formatPhaseSummary(group.entries)}
@@ -914,15 +960,9 @@ const CompetitionDetail = () => {
                         </span>
                         <span className="pub-meta__item">
                           <Calendar size={14} />
-                          {(() => {
-                            const raceDate =
-                              finalRace?.startTime ||
-                              heatRaces[0]?.startTime ||
-                              group.publishedAt;
-                            return raceDate
-                              ? formatDateTime(raceDate)
-                              : "Date unavailable";
-                          })()}
+                          {raceDate
+                            ? formatDateTime(raceDate)
+                            : "Date unavailable"}
                         </span>
                       </div>
 
@@ -1028,8 +1068,12 @@ const CompetitionDetail = () => {
                       )}
                     </article>
                   );
-                })}
-              </div>
+                    })}
+                  </div>
+                  )}
+                </div>
+                );
+              })
             )}
           </section>
         )}

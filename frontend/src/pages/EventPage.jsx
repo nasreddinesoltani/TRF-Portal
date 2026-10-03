@@ -26,6 +26,7 @@ import {
   formatPhaseSummary,
   formatProgressionRule,
   formatRaceLabel,
+  formatShortDate,
   formatTime,
   formatTimeOfDay,
   getAffiliationMode,
@@ -194,6 +195,17 @@ const EventPage = () => {
     () => groupRacesByEventGroupId(programme),
     [programme],
   );
+
+  // Event labels appearing on more than one result group get a date chip.
+  const duplicatedLabelCounts = useMemo(() => {
+    const counts = new Map();
+    resultGroups.forEach((group) => {
+      const label =
+        formatEventLabel(group.eventLabel) || formatRaceLabel(group);
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    return counts;
+  }, [resultGroups]);
 
   const exportFullPdf = () => {
     try {
@@ -614,6 +626,20 @@ const EventPage = () => {
                     const phaseSummary = hasHeats
                       ? formatPhaseSummary(group.entries)
                       : "";
+                    const groupRaces =
+                      raceGroupsByEventId.get(group.eventGroupId) || {
+                        heats: [],
+                        final: null,
+                      };
+                    const raceDate =
+                      groupRaces.final?.startTime ||
+                      groupRaces.heats[0]?.startTime;
+                    const labelKey =
+                      formatEventLabel(group.eventLabel) ||
+                      formatRaceLabel(group) ||
+                      "Event";
+                    const showDateChip =
+                      raceDate && (duplicatedLabelCounts.get(labelKey) || 0) > 1;
                     return (
                       <article
                         className="pub-result-mini"
@@ -621,9 +647,12 @@ const EventPage = () => {
                       >
                         <div className="pub-result-mini__header">
                           <Trophy size={14} />
-                          {formatEventLabel(group.eventLabel) ||
-                            formatRaceLabel(group) ||
-                            "Event"}
+                          {labelKey}
+                          {showDateChip && (
+                            <span className="pub-group-date">
+                              {formatShortDate(raceDate)}
+                            </span>
+                          )}
                           {phaseSummary && (
                             <span className="pub-result-mini__phases">
                               {phaseSummary}

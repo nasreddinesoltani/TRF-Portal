@@ -349,13 +349,33 @@ export const generateFullResultsPdf = ({
   let y = drawHeader(doc, competition, "Official Results — Full Summary");
 
   // ---- Summary page ------------------------------------------------------
+  // Same-named events raced in separate sessions get their date appended.
+  const groupSessionLabel = (group) => {
+    const races = racesByGroup.get(group.eventGroupId);
+    const date =
+      races?.final?.startTime || races?.heats?.[0]?.startTime || null;
+    return date ? formatDate(date) : "";
+  };
+  const labelCounts = new Map();
+  groups.forEach((group) => {
+    const label = formatEventLabel(group.eventLabel) || "Event";
+    labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
+  });
+  const groupLabel = (group) => {
+    const label = formatEventLabel(group.eventLabel) || "Event";
+    const session = groupSessionLabel(group);
+    return (labelCounts.get(label) || 0) > 1 && session
+      ? `${label} — ${session}`
+      : label;
+  };
+
   const summary = groups.map((group) => {
     const entries = (group.entries || [])
       .slice()
       .sort((a, b) => (a.rank || a.finishPosition || 999) - (b.rank || b.finishPosition || 999));
     const winner = entries[0];
     return {
-      label: formatEventLabel(group.eventLabel) || "Event",
+      label: groupLabel(group),
       winner: winner ? entryName(winner) : "—",
       affiliation: winner ? affiliationText(winner, mode, hostCountry) : "—",
       time:
@@ -398,7 +418,7 @@ export const generateFullResultsPdf = ({
     let groupY = drawHeader(
       doc,
       competition,
-      `${formatEventLabel(group.eventLabel) || "Event"} — Official Results`,
+      `${groupLabel(group)} — Official Results`,
     );
 
     const finalistNames = new Set();

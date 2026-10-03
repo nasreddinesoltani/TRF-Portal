@@ -237,6 +237,22 @@ export const formatEntryClub = (entry) => {
   );
 };
 
+/** Compact club label for tight layouts: club code, falling back to name. */
+export const formatEntryClubShort = (entry) => {
+  if (!entry) return "—";
+  const code = isObject(entry.club)
+    ? entry.club.code
+    : entry.clubCode || "";
+  return (
+    (code ? String(code).toUpperCase() : "") ||
+    (isObject(entry.club)
+      ? entry.club.name || entry.club.nameAr
+      : "") ||
+    entry.clubName ||
+    "—"
+  );
+};
+
 /** Format an elapsed time in milliseconds as m:ss.hh */
 export const formatTime = (ms) => {
   if (!Number.isFinite(ms)) return "—";
@@ -295,6 +311,16 @@ export const formatDayLabel = (value) => {
   }).format(date);
 };
 
+/** "27 Sep" — short date used to disambiguate same-named result groups. */
+export const formatShortDate = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+  }).format(date);
+};
+
 /** Race display label in rowing shorthand, e.g. "JM2x" / "PR3Mix2x". */
 export const formatRaceLabel = (raceOrGroup) => {
   if (!raceOrGroup) return "";
@@ -315,6 +341,27 @@ export const formatRaceLabel = (raceOrGroup) => {
 /** Boat code with a lowercase sculling X ("2X" → "2x", "4X+" → "4x+"). */
 export const formatBoatCode = (code) =>
   String(code || "").replace(/X(\+)?$/, (_match, plus) => `x${plus || ""}`);
+
+/* Full boat-class names for the standard FISA codes. */
+const BOAT_CLASS_NAMES = {
+  "1X": "Single Sculls",
+  "2X": "Double Sculls",
+  "4X": "Quadruple Sculls",
+  "4X+": "Coxed Quadruple Sculls",
+  "2-": "Pair",
+  "2+": "Coxed Pair",
+  "4-": "Coxless Four",
+  "4+": "Coxed Four",
+  "8+": "Eight",
+  C1X: "Coastal Single Sculls",
+  C2X: "Coastal Double Sculls",
+  CMIX2X: "Coastal Mixed Double Sculls",
+  "C4X+": "Coastal Coxed Quadruple Sculls",
+};
+
+/** Full boat-class name from its code ("1X" → "Single Sculls"). */
+export const formatBoatClassName = (code) =>
+  BOAT_CLASS_NAMES[String(code || "").trim().toUpperCase()] || "";
 
 /**
  * Rowing shorthand event label: no space between category and boat class,

@@ -1,0 +1,602 @@
+{
+  "backup": {
+    "date": "2026-10-03T21:43:48.863Z",
+    "duplicates": {
+      "69404f59e179b631837f8721": {
+        "_id": "69404f59e179b631837f8721",
+        "code": "1X",
+        "__v": 1,
+        "allowedGenders": [
+          "men",
+          "women"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-12-15T18:11:37.011Z",
+        "crewSize": 1,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Lightweight Single Sculls",
+          "fr": "Skiff poids léger",
+          "ar": "فردي خفيف الوزن"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": true,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2026-01-29T14:37:03.285Z",
+        "weightClass": "lightweight"
+      },
+      "69404f59e179b631837f8722": {
+        "_id": "69404f59e179b631837f8722",
+        "code": "2X",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-12-15T18:11:37.095Z",
+        "crewSize": 2,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Lightweight Double Scull",
+          "fr": "Deux de couple poids léger",
+          "ar": "زوجي خفيف الوزن"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": true,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2026-01-23T14:35:01.693Z",
+        "weightClass": "lightweight"
+      },
+      "6973837e9b663c8204702e5e": {
+        "_id": "6973837e9b663c8204702e5e",
+        "code": "1X",
+        "discipline": "indoor",
+        "names": {
+          "en": "Lightweight Single Sculls",
+          "fr": "Skiff poids léger",
+          "ar": "فردي خفيف الوزن"
+        },
+        "description": "Indoor Lightweight Single Sculls",
+        "crewSize": 1,
+        "coxswain": false,
+        "sculling": true,
+        "relay": false,
+        "runSegment": false,
+        "weightClass": "lightweight",
+        "allowedGenders": [
+          "men",
+          "women"
+        ],
+        "tags": [],
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-01-23T14:19:42.077Z",
+        "updatedAt": "2026-01-29T14:36:49.320Z",
+        "__v": 0
+      },
+      "6973869c5ec5027cea7eaf5e": {
+        "_id": "6973869c5ec5027cea7eaf5e",
+        "code": "1X",
+        "discipline": "indoor",
+        "names": {
+          "en": "Single Sculls",
+          "fr": "Skiff",
+          "ar": "فردي"
+        },
+        "crewSize": 1,
+        "coxswain": false,
+        "sculling": true,
+        "relay": false,
+        "runSegment": false,
+        "weightClass": "open",
+        "allowedGenders": [
+          "men",
+          "women"
+        ],
+        "tags": [],
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-01-23T14:33:00.051Z",
+        "updatedAt": "2026-01-29T14:35:58.761Z",
+        "__v": 1
+      }
+    },
+    "canonical": {
+      "1X": {
+        "_id": "6915b96b925c07100b26120b",
+        "code": "1X",
+        "__v": 1,
+        "allowedGenders": [
+          "men",
+          "women"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:43.787Z",
+        "crewSize": 1,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Single Sculls",
+          "fr": "Skiff",
+          "ar": "فردي"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": true,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2026-01-29T14:35:43.404Z",
+        "weightClass": "open"
+      },
+      "2X": {
+        "_id": "6915b96b925c07100b26120c",
+        "code": "2X",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:43.928Z",
+        "crewSize": 2,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Double Sculls",
+          "fr": "Deux de couple",
+          "ar": "زوجي"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": true,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2026-04-10T17:53:48.169Z",
+        "weightClass": "open"
+      },
+      "2-": {
+        "_id": "6915b96b925c07100b26120d",
+        "code": "2-",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:44.049Z",
+        "crewSize": 2,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Coxless Pair",
+          "fr": "Deux sans barreur",
+          "ar": "زورق ثنائي بدون ملاح"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": false,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2025-12-16T09:13:23.612Z",
+        "weightClass": "open"
+      },
+      "2+": {
+        "_id": "6915b96b925c07100b26120e",
+        "code": "2+",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": true,
+        "createdAt": "2025-11-13T10:56:44.125Z",
+        "crewSize": 3,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Coxed Pair",
+          "fr": "Deux avec barreur",
+          "ar": "زورق ثنائي مع ملاح"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": false,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2025-12-16T09:13:23.668Z",
+        "weightClass": "open"
+      },
+      "4X": {
+        "_id": "6915b96b925c07100b26120f",
+        "code": "4X",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:44.203Z",
+        "crewSize": 4,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Quadruple Scull",
+          "fr": "Quatre de couple",
+          "ar": "زورق رباعي مجداف مزدوج"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": true,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2025-12-16T09:13:23.734Z",
+        "weightClass": "open"
+      },
+      "4-": {
+        "_id": "6915b96b925c07100b261210",
+        "code": "4-",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:44.280Z",
+        "crewSize": 4,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Coxless Four",
+          "fr": "Quatre sans barreur",
+          "ar": "زورق رباعي بدون ملاح"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": false,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2025-12-16T09:13:23.792Z",
+        "weightClass": "open"
+      },
+      "4+": {
+        "_id": "6915b96b925c07100b261211",
+        "code": "4+",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": true,
+        "createdAt": "2025-11-13T10:56:44.358Z",
+        "crewSize": 5,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Coxed Four",
+          "fr": "Quatre avec barreur",
+          "ar": "زورق رباعي مع ملاح"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": false,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2025-12-16T09:13:23.878Z",
+        "weightClass": "open"
+      },
+      "8+": {
+        "_id": "6915b96b925c07100b261212",
+        "code": "8+",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": true,
+        "createdAt": "2025-11-13T10:56:44.477Z",
+        "crewSize": 9,
+        "discipline": "classic",
+        "isActive": true,
+        "names": {
+          "en": "Eight with Coxswain",
+          "fr": "Huit avec barreur",
+          "ar": "زورق ثماني مع ملاح"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": false,
+        "sortOrder": 0,
+        "tags": [],
+        "updatedAt": "2025-12-16T09:13:23.962Z",
+        "weightClass": "open"
+      },
+      "C2X": {
+        "_id": "6915b96c925c07100b261215",
+        "code": "C2X",
+        "__v": 2,
+        "allowedGenders": [
+          "women",
+          "men"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:44.706Z",
+        "crewSize": 2,
+        "discipline": "beach",
+        "isActive": true,
+        "names": {
+          "en": "Coastal Double",
+          "fr": "Double Coastal",
+          "ar": "تجديف شاطئي زوجي"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": true,
+        "sortOrder": 0,
+        "tags": [
+          "coastal"
+        ],
+        "updatedAt": "2026-07-07T13:12:49.383Z",
+        "weightClass": "open"
+      },
+      "C1X": {
+        "_id": "6915b96c925c07100b261216",
+        "code": "C1X",
+        "__v": 3,
+        "allowedGenders": [
+          "men",
+          "women"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:44.812Z",
+        "crewSize": 1,
+        "discipline": "beach",
+        "isActive": true,
+        "names": {
+          "en": "Solo",
+          "fr": "Solo",
+          "ar": "تجديف شاطئي فردي"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": true,
+        "sortOrder": 0,
+        "tags": [
+          "coastal"
+        ],
+        "updatedAt": "2026-07-07T13:10:54.857Z",
+        "weightClass": "open"
+      },
+      "CMIX2X": {
+        "_id": "6915b96c925c07100b261217",
+        "code": "CMIX2X",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:44.888Z",
+        "crewSize": 2,
+        "discipline": "beach",
+        "isActive": true,
+        "names": {
+          "en": "Mixed Double Sculls",
+          "fr": "Double mixte",
+          "ar": "تجديف شاطئي مختلط"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": true,
+        "sortOrder": 0,
+        "tags": [
+          "coastal"
+        ],
+        "updatedAt": "2026-07-07T12:51:11.453Z",
+        "weightClass": "open"
+      },
+      "C4X+": {
+        "_id": "6915b96c925c07100b261218",
+        "code": "C4X+",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": true,
+        "createdAt": "2025-11-13T10:56:44.966Z",
+        "crewSize": 5,
+        "discipline": "beach",
+        "isActive": true,
+        "names": {
+          "en": "Coastal Quad with Coxswain",
+          "fr": "Quatre de couple côtier avec barreur",
+          "ar": "تجديف شاطئي قارب رباعي مع ملاح"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": true,
+        "sortOrder": 0,
+        "tags": [
+          "coastal"
+        ],
+        "updatedAt": "2026-07-07T12:22:34.370Z",
+        "weightClass": "open"
+      },
+      "IR-1": {
+        "_id": "6915b96c925c07100b26121d",
+        "code": "IR-1",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:45.359Z",
+        "crewSize": 1,
+        "discipline": "indoor",
+        "isActive": true,
+        "names": {
+          "en": "Individual Ergometer",
+          "fr": "Ergomètre individuel",
+          "ar": "إرجوميتر فردي"
+        },
+        "relay": false,
+        "runSegment": false,
+        "sculling": false,
+        "sortOrder": 0,
+        "tags": [
+          "indoor"
+        ],
+        "updatedAt": "2025-12-16T09:13:24.910Z",
+        "weightClass": "open"
+      },
+      "IR-TEAM": {
+        "_id": "6915b96c925c07100b26121e",
+        "code": "IR-TEAM",
+        "__v": 0,
+        "allowedGenders": [
+          "men",
+          "women",
+          "mixed"
+        ],
+        "coxswain": false,
+        "createdAt": "2025-11-13T10:56:45.437Z",
+        "crewSize": 4,
+        "discipline": "indoor",
+        "isActive": true,
+        "names": {
+          "en": "Team Ergometer Relay",
+          "fr": "Relais ergomètre par équipe",
+          "ar": "تتابع إرجوميتر جماعي"
+        },
+        "relay": true,
+        "runSegment": false,
+        "sculling": false,
+        "sortOrder": 0,
+        "tags": [
+          "indoor"
+        ],
+        "updatedAt": "2025-12-16T09:13:25.033Z",
+        "weightClass": "open"
+      }
+    }
+  },
+  "changes": [
+    {
+      "coll": "competitionraces",
+      "field": "boatClass",
+      "from": "69404f59e179b631837f8721",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 24
+    },
+    {
+      "coll": "competitionraces",
+      "field": "boatClass",
+      "from": "69404f59e179b631837f8722",
+      "to": "6915b96b925c07100b26120c",
+      "modified": 17
+    },
+    {
+      "coll": "competitionraces",
+      "field": "boatClass",
+      "from": "6973837e9b663c8204702e5e",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 6
+    },
+    {
+      "coll": "competitionraces",
+      "field": "boatClass",
+      "from": "6973869c5ec5027cea7eaf5e",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 54
+    },
+    {
+      "coll": "officialresults",
+      "field": "boatClass",
+      "from": "69404f59e179b631837f8721",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 16
+    },
+    {
+      "coll": "officialresults",
+      "field": "boatClass",
+      "from": "69404f59e179b631837f8722",
+      "to": "6915b96b925c07100b26120c",
+      "modified": 12
+    },
+    {
+      "coll": "competitionentries",
+      "field": "boatClass",
+      "from": "69404f59e179b631837f8721",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 24
+    },
+    {
+      "coll": "competitionentries",
+      "field": "boatClass",
+      "from": "69404f59e179b631837f8722",
+      "to": "6915b96b925c07100b26120c",
+      "modified": 10
+    },
+    {
+      "coll": "competitionentries",
+      "field": "boatClass",
+      "from": "6973837e9b663c8204702e5e",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 15
+    },
+    {
+      "coll": "competitionentries",
+      "field": "boatClass",
+      "from": "6973869c5ec5027cea7eaf5e",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 204
+    },
+    {
+      "coll": "competitions",
+      "field": "allowedBoatClasses",
+      "from": "69404f59e179b631837f8721",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 5
+    },
+    {
+      "coll": "competitions",
+      "field": "allowedBoatClasses",
+      "from": "69404f59e179b631837f8722",
+      "to": "6915b96b925c07100b26120c",
+      "modified": 5
+    },
+    {
+      "coll": "competitions",
+      "field": "allowedBoatClasses",
+      "from": "6973837e9b663c8204702e5e",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 2
+    },
+    {
+      "coll": "competitions",
+      "field": "allowedBoatClasses",
+      "from": "6973869c5ec5027cea7eaf5e",
+      "to": "6915b96b925c07100b26120b",
+      "modified": 2
+    }
+  ]
+}

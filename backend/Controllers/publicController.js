@@ -217,7 +217,10 @@ export const getPublicCompetitionProgramme = async (req, res) => {
         "lanes.athlete",
         "firstName lastName firstNameAr lastNameAr nationalityCode nationality",
       )
-      .populate("lanes.crew", "firstName lastName firstNameAr lastNameAr")
+      .populate(
+        "lanes.crew",
+        "firstName lastName firstNameAr lastNameAr nationalityCode nationality",
+      )
       .populate("lanes.club", "name nameAr code")
       .sort({ startTime: 1, order: 1 })
       .lean();
@@ -256,18 +259,37 @@ export const getPublicCompetitionProgramme = async (req, res) => {
         let cName = lane.clubName || (lane.club && lane.club.name) || "";
         let cCode = (lane.club && lane.club.code) || "";
 
+        // Nation of the lane: stored value → single athlete's nationality →
+        // the crew's shared nationality (doubles/fours have no single
+        // athlete ref). Only used when every crew member shares one nation.
+        let representing = String(lane.representingNation || "").trim();
+        if (!representing && lane.athlete) {
+          representing = String(
+            lane.athlete.nationalityCode || lane.athlete.nationality || "",
+          ).trim();
+        }
+        if (!representing && Array.isArray(lane.crew) && lane.crew.length > 0) {
+          const crewCodes = [
+            ...new Set(
+              lane.crew
+                .map((member) =>
+                  String(
+                    member.nationalityCode || member.nationality || "",
+                  ).trim(),
+                )
+                .filter(Boolean),
+            ),
+          ];
+          if (crewCodes.length === 1) representing = crewCodes[0];
+        }
+
         return {
           lane: lane.lane,
           clubName: cName,
           clubCode: cCode,
           athleteName: athName,
           athleteNameAr: athNameAr,
-          representingNation:
-            lane.representingNation ||
-            (lane.athlete
-              ? lane.athlete.nationalityCode || lane.athlete.nationality || ""
-              : "") ||
-            "",
+          representingNation: representing.toUpperCase(),
           seed: lane.seed,
           result: lane.result
             ? {

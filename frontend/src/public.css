@@ -699,6 +699,12 @@ html {
   border-color: var(--pub-border);
 }
 
+/* Event code badge keeps the rowing shorthand case ("JM2x") */
+.pub-badge--code {
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
 /* ── Meta Info Row ───────────────────────────────────────────── */
 .pub-meta {
   display: flex;
@@ -776,7 +782,10 @@ html {
 
 @media (min-width: 1024px) {
   .pub-programme-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(min(100%, 460px), 1fr)
+    );
   }
 }
 
@@ -1337,6 +1346,12 @@ html {
   margin: 0 0 8px;
 }
 
+/* Full boat-class descriptor appended to the category name */
+.pub-race-card__boat-name {
+  color: var(--pub-text-secondary);
+  font-weight: 600;
+}
+
 .pub-race-card__badges {
   display: flex;
   flex-wrap: wrap;
@@ -1450,11 +1465,13 @@ html {
   font-size: 10px;
   font-weight: 600;
   color: var(--pub-text-muted);
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  text-align: right;
 }
 
 /* ── Info Grid (About Tab) ───────────────────────────────────── */
@@ -2724,6 +2741,83 @@ html {
   background: var(--pub-gold-soft);
   padding: 2px 8px;
   border-radius: var(--pub-radius-pill);
+}
+
+/* Session date chip for same-named result groups */
+.pub-group-date {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pub-accent);
+  background: var(--pub-accent-soft);
+  border-radius: var(--pub-radius-pill);
+}
+
+.pub-result-mini__header .pub-group-date {
+  margin-left: auto;
+}
+
+/* Day sections on the competition page (programme & results) */
+.pub-day-section {
+  margin-bottom: 14px;
+}
+
+button.pub-day-section__header {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  margin-bottom: 0;
+  font-family: inherit;
+  text-align: left;
+  background: var(--pub-bg-elevated);
+  border: 1px solid var(--pub-border);
+  border-left: 3px solid var(--pub-accent);
+  border-radius: var(--pub-radius);
+  cursor: pointer;
+  transition:
+    border-color var(--pub-duration) var(--pub-ease),
+    background var(--pub-duration) var(--pub-ease);
+}
+
+button.pub-day-section__header:hover {
+  border-color: var(--pub-accent-mid);
+  border-left-color: var(--pub-accent);
+  background: var(--pub-card-hover);
+}
+
+.pub-day-section__title {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--pub-text-white);
+}
+
+.pub-day-section__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pub-day-section__count {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pub-accent);
+}
+
+.pub-day-section__chevron {
+  color: var(--pub-accent);
+  transition: transform var(--pub-duration) var(--pub-ease);
+}
+
+.pub-day-section__chevron.is-open {
+  transform: rotate(180deg);
 }
 
 /* Results grouped by phase (heats vs final) */
