@@ -6717,8 +6717,17 @@ const CompetitionRaces = () => {
   }, [entries, entrySearchResults, autoGenState.boatClass]);
 
   const exportStartListPDF = useCallback(
-    async (racesToExport = null) => {
-      toast.info("Generating Start List PDF...");
+    async (racesToExport = null, options = {}) => {
+      // options.racesPerPage = 2 renders two race blocks per page (merged
+      // layout): compact fonts, top/bottom half-page slots and a two-column
+      // legend. Default 1 keeps the original one-race-per-page layout.
+      const { racesPerPage = 1 } = options;
+      const merged = racesPerPage === 2;
+      toast.info(
+        merged
+          ? "Generating Merged Start List PDF..."
+          : "Generating Start List PDF...",
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       // --- GROUP BY START TIME LOGIC ---
@@ -6728,8 +6737,11 @@ const CompetitionRaces = () => {
       const timeMap = new Map();
       rawTargetRaces.forEach((race) => {
         const raceId = toDocumentId(race);
+        // Races sharing a start time are combined into one block only when
+        // their distance matches too — different distances stay separate.
+        const distanceKey = race.distanceOverride ?? race.distance ?? "default";
         const timeKey = race.startTime
-          ? new Date(race.startTime).getTime().toString()
+          ? `${new Date(race.startTime).getTime()}::${distanceKey}`
           : `no-time-${raceId || Math.random()}`;
         if (!timeMap.has(timeKey)) {
           timeMap.set(timeKey, {
@@ -6846,13 +6858,38 @@ const CompetitionRaces = () => {
         // Map to store clubs per page for legend
         const pageClubsMap = new Map();
 
+        // Merged layout: the second race starts right after the first one
+        // (small gap), and the freed bottom space holds a one-column legend.
+        // previousEndY guards the second slot — when too little room remains
+        // above the legend (big fields), the race gets its own page instead.
+        let slotIndex = 0; // 0 = first race of the page, 1 = second
+        let previousEndY = null;
+
         for (let raceIndex = 0; raceIndex < targetRaces.length; raceIndex++) {
           const race = targetRaces[raceIndex];
-          if (raceIndex > 0) {
+          let yPos;
+          if (raceIndex === 0) {
+            yPos = headerHeight;
+          } else if (merged && slotIndex === 0 && previousEndY != null) {
+            const pageLegendCount = (
+              pageClubsMap.get(doc.internal.getNumberOfPages()) || []
+            ).length;
+            const legendTop =
+              pageHeight - 35 - (pageLegendCount * 4 + 7);
+            const nextStart = previousEndY + 30;
+            if (legendTop - nextStart >= 55) {
+              slotIndex = 1;
+              yPos = nextStart;
+            } else {
+              doc.addPage();
+              slotIndex = 0;
+              yPos = headerHeight;
+            }
+          } else {
             doc.addPage();
+            slotIndex = 0;
+            yPos = headerHeight;
           }
-
-          let yPos = headerHeight;
 
           // Race Header Block
           const categoryId = toDocumentId(race.category);
@@ -6976,7 +7013,7 @@ const CompetitionRaces = () => {
 
           // --- Header Section (matches RaceDetail) ---
           // Competition title centered (14pt bold)
-          doc.setFontSize(14);
+          doc.setFontSize(merged ? 11 : 14);
           doc.setFont(fontName, "bold");
           doc.setTextColor(0, 0, 0);
           doc.text(competitionTitle, center, yPos, { align: "center" });
@@ -6996,14 +7033,14 @@ const CompetitionRaces = () => {
           doc.text(compLocation, leftMargin, yPos);
           doc.text(eventDateStr, rightMargin, yPos, { align: "right" });
 
-          yPos += 2;
+          yPos += merged ? 1 : 2;
           doc.setLineWidth(0.5);
           doc.setDrawColor(0);
           doc.line(leftMargin, yPos, rightMargin, yPos);
-          yPos += 5;
+          yPos += merged ? 3.5 : 5;
 
           // --- Line 1: Event number | Start List | Race code (14pt bold) ---
-          doc.setFontSize(12);
+          doc.setFontSize(merged ? 10 : 12);
           doc.setFont(fontName, "bold");
           doc.text(headerLeftLabel, leftMargin, yPos);
           doc.text("Start List", center, yPos, { align: "center" });
@@ -7021,7 +7058,7 @@ const CompetitionRaces = () => {
           );
 
           // --- Line 2: Category + Boat Class (centred across full width) ---
-          yPos += 5;
+          yPos += merged ? 4 : 5;
           doc.setFontSize(8);
           doc.setFont(fontName, "normal");
           const eventStartX = leftMargin;
@@ -7038,8 +7075,8 @@ const CompetitionRaces = () => {
             maxWidth: eventLineMaxWidth,
             font: fontName,
             style: "bold",
-            initialSize: 10.5,
-            minSize: 8,
+            initialSize: merged ? 9 : 10.5,
+            minSize: merged ? 7 : 8,
             maxLines: 1,
             lineGap: 4,
           });
@@ -7060,13 +7097,13 @@ const CompetitionRaces = () => {
           yPos = eventTitleLayout.yEnd;
 
           if (fullEventNameAr && arabicFontName) {
-            yPos += 5;
+            yPos += merged ? 4 : 5;
             const arabicSize = fitSingleLineFontSize({
               doc,
               text: fullEventNameAr,
               maxWidth: 110,
-              initialSize: 12,
-              minSize: 8.5,
+              initialSize: merged ? 10 : 12,
+              minSize: 8,
               font: arabicFontName,
               style: "normal",
             });
@@ -7081,7 +7118,7 @@ const CompetitionRaces = () => {
               });
             }
           } else if (raceDistance) {
-            yPos += 4;
+            yPos += merged ? 3 : 4;
             doc.setFontSize(9);
             doc.text(`Distance: ${raceDistance}m`, center, yPos, {
               align: "center",
@@ -7089,8 +7126,8 @@ const CompetitionRaces = () => {
           }
 
           // --- Line 4: Start Time | Journey/Phase | Race # ---
-          yPos += 6;
-          doc.setFontSize(9);
+          yPos += merged ? 4.5 : 6;
+          doc.setFontSize(merged ? 8 : 9);
           doc.setFont(fontName, "bold");
           const startTime = race.startTime
             ? new Date(race.startTime).toLocaleTimeString([], {
@@ -7099,14 +7136,14 @@ const CompetitionRaces = () => {
               })
             : "00:00";
           doc.text(`Start Time: ${startTime}`, leftMargin, yPos);
-          doc.setFontSize(10);
+          doc.setFontSize(merged ? 9 : 10);
           doc.setFont(fontName, "bold");
           doc.text(phaseStr, center, yPos, { align: "center" });
-          doc.setFontSize(9);
+          doc.setFontSize(merged ? 8 : 9);
           doc.text(`Race ${raceIndex + 1}`, rightMargin, yPos, {
             align: "right",
           });
-          yPos += 2;
+          yPos += merged ? 1.5 : 2;
 
           // --- Calculate legend for bottom margin ---
           const uniqueClubs = Array.from(
@@ -7157,15 +7194,27 @@ const CompetitionRaces = () => {
                   legendLineHeight +
                 7
               : 0;
-          const bottomMargin = 35 + legendBoxHeight + 14;
 
-            // Store clubs/countries for this page
+            // Store clubs/countries for this page. Two races may share one
+            // page in the merged layout — merge and de-duplicate by code, so
+            // the (single-column) legend covers both races of the page.
+           const startListPageKey = doc.internal.getNumberOfPages();
+           const mergePageLegend = (entries) => {
+             const existing = pageClubsMap.get(startListPageKey) || [];
+             const byCode = new Map(
+               existing.map((club) => [club.code || club.name, club]),
+             );
+             for (const club of entries) {
+               const key = club.code || club.name;
+               if (!byCode.has(key)) byCode.set(key, club);
+             }
+             pageClubsMap.set(startListPageKey, [...byCode.values()]);
+           };
            if (isInternationalCompetition) {
              const clubNameForCode = (code) =>
                (race.lanes || []).find((l) => l.club?.code === code)
                  ?.club?.name || null;
-             pageClubsMap.set(
-               raceIndex + 1,
+             mergePageLegend(
                uniqueCountries.map((c) => {
                  const cntry = getCountry(c);
                  if (cntry) {
@@ -7189,8 +7238,18 @@ const CompetitionRaces = () => {
                }),
              );
           } else {
-            pageClubsMap.set(raceIndex + 1, uniqueClubs);
+            mergePageLegend(uniqueClubs);
           }
+
+          // Merged pages: the table must stop above the page legend, which
+          // covers both races of the page (single column).
+          const bottomMargin = merged
+            ? 35 +
+              (pageClubsMap.get(startListPageKey) || []).length *
+                legendLineHeight +
+              7 +
+              14
+            : 35 + legendBoxHeight + 14;
 
           // --- Helper: format name with uppercase last name ---
           const formatNameForPdf = (a) => {
@@ -7260,11 +7319,11 @@ const CompetitionRaces = () => {
               fontStyle: "bold",
               lineWidth: 0.1,
               lineColor: [0, 0, 0],
-              cellPadding: 1,
+              cellPadding: merged ? 0.6 : 1,
             },
             styles: {
-              fontSize: 9,
-              cellPadding: 1,
+              fontSize: merged ? 7.5 : 9,
+              cellPadding: merged ? 0.6 : 1,
               font: fontName,
             },
             columnStyles: isInternationalCompetition
@@ -7301,7 +7360,7 @@ const CompetitionRaces = () => {
             },
           });
 
-          yPos = doc.lastAutoTable.finalY + 4;
+          yPos = doc.lastAutoTable.finalY + (merged ? 3 : 4);
 
           // Progression Rule Box (ensure no overlap with legend)
           const progressionEnd = yPos + 7;
@@ -7322,6 +7381,8 @@ const CompetitionRaces = () => {
               race.notes || "Progression System: Subject to competition rules.";
             doc.text(statusText, leftMargin + 2, yPos + 5);
           }
+
+          previousEndY = progressionEnd;
         }
 
         // --- Post-Processing: Add Header, Legend & Footer to ALL Pages ---
@@ -7367,7 +7428,7 @@ const CompetitionRaces = () => {
             doc.setTextColor(0, 0, 0);
             doc.text("Legend:", leftMargin + 2, legendY + 5);
 
-            doc.setFontSize(8);
+            doc.setFontSize(merged ? 7 : 8);
             let clubY = legendY + 9;
 
             for (const club of clubs) {
@@ -7479,8 +7540,20 @@ const CompetitionRaces = () => {
           }
         }
 
-        doc.save(buildStartListPdfFileName(competition, targetRaces));
-        toast.success("Start List PDF exported successfully");
+        doc.save(
+          merged
+            ? buildCompetitionPdfFileName(
+                "StartListMerged",
+                competition,
+                targetRaces,
+              )
+            : buildStartListPdfFileName(competition, targetRaces),
+        );
+        toast.success(
+          merged
+            ? "Merged Start List PDF exported successfully"
+            : "Start List PDF exported successfully",
+        );
       } catch (err) {
         console.error("exportStartListPDF error:", err);
         toast.error(
@@ -7503,6 +7576,11 @@ const CompetitionRaces = () => {
     ],
   );
 
+  // Same start-list PDF with two race blocks per page — halves the printout.
+  const exportMergedStartListPDF = useCallback(() => {
+    return exportStartListPDF(null, { racesPerPage: 2 });
+  }, [exportStartListPDF]);
+
   const exportJuryStartListPDF = useCallback(
     async (racesToExport = null) => {
       toast.info("Generating Jury Start List PDF...");
@@ -7515,8 +7593,11 @@ const CompetitionRaces = () => {
       const timeMap = new Map();
       rawTargetRaces.forEach((race) => {
         const raceId = toDocumentId(race);
+        // Same rule as the start list: combine equal start times only when
+        // the distance matches too.
+        const distanceKey = race.distanceOverride ?? race.distance ?? "default";
         const timeKey = race.startTime
-          ? new Date(race.startTime).getTime().toString()
+          ? `${new Date(race.startTime).getTime()}::${distanceKey}`
           : `no-time-${raceId || Math.random()}`;
         if (!timeMap.has(timeKey)) {
           timeMap.set(timeKey, {
@@ -14704,50 +14785,65 @@ const CompetitionRaces = () => {
                     {sortedRaces.length}
                   </span>
                 </h2>
-                <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={exportStartListPDF}
-                    disabled={!sortedRaces.length}
-                    title="Export Start List PDF"
-                  >
-                    📄 Start List
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={exportJuryStartListPDF}
-                    disabled={!sortedRaces.length}
-                    title="Export Jury Start List PDF"
-                  >
-                    ✍️ Jury Start List
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => exportAllResultsPDF()}
-                    disabled={!sortedRaces.length}
-                    title="Export Results PDF"
-                  >
-                    📊 Results
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={loadRaces}
-                    title="Refresh"
-                  >
-                    🔄
-                  </Button>
+                <div className="flex flex-col items-end gap-1.5">
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-3 text-xs font-semibold"
+                      onClick={exportStartListPDF}
+                      disabled={!sortedRaces.length}
+                      title="Export Start List PDF — one race per page"
+                    >
+                      📄 Start List
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-3 text-xs font-semibold"
+                      onClick={exportMergedStartListPDF}
+                      disabled={!sortedRaces.length}
+                      title="Export Start List PDF — two races per page"
+                    >
+                      🧾 Merged Startlist
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-3 text-xs font-semibold"
+                      onClick={exportJuryStartListPDF}
+                      disabled={!sortedRaces.length}
+                      title="Export Jury Start List PDF"
+                    >
+                      ✍️ Jury Start List
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-3 text-xs font-semibold"
+                      onClick={() => exportAllResultsPDF()}
+                      disabled={!sortedRaces.length}
+                      title="Export Results PDF"
+                    >
+                      📊 Results
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={loadRaces}
+                      title="Refresh"
+                    >
+                      🔄
+                    </Button>
+                  </div>
                 </div>
               </div>
 
