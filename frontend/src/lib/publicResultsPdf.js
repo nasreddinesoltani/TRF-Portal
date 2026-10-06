@@ -14,7 +14,7 @@ import {
   formatTime,
   formatDate,
   formatDateTime,
-  formatEventLabel,
+  formatRaceLabel,
   getEntryNationCode,
   groupRacesByEventGroupId,
 } from "./format";
@@ -284,7 +284,7 @@ export const generateRaceResultsPdf = ({ competition, group, races, mode, hostCo
   if (!competition || !group) return;
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const eventLabel = formatEventLabel(group.eventLabel) || "Event";
+  const eventLabel = formatRaceLabel(group) || "Event";
   let y = drawHeader(doc, competition, `${eventLabel} — Official Results`);
 
   const finalistNames = new Set();
@@ -358,11 +358,11 @@ export const generateFullResultsPdf = ({
   };
   const labelCounts = new Map();
   groups.forEach((group) => {
-    const label = formatEventLabel(group.eventLabel) || "Event";
+    const label = formatRaceLabel(group) || "Event";
     labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
   });
   const groupLabel = (group) => {
-    const label = formatEventLabel(group.eventLabel) || "Event";
+    const label = formatRaceLabel(group) || "Event";
     const session = groupSessionLabel(group);
     return (labelCounts.get(label) || 0) > 1 && session
       ? `${label} — ${session}`

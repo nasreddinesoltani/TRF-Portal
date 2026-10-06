@@ -8,6 +8,7 @@ import { Select } from "../components/ui/select";
 import { Label } from "../components/ui/label";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { generateRaceCode } from "../lib/rowing";
 
 const API_BASE_URL = "";
 
@@ -18,16 +19,21 @@ const loadImage = (url) => {
     img.crossOrigin = "Anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      // Cap width at 1200px — sufficient for A4 PDF at print quality (210mm × 72dpi ≈ 595px,
-      // 2× for crispness = 1190px). Full-resolution PNGs can be 3–10 MB each.
-      const MAX_WIDTH = 1200;
+      // 2480px ≈ 300 DPI for a full-width A4 banner (210mm) — the previous
+      // 1200px cap + JPEG 0.80 re-encode made the federation logo look blurry.
+      // Never upscale. JPEG quality 0.92 stays visually crisp at 300 DPI and
+      // keeps the PDF small: jsPDF passes JPEGs straight through as DCT
+      // streams, while re-encoded PNGs balloon to tens of MB. White backing
+      // first so any transparent header area stays white on the page.
+      const MAX_WIDTH = 2480;
       const scale = img.width > MAX_WIDTH ? MAX_WIDTH / img.width : 1;
       canvas.width = Math.round(img.width * scale);
       canvas.height = Math.round(img.height * scale);
       const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      // JPEG at 0.80 quality: ~10–30× smaller than PNG with no visible difference at PDF scale.
-      resolve(canvas.toDataURL("image/jpeg", 0.80));
+      resolve(canvas.toDataURL("image/jpeg", 0.92));
     };
     img.onerror = () => resolve(null);
     img.src = `${url}${url.includes("?") ? "&" : "?"}_cb=${Date.now()}`;
@@ -220,7 +226,7 @@ const RankingTable = ({
 
     // Load assets
     const headerData = await loadImage("/header.png");
-    const footerData = await loadImage("/footer.png");
+    const footerData = await loadImage("/sponsors.png");
 
     const fontName = "helvetica";
     const pageWidth = 210;
@@ -429,16 +435,37 @@ const RankingTable = ({
         cellPadding: 1.5,
         font: fontName,
       },
-      margin: { left: leftMargin, right: 10 },
+      margin: { left: leftMargin, right: 10, bottom: bottomMargin },
     });
 
-    // Add footer
-    if (footerData) {
-      const imgProps = doc.getImageProperties(footerData);
-      const ratio = imgProps.width / imgProps.height;
-      const w = pageWidth;
-      const h = w / ratio;
-      doc.addImage(footerData, "JPEG", 0, pageHeight - h, w, h);
+    // Add footer to every page (sponsors image, or a minimal drawn fallback
+    // with page numbers when the image is unavailable)
+    const tablePageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= tablePageCount; i++) {
+      doc.setPage(i);
+      if (footerData) {
+        const imgProps = doc.getImageProperties(footerData);
+        const ratio = imgProps.width / imgProps.height;
+        const w = pageWidth;
+        const h = w / ratio;
+        doc.addImage(footerData, "JPEG", 0, pageHeight - h, w, h);
+      } else {
+        doc.setDrawColor(148, 163, 184);
+        doc.setLineWidth(0.3);
+        doc.line(leftMargin, pageHeight - 14, rightMargin, pageHeight - 14);
+        doc.setFontSize(7);
+        doc.setFont(fontName, "normal");
+        doc.setTextColor(100, 116, 139);
+        doc.text(
+          competition?.names?.en || competition?.code || "TRF Portal",
+          leftMargin,
+          pageHeight - 9,
+        );
+        doc.text(`Page ${i} / ${tablePageCount}`, rightMargin, pageHeight - 9, {
+          align: "right",
+        });
+        doc.setTextColor(0, 0, 0);
+      }
     }
 
     // Save
@@ -772,12 +799,166 @@ const PointTableLegend = () => (
   </div>
 );
 
+// Top 3 Medal List — per-event podium tables in the federation document style:
+// centered event title with the boat code on the right, then a bordered
+// Rank | Ctry Code / Club | Name table.
+const PodiumsView = ({ podiumData, countryFlag }) => {
+  const events = (podiumData?.categories || []).flatMap(({ groupKey, events: categoryEvents }) =>
+    categoryEvents.map((event) => ({
+      ...event,
+      categoryMeta: podiumData.groupMetadata?.[groupKey] || {},
+    })),
+  );
+
+  const formatEventTitle = (event) => {
+    const categoryName =
+      event.categoryMeta?.categoryNames?.en ||
+      event.categoryMeta?.categoryAbbr ||
+      "";
+    const boatName = event.boatClass?.names?.en || event.boatClass?.code || "";
+    return `${categoryName} ${boatName}`.trim();
+  };
+
+  const formatEventCode = (event) => {
+    const meta = event.categoryMeta || {};
+    return (
+      generateRaceCode(
+        {
+          abbreviation: meta.categoryAbbr,
+          gender: meta.gender,
+          titles: meta.categoryNames,
+        },
+        event.boatClass || {},
+      ) || "—"
+    );
+  };
+
+  const formatEventAffiliation = (event, entry) => {
+    if (event.nationMode) {
+      return entry.countryCode || entry.representingNation || entry.clubCode || "—";
+    }
+    return entry.clubCode || entry.clubName || "—";
+  };
+
+  return (
+    <div>
+      {events.map((event) => {
+        // International events always show country codes: decided by the
+        // competition scope or the category type — never by per-lane flags
+        // alone, which international races often leave unset.
+        const nationMode =
+          podiumData.isInternational === true ||
+          event.categoryMeta?.categoryType === "international" ||
+          (event.podium || []).some(
+            (entry) => entry.representingType === "nation",
+          );
+        event.nationMode = nationMode;
+        const fullClubName = (entry) =>
+          entry.clubName || entry.clubCode || "—";
+        return (
+          <div
+            key={event.eventKey}
+            className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-6"
+          >
+            {/* Event title + boat code, like the printed medal list */}
+            <div className="relative px-4 py-3 border-b border-slate-300">
+              <h3 className="text-center text-base font-bold text-slate-900 px-24">
+                {formatEventTitle(event)}
+              </h3>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-base font-bold text-slate-900">
+                {formatEventCode(event)}
+              </span>
+            </div>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-300">
+                  <th className="px-3 py-2.5 w-20 text-center text-sm font-bold text-slate-900">
+                    Rank
+                  </th>
+                  <th className="px-3 py-2.5 w-36 text-center text-sm font-bold text-slate-900">
+                    {nationMode ? "Ctry Code" : "Club"}
+                  </th>
+                  <th className="px-3 py-2.5 text-center text-sm font-bold text-slate-900">
+                    Name
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {(event.podium || []).map((entry) => {
+                  const names = (entry.name || "")
+                    .split(", ")
+                    .filter(Boolean);
+                  return (
+                    <tr
+                      key={entry.position}
+                      className="border-b border-slate-200 last:border-b-0"
+                    >
+                      <td className="px-3 py-2.5 text-center text-sm text-slate-800">
+                        {entry.position}
+                      </td>
+                      <td
+                        className="px-3 py-2.5 text-center text-sm text-slate-800"
+                        title={
+                          nationMode
+                            ? entry.countryCode || entry.representingNation || ""
+                            : fullClubName(entry)
+                        }
+                      >
+                        {nationMode ? (
+                          <span className="inline-flex items-center justify-center gap-2">
+                            {countryFlag &&
+                              (entry.countryCode ||
+                                entry.representingNation) && (
+                                <img
+                                  src={
+                                    countryFlag(
+                                      entry.countryCode ||
+                                        entry.representingNation,
+                                    ) || undefined
+                                  }
+                                  alt=""
+                                  className="w-5 h-3.5 object-cover rounded-sm"
+                                />
+                              )}
+                            {formatEventAffiliation(event, entry)}
+                          </span>
+                        ) : (
+                          formatEventAffiliation(event, entry)
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-sm text-slate-900">
+                        {names.length > 1
+                          ? names.map((name, i) => <div key={i}>{name}</div>)
+                          : names[0] || "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {(event.podium || []).length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={3}
+                      className="px-3 py-3 text-center text-sm text-slate-400"
+                    >
+                      No finishers recorded
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 // Main Component
 export default function CompetitionRankings() {
   const { competitionId } = useParams();
   const navigate = useNavigate();
   const { token, loading: authLoading } = useAuth();
-  const { countryLabel } = useCountries();
+  const { countryLabel, countryFlag } = useCountries();
   const unauthorizedRedirectedRef = React.useRef(false);
 
   // State
@@ -789,6 +970,9 @@ export default function CompetitionRankings() {
   const [rankingLoading, setRankingLoading] = useState(false);
   const [includeMasters, setIncludeMasters] = useState(true);
   const [includePenalties, setIncludePenalties] = useState(false);
+  const [viewMode, setViewMode] = useState("rankings"); // "rankings" | "podiums"
+  const [podiumData, setPodiumData] = useState(null);
+  const [podiumLoading, setPodiumLoading] = useState(false);
 
   const handleUnauthorized = useCallback(
     (message = "Session expired. Please login again.") => {
@@ -925,6 +1109,47 @@ export default function CompetitionRankings() {
     token,
   ]);
 
+  // Fetch podiums when the podiums view is opened or Include Masters changes
+  useEffect(() => {
+    const fetchPodiums = async () => {
+      setPodiumLoading(true);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/rankings/competition/${competitionId}/podiums?includeMasters=${includeMasters}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        if (response.status === 401) {
+          handleUnauthorized("Not authorized to access this route");
+          return;
+        }
+        if (response.ok) {
+          const data = await response.json();
+          setPodiumData(data);
+        } else {
+          toast.error("Failed to load podiums");
+        }
+      } catch (error) {
+        console.error("Error fetching podiums:", error);
+        toast.error("Failed to load podiums");
+      } finally {
+        setPodiumLoading(false);
+      }
+    };
+
+    if (viewMode === "podiums" && competitionId && token && !authLoading) {
+      fetchPodiums();
+    }
+  }, [
+    authLoading,
+    competitionId,
+    handleUnauthorized,
+    includeMasters,
+    token,
+    viewMode,
+  ]);
+
   // Get selected system info
   const selectedSystem = useMemo(() => {
     return rankingSystems.find((s) => s._id === selectedSystemId);
@@ -948,7 +1173,7 @@ export default function CompetitionRankings() {
 
     // Load assets
     const headerData = await loadImage("/header.png");
-    const footerData = await loadImage("/footer.png");
+    const footerData = await loadImage("/sponsors.png");
     const arabicFontBase64 = await loadFont("/fonts/Amiri-Regular.ttf");
 
     let arabicFontName = null;
@@ -1085,13 +1310,31 @@ export default function CompetitionRankings() {
     };
 
     // Function to add footer and legend to a page
-    const addFooter = (isLastPage = false) => {
+    const addFooter = (isLastPage = false, pageNo = 1, totalPages = 1) => {
       if (footerData) {
         const imgProps = doc.getImageProperties(footerData);
         const ratio = imgProps.width / imgProps.height;
         const w = pageWidth;
         const h = w / ratio;
         doc.addImage(footerData, "JPEG", 0, pageHeight - h, w, h);
+      } else {
+        // No footer image available — draw a minimal footer so every
+        // exported PDF still carries one, with page numbers.
+        doc.setDrawColor(148, 163, 184);
+        doc.setLineWidth(0.3);
+        doc.line(leftMargin, pageHeight - 14, rightMargin, pageHeight - 14);
+        doc.setFontSize(7);
+        doc.setFont(fontName, "normal");
+        doc.setTextColor(100, 116, 139);
+        doc.text(
+          competition?.names?.en || competition?.code || "TRF Portal",
+          leftMargin,
+          pageHeight - 9,
+        );
+        doc.text(`Page ${pageNo} / ${totalPages}`, rightMargin, pageHeight - 9, {
+          align: "right",
+        });
+        doc.setTextColor(0, 0, 0);
       }
 
       // Add legend on the last page
@@ -1255,7 +1498,6 @@ export default function CompetitionRankings() {
       if (yPos > contentBottom - 40) {
         doc.addPage();
         yPos = addHeader(false);
-        addFooter();
       }
 
       // Group title - use full category name from metadata
@@ -1429,7 +1671,7 @@ export default function CompetitionRankings() {
           cellPadding: 1.5,
           font: fontName,
         },
-        margin: { left: leftMargin, right: 10 },
+        margin: { left: leftMargin, right: 10, bottom: bottomMargin },
         // Handle page breaks with header/footer
         didDrawPage: (data) => {
           // Add header and footer to new pages created by autoTable
@@ -1447,7 +1689,7 @@ export default function CompetitionRankings() {
     const pageCount = doc.internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
-      addFooter(i === pageCount);
+      addFooter(i === pageCount, i, pageCount);
     }
 
     // Save
@@ -1457,6 +1699,262 @@ export default function CompetitionRankings() {
     doc.save(fileName);
     toast.success("PDF exported successfully");
   }, [rankingData, selectedSystem, competition]);
+
+  // Export the Top 3 Medal List PDF (federation document style)
+  const exportPodiumsPDF = useCallback(async () => {
+    if (!podiumData) return;
+
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+
+    const headerData = await loadImage("/header.png");
+    const footerData = await loadImage("/sponsors.png");
+
+    const fontName = "helvetica";
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const leftMargin = 10;
+    const rightMargin = 200;
+    const center = 105;
+    const bottomMargin = 30;
+
+    let headerHeight = 25;
+    if (headerData) {
+      const imgProps = doc.getImageProperties(headerData);
+      headerHeight = pageWidth / (imgProps.width / imgProps.height) + 5;
+    }
+
+    const addHeader = () => {
+      if (headerData) {
+        const imgProps = doc.getImageProperties(headerData);
+        const w = pageWidth;
+        const h = w / (imgProps.width / imgProps.height);
+        doc.addImage(headerData, "JPEG", 0, 0, w, h);
+      }
+      let y = headerHeight;
+      doc.setFontSize(14);
+      doc.setFont(fontName, "bold");
+      const compTitle =
+        competition?.names?.en || competition?.name || competition?.code || "Competition";
+      doc.text(compTitle, center, y, { align: "center" });
+      doc.setFontSize(8);
+      doc.setFont(fontName, "normal");
+      const compLocation =
+        competition?.location?.name || competition?.venue?.name || competition?.venue || "";
+      doc.text(compLocation, leftMargin, y);
+
+      // Date range like the printed medal list ("11 - 14 September 2025")
+      const start = competition?.startDate ? new Date(competition.startDate) : null;
+      const end = competition?.endDate ? new Date(competition.endDate) : null;
+      let dateStr = "";
+      if (start && !Number.isNaN(start.getTime())) {
+        if (end && !Number.isNaN(end.getTime())) {
+          const sameMonth =
+            start.getMonth() === end.getMonth() &&
+            start.getFullYear() === end.getFullYear();
+          dateStr = sameMonth
+            ? `${start.getDate()} - ${end.getDate()} ${start.toLocaleDateString(
+                "en-GB",
+                { month: "long", year: "numeric" },
+              )}`
+            : `${start.toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "short",
+              })} - ${end.toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })}`;
+        } else {
+          dateStr = start.toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          });
+        }
+      }
+      if (dateStr) {
+        doc.text(dateStr, rightMargin, y, { align: "right" });
+      }
+
+      y += 2;
+      doc.setLineWidth(0.5);
+      doc.line(leftMargin, y, rightMargin, y);
+    };
+
+    const addFooter = (pageNo = 1, totalPages = 1) => {
+      if (footerData) {
+        const imgProps = doc.getImageProperties(footerData);
+        const w = pageWidth;
+        const h = w / (imgProps.width / imgProps.height);
+        doc.addImage(footerData, "JPEG", 0, pageHeight - h, w, h);
+      } else {
+        // No footer image available — draw a minimal footer so every
+        // exported PDF still carries one, with page numbers.
+        doc.setDrawColor(148, 163, 184);
+        doc.setLineWidth(0.3);
+        doc.line(leftMargin, pageHeight - 14, rightMargin, pageHeight - 14);
+        doc.setFontSize(7);
+        doc.setFont(fontName, "normal");
+        doc.setTextColor(100, 116, 139);
+        doc.text(
+          competition?.names?.en || competition?.code || "TRF Portal",
+          leftMargin,
+          pageHeight - 9,
+        );
+        doc.text(`Page ${pageNo} / ${totalPages}`, rightMargin, pageHeight - 9, {
+          align: "right",
+        });
+        doc.setTextColor(0, 0, 0);
+      }
+    };
+
+    const events = (podiumData.categories || []).flatMap(
+      ({ groupKey, events: categoryEvents }) =>
+        categoryEvents.map((event) => ({
+          ...event,
+          categoryMeta: podiumData.groupMetadata?.[groupKey] || {},
+        })),
+    );
+
+    const formatEventTitle = (event) => {
+      const categoryName =
+        event.categoryMeta?.categoryNames?.en ||
+        event.categoryMeta?.categoryAbbr ||
+        "";
+      const boatName = event.boatClass?.names?.en || event.boatClass?.code || "";
+      return `${categoryName} ${boatName}`.trim();
+    };
+
+    const formatEventCode = (event) => {
+      const meta = event.categoryMeta || {};
+      return (
+        generateRaceCode(
+          {
+            abbreviation: meta.categoryAbbr,
+            gender: meta.gender,
+            titles: meta.categoryNames,
+          },
+          event.boatClass || {},
+        ) || "—"
+      );
+    };
+
+    addHeader();
+    let yPos = headerHeight + 10;
+    doc.setFontSize(16);
+    doc.setFont(fontName, "bold");
+    doc.text("Top 3 Medal List", center, yPos, { align: "center" });
+    yPos += 10;
+
+    if (events.length === 0) {
+      doc.setFontSize(10);
+      doc.setFont(fontName, "normal");
+      doc.text("No podiums available yet.", center, yPos, { align: "center" });
+    }
+
+    for (const event of events) {
+      // Mirror the on-screen rule: competition scope / category type decides
+      // country display — per-lane representing flags are often unset.
+      const nationMode =
+        podiumData.isInternational === true ||
+        event.categoryMeta?.categoryType === "international" ||
+        (event.podium || []).some(
+          (entry) => entry.representingType === "nation",
+        );
+
+      // Estimate the block height (title + table head + crew name lines) so a
+      // section is never split from its heading across a page break.
+      const nameLines = (event.podium || []).reduce(
+        (sum, entry) =>
+          sum + Math.max(1, (entry.name || "").split(", ").length),
+        0,
+      );
+      const blockHeight = 10 + 10 + nameLines * 11 + 6;
+      if (yPos + blockHeight > pageHeight - bottomMargin) {
+        doc.addPage();
+        addHeader();
+        yPos = headerHeight + 10;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont(fontName, "bold");
+      doc.text(formatEventTitle(event), center, yPos, { align: "center" });
+      doc.text(formatEventCode(event), rightMargin, yPos, { align: "right" });
+      yPos += 3;
+
+      const rows = (event.podium || []).map((entry) => [
+        String(entry.position),
+        nationMode
+          ? (
+              entry.countryCode ||
+              entry.representingNation ||
+              entry.clubCode ||
+              "—"
+            ).toUpperCase()
+          : (entry.clubCode || entry.clubName || "—").toUpperCase(),
+        (entry.name || "—")
+          .split(", ")
+          .map((name) => name.toUpperCase())
+          .join("\n"),
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [["Rank", nationMode ? "Ctry Code" : "Club", "Name"]],
+        body: rows,
+        theme: "grid",
+        headStyles: {
+          fillColor: [255, 255, 255],
+          textColor: [0, 0, 0],
+          fontStyle: "bold",
+          halign: "center",
+          fontSize: 10,
+          lineWidth: 0.4,
+          lineColor: [0, 0, 0],
+        },
+        columnStyles: {
+          0: { cellWidth: 22, halign: "center" },
+          1: { cellWidth: 32, halign: "center" },
+          2: { cellWidth: "auto", halign: "left" },
+        },
+        styles: {
+          fontSize: 10,
+          cellPadding: 3,
+          minCellHeight: 10,
+          font: fontName,
+          textColor: [0, 0, 0],
+          lineWidth: 0.3,
+          lineColor: [0, 0, 0],
+        },
+        margin: {
+          left: leftMargin,
+          right: 10,
+          bottom: bottomMargin,
+        },
+        didDrawPage: (data) => {
+          if (data.pageNumber > 1) {
+            addHeader();
+          }
+        },
+      });
+
+      yPos = doc.lastAutoTable.finalY + 10;
+    }
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      addFooter(i, pageCount);
+    }
+
+    const fileName = `Top3_Medal_List_${competition?.code || "competition"}.pdf`;
+    doc.save(fileName);
+    toast.success("PDF exported successfully");
+  }, [podiumData, competition]);
 
   if (loading) {
     return (
@@ -1487,8 +1985,12 @@ export default function CompetitionRankings() {
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
-            onClick={exportPDF}
-            disabled={!rankingData || rankingLoading}
+            onClick={viewMode === "podiums" ? exportPodiumsPDF : exportPDF}
+            disabled={
+              viewMode === "podiums"
+                ? !podiumData || podiumLoading
+                : !rankingData || rankingLoading
+            }
           >
             📄 Export PDF
           </Button>
@@ -1497,24 +1999,52 @@ export default function CompetitionRankings() {
 
       {/* Ranking System Selector */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-6">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex-1 min-w-[200px]">
-            <Label className="text-sm font-medium text-slate-700 mb-1">
-              Ranking System
-            </Label>
-            <Select
-              value={selectedSystemId}
-              onChange={(e) => setSelectedSystemId(e.target.value)}
-              className="w-full"
+        {/* View Toggle */}
+        <div className="flex justify-center mb-4">
+          <div className="inline-flex bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode("rankings")}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                viewMode === "rankings"
+                  ? "bg-white shadow text-blue-700"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
             >
-              <option value="">Select a ranking system...</option>
-              {rankingSystems.map((system) => (
-                <option key={system._id} value={system._id}>
-                  {system.names?.en || system.code} ({system.groupBy})
-                </option>
-              ))}
-            </Select>
+              📊 Full Rankings
+            </button>
+            <button
+              onClick={() => setViewMode("podiums")}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                viewMode === "podiums"
+                  ? "bg-white shadow text-amber-700"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              🥇 Top 3 Medal List
+            </button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-4">
+          {viewMode === "rankings" && (
+            <div className="flex-1 min-w-[200px]">
+              <Label className="text-sm font-medium text-slate-700 mb-1">
+                Ranking System
+              </Label>
+              <Select
+                value={selectedSystemId}
+                onChange={(e) => setSelectedSystemId(e.target.value)}
+                className="w-full"
+              >
+                <option value="">Select a ranking system...</option>
+                {rankingSystems.map((system) => (
+                  <option key={system._id} value={system._id}>
+                    {system.names?.en || system.code} ({system.groupBy})
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
 
           {/* Masters Toggle */}
           <div className="flex items-center gap-2">
@@ -1533,24 +2063,26 @@ export default function CompetitionRankings() {
             </Label>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="includePenalties"
-              checked={includePenalties}
-              onChange={(e) => setIncludePenalties(e.target.checked)}
-              className="h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
-            />
-            <Label
-              htmlFor="includePenalties"
-              className="text-sm text-slate-700 cursor-pointer"
-            >
-              Include Penalties
-            </Label>
-          </div>
+          {viewMode === "rankings" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="includePenalties"
+                checked={includePenalties}
+                onChange={(e) => setIncludePenalties(e.target.checked)}
+                className="h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+              />
+              <Label
+                htmlFor="includePenalties"
+                className="text-sm text-slate-700 cursor-pointer"
+              >
+                Include Penalties
+              </Label>
+            </div>
+          )}
         </div>
 
-        {selectedSystem && (
+        {viewMode === "rankings" && selectedSystem && (
           <div className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-500">
             <span className="font-medium">Entity:</span>{" "}
             {selectedSystem.entityType === "athlete"
@@ -1579,19 +2111,47 @@ export default function CompetitionRankings() {
         )}
       </div>
 
-      {/* Point Table Legend */}
-      <PointTableLegend />
+      {/* Point Table Legend (rankings view only) */}
+      {viewMode === "rankings" && <PointTableLegend />}
 
       {/* Loading State */}
-      {rankingLoading && (
+      {viewMode === "rankings" && rankingLoading && (
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           <span className="ml-3 text-slate-500">Calculating rankings...</span>
         </div>
       )}
 
+      {/* Podiums Loading State */}
+      {viewMode === "podiums" && podiumLoading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600"></div>
+          <span className="ml-3 text-slate-500">Loading podiums...</span>
+        </div>
+      )}
+
+      {/* Podiums Display */}
+      {viewMode === "podiums" && !podiumLoading && podiumData && (
+        <div>
+          {(podiumData.categories || []).length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-12 text-center">
+              <div className="text-4xl mb-4">🥇</div>
+              <h3 className="text-lg font-semibold text-slate-700 mb-2">
+                No Podiums Available
+              </h3>
+              <p className="text-slate-500">
+                There are no completed finals yet. Podiums will appear once
+                final races are completed.
+              </p>
+            </div>
+          ) : (
+            <PodiumsView podiumData={podiumData} countryFlag={countryFlag} />
+          )}
+        </div>
+      )}
+
       {/* Rankings Display */}
-      {!rankingLoading && rankingData && (
+      {viewMode === "rankings" && !rankingLoading && rankingData && (
         <div>
           {Object.entries(rankingData.rankings || {}).length === 0 ? (
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-12 text-center">
@@ -1624,7 +2184,7 @@ export default function CompetitionRankings() {
       )}
 
       {/* No System Selected */}
-      {!rankingLoading && !selectedSystemId && (
+      {viewMode === "rankings" && !rankingLoading && !selectedSystemId && (
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-12 text-center">
           <div className="text-4xl mb-4">📊</div>
           <h3 className="text-lg font-semibold text-slate-700 mb-2">
@@ -1637,10 +2197,16 @@ export default function CompetitionRankings() {
       )}
 
       {/* Generation Info */}
-      {rankingData?.generatedAt && (
+      {viewMode === "rankings" && rankingData?.generatedAt && (
         <div className="mt-4 text-center text-sm text-slate-400">
           Rankings generated at{" "}
           {new Date(rankingData.generatedAt).toLocaleString()}
+        </div>
+      )}
+      {viewMode === "podiums" && podiumData?.generatedAt && (
+        <div className="mt-4 text-center text-sm text-slate-400">
+          Podiums generated at{" "}
+          {new Date(podiumData.generatedAt).toLocaleString()}
         </div>
       )}
     </div>

@@ -20,6 +20,7 @@ import {
   formatEntryAffiliation,
   formatEntryName,
   formatEventLabel,
+  formatRaceLabel,
   getAffiliationMode,
   getPodiumEntries,
 } from "../lib/format";
@@ -85,6 +86,10 @@ const buildPodiumPreview = (groups) => {
     getPodiumEntries(group?.entries).map((entry) => ({
       ...entry,
       eventLabel: group.eventLabel,
+      // Keep the refs so the lightweight marker survives (the boat code alone
+      // is identical for open and lightweight).
+      category: group.category,
+      boatClass: group.boatClass,
     })),
   );
 
@@ -824,7 +829,8 @@ const PublicHome = () => {
                                   {entryIndex + 1}
                                 </div>
                                 <div className="pub-podium__label">
-                                  {formatEventLabel(entry.eventLabel) ||
+                                  {formatRaceLabel(entry) ||
+                                    formatEventLabel(entry.eventLabel) ||
                                     "Result"}
                                 </div>
                                 <div className="pub-podium__name">

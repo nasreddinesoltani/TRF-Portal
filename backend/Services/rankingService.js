@@ -14,7 +14,9 @@
 
 import mongoose from "mongoose";
 import CompetitionRace from "../Models/competitionRaceModel.js";
-import Competition from "../Models/competitionModel.js";
+import Competition, {
+  isInternationalScope,
+} from "../Models/competitionModel.js";
 import Category from "../Models/categoryModel.js";
 import BoatClass from "../Models/boatClassModel.js";
 import RankingSystem, {
@@ -416,26 +418,7 @@ export async function buildCompetitionRanking(
 
   // Filter out masters categories if not included
   if (!includeMasters) {
-    filteredRaces = filteredRaces.filter((r) => {
-      const abbreviation = r.category?.abbreviation?.toUpperCase() || "";
-      const enTitle = r.category?.titles?.en?.toUpperCase() || "";
-      const frTitle = r.category?.titles?.fr?.toUpperCase() || "";
-
-      // Check for common patterns:
-      // 1. MinAge >= 27 (Standard Masters age)
-      // 2. "MAS" or "VET" in abbreviation
-      // 3. "MASTER" or "VETERAN" in titles
-      const isMaster =
-        r.category?.minAge >= 27 ||
-        abbreviation.includes("MAS") ||
-        abbreviation.includes("VET") ||
-        enTitle.includes("MASTER") ||
-        frTitle.includes("MASTER") ||
-        enTitle.includes("VETERAN") ||
-        frTitle.includes("VETERAN");
-
-      return !isMaster;
-    });
+    filteredRaces = filteredRaces.filter((r) => !isMastersCategory(r.category));
   }
 
   // For category-based rankings, merge PARA races into equivalent non-PARA
@@ -593,6 +576,295 @@ export async function buildCompetitionRanking(
       name: s.name,
       date: s.date,
     })),
+    generatedAt: new Date(),
+  };
+}
+
+// === Podiums (top 3 per event, grouped by category) ======================
+
+function isMastersCategory(category) {
+  const abbreviation = category?.abbreviation?.toUpperCase() || "";
+  const enTitle = category?.titles?.en?.toUpperCase() || "";
+  const frTitle = category?.titles?.fr?.toUpperCase() || "";
+
+  // Check for common patterns:
+  // 1. MinAge >= 27 (Standard Masters age)
+  // 2. "MAS" or "VET" in abbreviation
+  // 3. "MASTER" or "VETERAN" in titles
+  return (
+    category?.minAge >= 27 ||
+    abbreviation.includes("MAS") ||
+    abbreviation.includes("VET") ||
+    enTitle.includes("MASTER") ||
+    frTitle.includes("MASTER") ||
+    enTitle.includes("VETERAN") ||
+    frTitle.includes("VETERAN")
+  );
+}
+
+const joinLaneMemberNames = (members, ar = false) => {
+  // A lane can carry the same athlete in both `athlete` and `crew` (single
+  // boats) — dedupe by id so names like "A B, A B" never reach the UI.
+  const seen = new Set();
+  const labels = [];
+  for (const member of members) {
+    const id = member?._id?.toString?.() || member?._id;
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    const label = ar
+      ? `${member?.firstNameAr || ""} ${member?.lastNameAr || ""}`.trim()
+      : `${member?.firstName || ""} ${member?.lastName || ""}`.trim();
+    if (label) labels.push(label);
+  }
+  return labels.join(", ");
+};
+
+/**
+ * Resolve the country (alpha-3) a lane represents, using every source the
+ * data model offers. International races often carry NO representingNation /
+ * representingType on lanes, so fall back in the same order the mixed medal
+ * table credits nations:
+ *   1. explicit lane.representingNation
+ *   2. national-team club (type "country" or "-C" code suffix, e.g. "UAE-C")
+ *   3. foreign club with a registered country
+ *   4. the (first) crew member's nationalityCode
+ * Returns null when nothing resolves (national club entries without one).
+ */
+function resolveLaneNationCode(lane) {
+  if (lane.representingNation) {
+    return normalizeNationCode(lane.representingNation);
+  }
+
+  const club = lane.club;
+  if (club) {
+    const clubType = String(club.type || "").trim().toLowerCase();
+    const clubCode = String(club.code || "").trim();
+    if (clubType === "country" || /-C$/i.test(clubCode)) {
+      const derived = clubCode.replace(/-C$/i, "").trim();
+      return normalizeNationCode(club.country || derived || null);
+    }
+    if (club.country) {
+      return normalizeNationCode(club.country);
+    }
+  }
+
+  const members = lane.crew?.length
+    ? lane.crew
+    : lane.athlete
+      ? [lane.athlete]
+      : [];
+  const first = members[0];
+  return first?.nationalityCode
+    ? normalizeNationCode(first.nationalityCode)
+    : null;
+}
+
+/**
+ * Build the podium (top 3 finishers) of one race. Only lanes that actually
+ * finished ("ok") can take a podium spot — hors_course/DSQ/DNS/DNF are
+ * excluded, so a final with two legitimate finishers shows a two-seat podium.
+ * Order: elapsed time, then manual finish position, then lane number.
+ */
+function buildEventPodium(race) {
+  const journey = Number(race.journeyIndex) || 1;
+
+  const podiumLanes = (race.lanes || [])
+    .filter((lane) => (lane.result?.status || "ok").toLowerCase() === "ok")
+    .sort((a, b) => {
+      const timeA = Number.isFinite(a.result?.elapsedMs)
+        ? a.result.elapsedMs
+        : Infinity;
+      const timeB = Number.isFinite(b.result?.elapsedMs)
+        ? b.result.elapsedMs
+        : Infinity;
+      if (timeA !== timeB) return timeA - timeB;
+      const posA = Number.isInteger(a.result?.finishPosition)
+        ? a.result.finishPosition
+        : Number.MAX_SAFE_INTEGER;
+      const posB = Number.isInteger(b.result?.finishPosition)
+        ? b.result.finishPosition
+        : Number.MAX_SAFE_INTEGER;
+      if (posA !== posB) return posA - posB;
+      return (Number(a.lane) || 999) - (Number(b.lane) || 999);
+    })
+    .slice(0, 3);
+
+  const podium = podiumLanes.map((lane, index) => {
+    const members = [];
+    if (lane.athlete) members.push(lane.athlete);
+    if (Array.isArray(lane.crew)) members.push(...lane.crew);
+    const club = lane.club;
+
+    return {
+      position: index + 1,
+      athleteId:
+        lane.athlete?._id?.toString?.() ||
+        lane.athlete?.toString?.() ||
+        null,
+      name: joinLaneMemberNames(members),
+      nameAr: joinLaneMemberNames(members, true) || null,
+      clubId: club?._id?.toString?.() || null,
+      clubName: club?.name || null,
+      clubNameAr: club?.nameAr || null,
+      clubCode: club?.code || null,
+      countryCode: resolveLaneNationCode(lane),
+      representingNation: lane.representingNation || null,
+      representingType: lane.representingType || null,
+      elapsedMs:
+        Number.isFinite(lane.result?.elapsedMs) && lane.result.elapsedMs >= 0
+          ? lane.result.elapsedMs
+          : null,
+      lane: lane.lane ?? null,
+    };
+  });
+
+  return {
+    eventKey:
+      race.eventGroupId ||
+      `${race.category?._id?.toString?.() || "?"}::${
+        race.boatClass?._id?.toString?.() || "?"
+      }::J${journey}`,
+    raceId: race._id?.toString?.() || null,
+    journeyIndex: journey,
+    phase: readPhase(race) || null,
+    eventNumber: race.eventNumber ?? null,
+    raceName: race.name || null,
+    boatClass: race.boatClass
+      ? {
+          _id: race.boatClass._id,
+          code: race.boatClass.code,
+          names: race.boatClass.names,
+          crewSize: race.boatClass.crewSize,
+          weightClass: race.boatClass.weightClass,
+        }
+      : null,
+    podium,
+  };
+}
+
+/**
+ * Build the per-event podiums (Final A top 3) for a competition, grouped by
+ * category. Unlike buildCompetitionRanking this needs no ranking system:
+ * each completed Final A race IS one event podium. Journeys without phase
+ * labels (legacy races) contribute all their completed races instead.
+ *
+ * @param {string} competitionId
+ * @param {object} options - { includeMasters }
+ */
+export async function buildCompetitionPodiums(competitionId, options = {}) {
+  // Preload nation aliases so resolved country codes match the medal tables
+  await loadNationAliases();
+
+  const competition = await Competition.findById(competitionId);
+  if (!competition) {
+    throw new Error("Competition not found");
+  }
+
+  const includeMasters = options.includeMasters !== false;
+
+  const races = await CompetitionRace.find({
+    competition: competitionId,
+    status: "completed",
+  })
+    .populate("category", "abbreviation titles gender minAge type isPara")
+    .populate("boatClass", "code names crewSize weightClass discipline")
+    .populate("lanes.club", "name nameAr code country type")
+    .populate(
+      "lanes.athlete",
+      "firstName lastName firstNameAr lastNameAr nationalityCode",
+    )
+    .populate("lanes.crew", "firstName lastName firstNameAr lastNameAr nationalityCode")
+    .lean();
+
+  let filteredRaces = races;
+  if (!includeMasters) {
+    filteredRaces = filteredRaces.filter((r) => !isMastersCategory(r.category));
+  }
+
+  // Medals belong to the A final. Mirror buildCompetitionRanking's
+  // final-only selection: use the stage flagged as final day (else the
+  // highest journey), then keep only that journey's Final A races — a final
+  // day can also hold heats, repechages and B finals. Races created before
+  // the phase field existed carry no labels; those keep the whole journey
+  // instead of being dropped to an empty podium list.
+  const stageEntries = (competition.stages || []).map((stage, idx) => ({
+    stage,
+    order: Number(stage?.order) || idx + 1,
+  }));
+  const finalStage = stageEntries.find(({ stage }) => stage?.isFinalDay);
+  const maxJourney = races.length
+    ? Math.max(...races.map((r) => Number(r.journeyIndex) || 1))
+    : 1;
+  const finalJourney = finalStage ? finalStage.order : maxJourney;
+
+  const finalJourneyRaces = filteredRaces.filter(
+    (r) => (Number(r.journeyIndex) || 1) === finalJourney,
+  );
+  const hasPhaseLabels = finalJourneyRaces.some((r) => readPhase(r));
+  const decisiveRaces = hasPhaseLabels
+    ? finalJourneyRaces.filter(isFinalARace)
+    : finalJourneyRaces;
+
+  const categories = new Map();
+  for (const race of decisiveRaces) {
+    const groupKey =
+      race.category?.abbreviation ||
+      race.category?._id?.toString?.() ||
+      "unknown";
+    if (!categories.has(groupKey)) {
+      categories.set(groupKey, { category: race.category, races: [] });
+    }
+    categories.get(groupKey).races.push(race);
+  }
+
+  const groupMetadata = {};
+  const categoryList = [];
+
+  for (const [groupKey, { category, races: categoryRaces }] of categories) {
+    groupMetadata[groupKey] = {
+      gender: category?.gender,
+      categoryAbbr: category?.abbreviation,
+      categoryNames: category?.titles,
+      categoryId: category?._id?.toString?.() || null,
+      categoryType: category?.type || null,
+    };
+
+    const events = categoryRaces
+      .map((race) => ({
+        race,
+        journey: Number(race.journeyIndex) || 1,
+        order: Number(race.eventNumber ?? race.order ?? 0) || 0,
+      }))
+      .sort((a, b) => a.journey - b.journey || a.order - b.order)
+      .map(({ race }) => buildEventPodium(race));
+
+    categoryList.push({ groupKey, events });
+  }
+
+  categoryList.sort((a, b) =>
+    String(a.groupKey).localeCompare(String(b.groupKey)),
+  );
+
+  return {
+    competition: {
+      _id: competition._id,
+      code: competition.code,
+      names: competition.names,
+    },
+    // International events always display country codes ("Ctry Code"),
+    // national ones display club codes — decided by competition scope or
+    // the event's category type, never by per-lane flags alone.
+    scope: competition.scope?.type || "national",
+    isInternational: isInternationalScope(competition.scope?.type) === true,
+    stages: (competition.stages || []).map((s, idx) => ({
+      index: idx,
+      name: s.name,
+      date: s.date,
+    })),
+    groupMetadata,
+    categories: categoryList,
     generatedAt: new Date(),
   };
 }
@@ -1871,5 +2143,6 @@ export default {
   analyzeRaceContext,
   calculateCombinedTimeRanking,
   buildCompetitionRanking,
+  buildCompetitionPodiums,
   getRankingSummary,
 };

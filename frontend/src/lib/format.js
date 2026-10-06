@@ -6,6 +6,7 @@
 // ============================================================
 
 import { countryName, flagEmoji } from "./countries";
+import { generateRaceCode } from "./rowing";
 
 const isObject = (value) =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -321,12 +322,23 @@ export const formatShortDate = (value) => {
   }).format(date);
 };
 
-/** Race display label in rowing shorthand, e.g. "JM2x" / "PR3Mix2x". */
+/** Race display label in rowing shorthand, e.g. "JM2x" / "PR3Mix2x" / "LM1x". */
 export const formatRaceLabel = (raceOrGroup) => {
   if (!raceOrGroup) return "";
-  if (raceOrGroup.eventLabel) return formatEventLabel(raceOrGroup.eventLabel);
   const category = raceOrGroup.category;
   const boatClass = raceOrGroup.boatClass;
+
+  // Prefer deriving the label from the category/boat-class pair: it is the only
+  // way to tell a lightweight event from its open counterpart, because the boat
+  // code alone is identical ("1X"). Falls back to the stored eventLabel when
+  // the refs are not populated.
+  if (isObject(category) && isObject(boatClass)) {
+    const derived = generateRaceCode(category, boatClass);
+    if (derived) return formatEventLabel(derived);
+  }
+
+  if (raceOrGroup.eventLabel) return formatEventLabel(raceOrGroup.eventLabel);
+
   const categoryCode =
     (isObject(category)
       ? category.abbreviation || category.titles?.en || category.name

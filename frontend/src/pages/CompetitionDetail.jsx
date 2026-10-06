@@ -29,6 +29,7 @@ import {
   formatBoatCode,
   formatBoatClassName,
   formatEventLabel,
+  formatRaceLabel,
   formatDayLabel,
   formatTimeOfDay,
   getAffiliationMode,
@@ -152,10 +153,20 @@ const getRaceEventLabel = (race) => {
   return [categoryLabel, boatClassLabel].filter(Boolean).join(" / ");
 };
 
-const getRaceEventCode = (race) => {
-  const categoryCode = getCategoryCode(race?.category);
-  const boatClassCode = getBoatClassCode(race?.boatClass);
-  return formatEventLabel(`${categoryCode} ${boatClassCode}`);
+const getRaceEventCode = (race) =>
+  formatRaceLabel(race) ||
+  formatEventLabel(
+    `${getCategoryCode(race?.category)} ${getBoatClassCode(race?.boatClass)}`,
+  );
+
+// Full boat-class descriptor for the card title, weight-aware
+// ("Lightweight Single Sculls" vs "Single Sculls").
+const getRaceBoatDescriptor = (race) => {
+  const boatName = formatBoatClassName(race?.boatClass?.code);
+  if (!boatName) return "";
+  const prefix =
+    race?.boatClass?.weightClass === "lightweight" ? "Lightweight " : "";
+  return `${prefix}${boatName}`;
 };
 
 const CompetitionDetail = () => {
@@ -604,15 +615,11 @@ const CompetitionDetail = () => {
                                         getRaceEventLabel(race) ||
                                         race.name ||
                                         "Race"}
-                                      {formatBoatClassName(
-                                        race.boatClass?.code,
-                                      ) && (
+                                      {getRaceBoatDescriptor(race) && (
                                         <span className="pub-race-card__boat-name">
                                           {" "}
                                           —{" "}
-                                          {formatBoatClassName(
-                                            race.boatClass?.code,
-                                          )}
+                                          {getRaceBoatDescriptor(race)}
                                         </span>
                                       )}
                                     </h3>
@@ -804,8 +811,7 @@ const CompetitionDetail = () => {
                     heatRaces[0]?.startTime ||
                     group.publishedAt;
                   const labelKey =
-                    formatEventLabel(group.eventLabel) ||
-                    getRaceEventLabel(group);
+                    formatRaceLabel(group) || getRaceEventLabel(group);
 
                   // Crews that reached the final → "Q" badge in heat tables
                   const finalistNames = new Set();

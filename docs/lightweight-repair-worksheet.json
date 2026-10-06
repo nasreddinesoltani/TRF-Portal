@@ -1,0 +1,735 @@
+{
+  "generatedAt": "2026-10-04T08:45:38.705Z",
+  "items": [
+    {
+      "kind": "race",
+      "_id": "697791603de33abe45e458a6",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "6977ad49640188958079b762",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "6978eddb84040bd015e3a24f",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "6978fcec84040bd015e3a685",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "6978fff284040bd015e3a8d6",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "6979f31ccfd46d7de72bfef4",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "6979f70ecfd46d7de72c0038",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a3bc9cfd46d7de72c00fc",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a3c1ecfd46d7de72c0131",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a3c7ecfd46d7de72c019c",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a3d57cfd46d7de72c01d1",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a3f34cfd46d7de72c02de",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a40a4cfd46d7de72c03b4",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a433dcfd46d7de72c0455",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a4b43cfd46d7de72c0799",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a4d66cfd46d7de72c0984",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a5213cfd46d7de72c0b9f",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697a5372cfd46d7de72c0cc7",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697b6f678e51ca155bd54730",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697b75308e51ca155bd547f2",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697b76ab8e51ca155bd54843",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697b784b8e51ca155bd548ff",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697b78a78e51ca155bd549a0",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697b7ae88e51ca155bd54b18",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697b7b438e51ca155bd54b83",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697b7ce88e51ca155bd54c5a",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "697b8f6181ad8a1fa69b673a",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "698084e40b4d767abb7947b1",
+      "competition": "TRF-ROWING-INDOOR-2025",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861448fe812a6fd897f706",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "698614aefe812a6fd897f71f",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "698614fafe812a6fd897f738",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "6986150cfe812a6fd897f751",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861651fe812a6fd897f7b5",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "698616c4fe812a6fd897f7ce",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861dc2fe812a6fd897fa65",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861e1afe812a6fd897fabc",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861e40fe812a6fd897fb15",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861e54fe812a6fd897fb2f",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861e9cfe812a6fd897fb6c",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861eccfe812a6fd897fbc4",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861edcfe812a6fd897fbdd",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861eecfe812a6fd897fbf6",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861f1dfe812a6fd897fc0f",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861f36fe812a6fd897fc28",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861f45fe812a6fd897fc41",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861f5efe812a6fd897fc5a",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861f74fe812a6fd897fc73",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861f96fe812a6fd897fc8c",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861fbefe812a6fd897fca5",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69861fd7fe812a6fd897fcbe",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69862064fe812a6fd897fcf0",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69862076fe812a6fd897fd09",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69862093fe812a6fd897fd22",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "698620b9fe812a6fd897fd3b",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "698620cdfe812a6fd897fd54",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "698620e1fe812a6fd897fd6d",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "6986210cfe812a6fd897fd86",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "6986212afe812a6fd897fd9f",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69862149fe812a6fd897fdb8",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "race",
+      "_id": "69862160fe812a6fd897fdd1",
+      "competition": "TRF-INDOOR-2026",
+      "discipline": "indoor",
+      "reason": "indoor 1X; lightweight vs open indistinguishable"
+    },
+    {
+      "kind": "entry",
+      "_id": "69d5166a2bbde69141bffe53",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d516922bbde69141bffe7a",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d517d92bbde69141bffee0",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d522082bbde69141c0006f",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120c",
+        "2X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d523a32bbde69141c0011a",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120c",
+        "2X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d523da2bbde69141c00147",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120c",
+        "2X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d56b122bbde69141c008ea",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d56b4b2bbde69141c00911",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d56bcb2bbde69141c00950",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d56c942bbde69141c00977",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d592c72bbde69141c00af8",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d592db2bbde69141c00b1f",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d592f02bbde69141c00b46",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d592f82bbde69141c00b6d",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d593542bbde69141c00c0a",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d5936d2bbde69141c00c58",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d6224b2bbde69141c0100d",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d6225f2bbde69141c0103c",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d6227e2bbde69141c0106b",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d624582bbde69141c0115a",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120c",
+        "2X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d626052bbde69141c0122b",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d6262e2bbde69141c0125a",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d62ce82bbde69141c0140f",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120c",
+        "2X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d62dc02bbde69141c0145e",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120c",
+        "2X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d641402bbde69141c015a5",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d645042bbde69141c0164c",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d78bc12bbde69141c017f7",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d7b7be2bbde69141c01c76",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d7b9e52bbde69141c01cf4",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120c",
+        "2X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69d7ba3d2bbde69141c01d29",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120c",
+        "2X/classic/lightweight"
+      ]
+    },
+    {
+      "kind": "entry",
+      "_id": "69e4ba0062436b14390720a4",
+      "competition": "TRF-CLASSIC-2026",
+      "reason": "open and lightweight race share event + boat code",
+      "candidates": [
+        "6915b96b925c07100b26120b",
+        "1X/classic/lightweight"
+      ]
+    }
+  ]
+}

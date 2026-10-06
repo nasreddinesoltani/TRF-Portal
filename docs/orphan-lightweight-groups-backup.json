@@ -1,0 +1,276 @@
+{
+  "generatedAt": "2026-10-05T11:57:04.203Z",
+  "reason": "orphaned lightweight result groups in TRF-CUP-2025 (no backing races, competition disallows lightweight boats)",
+  "docs": [
+    {
+      "_id": "6a2ad7a00d1ff061fa2da033",
+      "competition": "68ed0577ddf8e851c06cf16a",
+      "eventGroupId": "690e226f5463e222d54b57ef::69404f59e179b631837f8721::J1",
+      "__v": 0,
+      "boatClass": "69404f59e179b631837f8721",
+      "category": "690e226f5463e222d54b57ef",
+      "createdAt": "2026-06-11T15:43:28.339Z",
+      "entries": [
+        {
+          "athlete": "6903a8bf334e4db91a4405cd",
+          "club": "6900cd3b5de95668f09a59e6",
+          "athleteName": "",
+          "clubName": "Club Nautique de la Marine Tunisienne",
+          "lane": 4,
+          "sourceRace": "696a7eb500b70520eec09324",
+          "sourceRaceName": "M 1",
+          "status": "ok",
+          "elapsedMs": 216950,
+          "finishPosition": 1,
+          "rank": 1,
+          "points": 20
+        },
+        {
+          "athlete": "6903a8bf334e4db91a4406d2",
+          "club": "6908bdfd8a6a82fefc52c4db",
+          "athleteName": "",
+          "clubName": "Club Sportif et Culturel de la DG de Formation de Salambo",
+          "lane": 2,
+          "sourceRace": "696a7eb500b70520eec09324",
+          "sourceRaceName": "M 1",
+          "status": "ok",
+          "elapsedMs": 219080,
+          "finishPosition": 2,
+          "rank": 2,
+          "points": 12
+        },
+        {
+          "athlete": "6903a8bf334e4db91a4405bb",
+          "club": "6908bd908a6a82fefc52c4d3",
+          "athleteName": "",
+          "clubName": "Ecole de Pêche de Tabarka",
+          "lane": 1,
+          "sourceRace": "696a7eb500b70520eec09324",
+          "sourceRaceName": "M 1",
+          "status": "ok",
+          "elapsedMs": 253680,
+          "finishPosition": 3,
+          "rank": 3,
+          "points": 8
+        },
+        {
+          "athlete": "6903a8bf334e4db91a440776",
+          "club": "6908bd4e8a6a82fefc52c4cb",
+          "athleteName": "",
+          "clubName": "Club Tipaza des Activités Subaquatiques Ajim Djerba",
+          "lane": 3,
+          "sourceRace": "696a7eb500b70520eec09324",
+          "sourceRaceName": "M 1",
+          "status": "ok",
+          "elapsedMs": 263820,
+          "finishPosition": 4,
+          "rank": 4,
+          "points": 6
+        }
+      ],
+      "eventLabel": "LM 1X",
+      "locked": true,
+      "pointTable": {
+        "1": 20,
+        "2": 12,
+        "3": 8,
+        "4": 6,
+        "5": 4,
+        "6": 3,
+        "7": 2,
+        "8": 1
+      },
+      "publishedAt": "2026-06-11T15:43:28.339Z",
+      "publishedBy": "68e8ee7829e67c3f4566b915",
+      "raceIds": [
+        "696a7eb500b70520eec09324"
+      ],
+      "rankingSystem": {
+        "id": "697236c54d89b042a7fe4c04",
+        "code": "CLUB_BY_GENDER",
+        "nameEn": "Club Ranking by Gender"
+      },
+      "revision": 1,
+      "totalParticipants": 4,
+      "updatedAt": "2026-06-11T15:43:28.339Z"
+    },
+    {
+      "_id": "6a2ad7a00d1ff061fa2da034",
+      "competition": "68ed0577ddf8e851c06cf16a",
+      "eventGroupId": "690e226f5463e222d54b57ef::69404f59e179b631837f8722::J1",
+      "__v": 0,
+      "boatClass": "69404f59e179b631837f8722",
+      "category": "690e226f5463e222d54b57ef",
+      "createdAt": "2026-06-11T15:43:28.425Z",
+      "entries": [
+        {
+          "athlete": "6903a8bd334e4db91a4402a3",
+          "club": "6908bd908a6a82fefc52c4d3",
+          "athleteName": "",
+          "clubName": "Ecole de Pêche de Tabarka",
+          "lane": 1,
+          "sourceRace": "696a7f2700b70520eec0939a",
+          "sourceRaceName": "M 1",
+          "status": "ok",
+          "elapsedMs": 231960,
+          "finishPosition": 1,
+          "rank": 1,
+          "points": 20
+        },
+        {
+          "athlete": "6903a8bf334e4db91a4405ff",
+          "club": "6908bd4e8a6a82fefc52c4cb",
+          "athleteName": "",
+          "clubName": "Club Tipaza des Activités Subaquatiques Ajim Djerba",
+          "lane": 2,
+          "sourceRace": "696a7f2700b70520eec0939a",
+          "sourceRaceName": "M 1",
+          "status": "ok",
+          "elapsedMs": 249640,
+          "finishPosition": 2,
+          "rank": 2,
+          "points": 12
+        }
+      ],
+      "eventLabel": "LM 2X",
+      "locked": true,
+      "pointTable": {
+        "1": 20,
+        "2": 12,
+        "3": 8,
+        "4": 6,
+        "5": 4,
+        "6": 3,
+        "7": 2,
+        "8": 1
+      },
+      "publishedAt": "2026-06-11T15:43:28.424Z",
+      "publishedBy": "68e8ee7829e67c3f4566b915",
+      "raceIds": [
+        "696a7f2700b70520eec0939a"
+      ],
+      "rankingSystem": {
+        "id": "697236c54d89b042a7fe4c04",
+        "code": "CLUB_BY_GENDER",
+        "nameEn": "Club Ranking by Gender"
+      },
+      "revision": 1,
+      "totalParticipants": 2,
+      "updatedAt": "2026-06-11T15:43:28.425Z"
+    },
+    {
+      "_id": "6a2ad7a00d1ff061fa2da035",
+      "eventGroupId": "690e23085463e222d54b57f2::69404f59e179b631837f8722::J1",
+      "competition": "68ed0577ddf8e851c06cf16a",
+      "__v": 0,
+      "boatClass": "69404f59e179b631837f8722",
+      "category": "690e23085463e222d54b57f2",
+      "createdAt": "2026-06-11T15:43:28.502Z",
+      "entries": [
+        {
+          "athlete": "6903a8bd334e4db91a440408",
+          "club": "6908bd908a6a82fefc52c4d3",
+          "athleteName": "",
+          "clubName": "Ecole de Pêche de Tabarka",
+          "lane": 1,
+          "sourceRace": "696a7fbc00b70520eec093df",
+          "sourceRaceName": "W 1",
+          "status": "ok",
+          "elapsedMs": 282030,
+          "finishPosition": 1,
+          "rank": 1,
+          "points": 20
+        }
+      ],
+      "eventLabel": "LW 2X",
+      "locked": true,
+      "pointTable": {
+        "1": 20,
+        "2": 12,
+        "3": 8,
+        "4": 6,
+        "5": 4,
+        "6": 3,
+        "7": 2,
+        "8": 1
+      },
+      "publishedAt": "2026-06-11T15:43:28.501Z",
+      "publishedBy": "68e8ee7829e67c3f4566b915",
+      "raceIds": [
+        "696a7fbc00b70520eec093df"
+      ],
+      "rankingSystem": {
+        "id": "697236c54d89b042a7fe4c04",
+        "code": "CLUB_BY_GENDER",
+        "nameEn": "Club Ranking by Gender"
+      },
+      "revision": 1,
+      "totalParticipants": 1,
+      "updatedAt": "2026-06-11T15:43:28.502Z"
+    },
+    {
+      "_id": "6a2ad7a00d1ff061fa2da036",
+      "eventGroupId": "690e23085463e222d54b57f2::69404f59e179b631837f8721::J1",
+      "competition": "68ed0577ddf8e851c06cf16a",
+      "__v": 0,
+      "boatClass": "69404f59e179b631837f8721",
+      "category": "690e23085463e222d54b57f2",
+      "createdAt": "2026-06-11T15:43:28.579Z",
+      "entries": [
+        {
+          "athlete": "6903a8bd334e4db91a4403bb",
+          "club": "6908bd908a6a82fefc52c4d3",
+          "athleteName": "",
+          "clubName": "Ecole de Pêche de Tabarka",
+          "lane": 1,
+          "sourceRace": "696a7ff200b70520eec09450",
+          "sourceRaceName": "W 1",
+          "status": "ok",
+          "elapsedMs": 256680,
+          "finishPosition": 1,
+          "rank": 1,
+          "points": 20
+        },
+        {
+          "athlete": "6903a8bd334e4db91a44051d",
+          "club": "6900cd3b5de95668f09a59e6",
+          "athleteName": "",
+          "clubName": "Club Nautique de la Marine Tunisienne",
+          "lane": 2,
+          "sourceRace": "696a7ff200b70520eec09450",
+          "sourceRaceName": "W 1",
+          "status": "ok",
+          "elapsedMs": 283030,
+          "finishPosition": 2,
+          "rank": 2,
+          "points": 12
+        }
+      ],
+      "eventLabel": "LW 1X",
+      "locked": true,
+      "pointTable": {
+        "1": 20,
+        "2": 12,
+        "3": 8,
+        "4": 6,
+        "5": 4,
+        "6": 3,
+        "7": 2,
+        "8": 1
+      },
+      "publishedAt": "2026-06-11T15:43:28.579Z",
+      "publishedBy": "68e8ee7829e67c3f4566b915",
+      "raceIds": [
+        "696a7ff200b70520eec09450"
+      ],
+      "rankingSystem": {
+        "id": "697236c54d89b042a7fe4c04",
+        "code": "CLUB_BY_GENDER",
+        "nameEn": "Club Ranking by Gender"
+      },
+      "revision": 1,
+      "totalParticipants": 2,
+      "updatedAt": "2026-06-11T15:43:28.579Z"
+    }
+  ]
+}

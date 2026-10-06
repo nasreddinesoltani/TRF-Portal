@@ -7,6 +7,7 @@
 import RankingSystem from "../Models/rankingSystemModel.js";
 import {
   buildCompetitionRanking,
+  buildCompetitionPodiums,
   getRankingSummary,
 } from "../Services/rankingService.js";
 import {
@@ -335,6 +336,33 @@ export const getCompetitionGroupRanking = async (req, res) => {
   } catch (error) {
     console.error("Error calculating group ranking:", error);
     res.status(500).json({ message: "Failed to calculate group ranking" });
+  }
+};
+
+/**
+ * Get per-event podiums (Final A top 3) grouped by category for a competition
+ * GET /api/rankings/competition/:competitionId/podiums
+ */
+export const getCompetitionPodiums = async (req, res) => {
+  try {
+    const { competitionId } = req.params;
+    const { includeMasters } = req.query;
+
+    const options = {};
+    if (includeMasters !== undefined) {
+      options.includeMasters = includeMasters === "true";
+    }
+
+    const podiums = await buildCompetitionPodiums(competitionId, options);
+    res.json(podiums);
+  } catch (error) {
+    console.error("Error calculating competition podiums:", error.message, error.stack);
+    if (error.message === "Competition not found") {
+      return res.status(404).json({ message: "Competition not found" });
+    }
+    res
+      .status(500)
+      .json({ message: "Failed to calculate competition podiums", error: error.message });
   }
 };
 

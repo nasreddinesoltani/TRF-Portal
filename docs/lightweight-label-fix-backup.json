@@ -1,0 +1,55 @@
+{
+  "generatedAt": "2026-10-05T11:52:18.208Z",
+  "reason": "relabel lightweight result groups that lost the L marker",
+  "docs": [
+    {
+      "id": "6ac25c848413deaa5d3b47bd",
+      "oldLabel": "M 1X",
+      "newLabel": "LM 1X",
+      "competition": "69d449b52bbde69141bffa12",
+      "eventGroupId": "690e226f5463e222d54b57ef::69404f59e179b631837f8721::J5"
+    },
+    {
+      "id": "6ac25c858413deaa5d3b47be",
+      "oldLabel": "M 2X",
+      "newLabel": "LM 2X",
+      "competition": "69d449b52bbde69141bffa12",
+      "eventGroupId": "690e226f5463e222d54b57ef::69404f59e179b631837f8722::J5"
+    },
+    {
+      "id": "6ac25c878413deaa5d3b47c1",
+      "oldLabel": "W 1X",
+      "newLabel": "LW 1X",
+      "competition": "69d449b52bbde69141bffa12",
+      "eventGroupId": "690e23085463e222d54b57f2::69404f59e179b631837f8721::J5"
+    },
+    {
+      "id": "6ac25c878413deaa5d3b47c2",
+      "oldLabel": "W 2X",
+      "newLabel": "LW 2X",
+      "competition": "69d449b52bbde69141bffa12",
+      "eventGroupId": "690e23085463e222d54b57f2::69404f59e179b631837f8722::J5"
+    },
+    {
+      "id": "6ac25c8d8413deaa5d3b47c7",
+      "oldLabel": "BM 1X",
+      "newLabel": "BLM 1X",
+      "competition": "69d449b52bbde69141bffa12",
+      "eventGroupId": "69735ebc290514a4cb54fe90::69404f59e179b631837f8721::J5"
+    },
+    {
+      "id": "6ac25c8f8413deaa5d3b47c8",
+      "oldLabel": "BM 2X",
+      "newLabel": "BLM 2X",
+      "competition": "69d449b52bbde69141bffa12",
+      "eventGroupId": "69735ebc290514a4cb54fe90::69404f59e179b631837f8722::J5"
+    },
+    {
+      "id": "6ac25c928413deaa5d3b47ca",
+      "oldLabel": "BW 1X",
+      "newLabel": "BLW 1X",
+      "competition": "69d449b52bbde69141bffa12",
+      "eventGroupId": "69735f1e290514a4cb54fe96::69404f59e179b631837f8721::J5"
+    }
+  ]
+}

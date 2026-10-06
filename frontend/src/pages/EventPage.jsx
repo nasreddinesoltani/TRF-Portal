@@ -22,7 +22,6 @@ import {
   formatDayLabel,
   formatEntryName,
   formatEntryAffiliation,
-  formatEventLabel,
   formatPhaseSummary,
   formatProgressionRule,
   formatRaceLabel,
@@ -200,8 +199,7 @@ const EventPage = () => {
   const duplicatedLabelCounts = useMemo(() => {
     const counts = new Map();
     resultGroups.forEach((group) => {
-      const label =
-        formatEventLabel(group.eventLabel) || formatRaceLabel(group);
+      const label = formatRaceLabel(group);
       counts.set(label, (counts.get(label) || 0) + 1);
     });
     return counts;
@@ -634,10 +632,7 @@ const EventPage = () => {
                     const raceDate =
                       groupRaces.final?.startTime ||
                       groupRaces.heats[0]?.startTime;
-                    const labelKey =
-                      formatEventLabel(group.eventLabel) ||
-                      formatRaceLabel(group) ||
-                      "Event";
+                    const labelKey = formatRaceLabel(group) || "Event";
                     const showDateChip =
                       raceDate && (duplicatedLabelCounts.get(labelKey) || 0) > 1;
                     return (

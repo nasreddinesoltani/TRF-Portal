@@ -16,6 +16,7 @@ import {
   syncPresets,
   getCompetitionRanking,
   getCompetitionGroupRanking,
+  getCompetitionPodiums,
   getAvailableSystemsForCompetition,
 } from "../Controllers/rankingController.js";
 
@@ -55,6 +56,12 @@ router.get("/competition/:competitionId", getCompetitionRanking);
 router.get(
   "/competition/:competitionId/group/:groupKey",
   getCompetitionGroupRanking
+);
+
+// Get per-event podiums (Final A top 3) grouped by category (public)
+router.get(
+  "/competition/:competitionId/podiums",
+  getCompetitionPodiums
 );
 
 // Get available ranking systems for a competition (public)

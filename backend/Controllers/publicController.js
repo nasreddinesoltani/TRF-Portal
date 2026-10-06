@@ -12,8 +12,8 @@ export const getPublicCompetition = async (req, res) => {
     const { competitionId } = req.params;
 
     const competition = await Competition.findById(competitionId)
-      .populate("allowedCategories", "name nameAr code")
-      .populate("allowedBoatClasses", "name nameAr code")
+      .populate("allowedCategories", "abbreviation titles gender")
+      .populate("allowedBoatClasses", "code names discipline weightClass")
       .lean();
 
     if (!competition) {
@@ -63,8 +63,8 @@ export const getPublicCompetitions = async (req, res) => {
     }
 
     let competitionsQuery = Competition.find(query)
-      .populate("allowedCategories", "name nameAr code")
-      .populate("allowedBoatClasses", "name nameAr code")
+      .populate("allowedCategories", "abbreviation titles gender")
+      .populate("allowedBoatClasses", "code names discipline weightClass")
       .sort({ startDate: -1 });
 
     if (limit) {
@@ -107,8 +107,8 @@ export const getPublicCompetitionResults = async (req, res) => {
 
     // Find official published results and populate deep athlete/club details
     const results = await OfficialResult.find({ competition: competitionId })
-      .populate("category", "name nameAr code")
-      .populate("boatClass", "name nameAr code")
+      .populate("category", "abbreviation titles gender")
+      .populate("boatClass", "code names discipline weightClass")
       .populate(
         "entries.athlete",
         "firstName lastName firstNameAr lastNameAr nationalityCode nationality",
@@ -211,8 +211,8 @@ export const getPublicCompetitionProgramme = async (req, res) => {
 
     // Find all races for this competition and populate athletes, crew & clubs
     const races = await CompetitionRace.find({ competition: competitionId })
-      .populate("category", "abbreviation titles code gender")
-      .populate("boatClass", "name nameAr code")
+      .populate("category", "abbreviation titles gender")
+      .populate("boatClass", "code names discipline weightClass")
       .populate(
         "lanes.athlete",
         "firstName lastName firstNameAr lastNameAr nationalityCode nationality",
@@ -360,8 +360,8 @@ export const getPublicLive = async (req, res) => {
         { status: "completed", updatedAt: { $gte: twoHoursAgo } },
       ],
     })
-      .populate("category", "name nameAr code")
-      .populate("boatClass", "name nameAr code")
+      .populate("category", "abbreviation titles gender")
+      .populate("boatClass", "code names discipline weightClass")
       .sort({ updatedAt: -1 })
       .lean();
 

@@ -1,0 +1,122 @@
+{
+  "generatedAt": "2026-10-04T08:45:33.961Z",
+  "consolidationBackupDate": "2026-10-03T21:43:48.863Z",
+  "boatClassesDeleted": [],
+  "races": [],
+  "officialResults": [
+    {
+      "_id": "69e4be8d096baf511550d7ba",
+      "eventLabel": "M 2X"
+    },
+    {
+      "_id": "69e4be8d096baf511550d7bb",
+      "eventLabel": "W 2X"
+    },
+    {
+      "_id": "69e4be8d096baf511550d7bd",
+      "eventLabel": "BW 1X"
+    },
+    {
+      "_id": "69e4be8d096baf511550d7be",
+      "eventLabel": "BM 2X"
+    },
+    {
+      "_id": "69e4be8e096baf511550d7bf",
+      "eventLabel": "M 1X"
+    },
+    {
+      "_id": "69e4be8e096baf511550d7c1",
+      "eventLabel": "W 1X"
+    },
+    {
+      "_id": "69e4be8e096baf511550d7c3",
+      "eventLabel": "BM 1X"
+    },
+    {
+      "_id": "6a2ad7a00d1ff061fa2da033",
+      "eventLabel": "M 1X"
+    },
+    {
+      "_id": "6a2ad7a00d1ff061fa2da034",
+      "eventLabel": "M 2X"
+    },
+    {
+      "_id": "6a2ad7a00d1ff061fa2da035",
+      "eventLabel": "W 2X"
+    },
+    {
+      "_id": "6a2ad7a00d1ff061fa2da036",
+      "eventLabel": "W 1X"
+    },
+    {
+      "_id": "6a2e93ef63057d553fded0e2",
+      "eventLabel": "BW 1X"
+    },
+    {
+      "_id": "6a2e93ef63057d553fded0e4",
+      "eventLabel": "M 2X"
+    },
+    {
+      "_id": "6a2e93ef63057d553fded0e5",
+      "eventLabel": "W 1X"
+    },
+    {
+      "_id": "6a2e93ef63057d553fded0e8",
+      "eventLabel": "W 2X"
+    },
+    {
+      "_id": "6a2e93ef63057d553fded0eb",
+      "eventLabel": "M 1X"
+    },
+    {
+      "_id": "6a2e93f063057d553fded0ed",
+      "eventLabel": "BM 1X"
+    },
+    {
+      "_id": "6a2e93f063057d553fded0ee",
+      "eventLabel": "BM 2X"
+    },
+    {
+      "_id": "6ab95f5266800977cb5f7b67",
+      "eventLabel": "W 1X"
+    },
+    {
+      "_id": "6ab95f5266800977cb5f7b68",
+      "eventLabel": "M 2X"
+    },
+    {
+      "_id": "6ab95f5366800977cb5f7b70",
+      "eventLabel": "W 2X"
+    },
+    {
+      "_id": "6ab95f5366800977cb5f7b74",
+      "eventLabel": "M 1X"
+    },
+    {
+      "_id": "6ac0465a8413deaa5d3b319e",
+      "eventLabel": "M 1X"
+    },
+    {
+      "_id": "6ac0465b8413deaa5d3b31a0",
+      "eventLabel": "BM 2X"
+    },
+    {
+      "_id": "6ac0465b8413deaa5d3b31a1",
+      "eventLabel": "W 1X"
+    },
+    {
+      "_id": "6ac0465c8413deaa5d3b31a5",
+      "eventLabel": "BW 1X"
+    },
+    {
+      "_id": "6ac0465d8413deaa5d3b31a6",
+      "eventLabel": "W 2X"
+    },
+    {
+      "_id": "6ac0465d8413deaa5d3b31a7",
+      "eventLabel": "BM 1X"
+    }
+  ],
+  "competitions": [],
+  "entries": []
+}

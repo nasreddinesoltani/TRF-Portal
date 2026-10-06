@@ -19,6 +19,7 @@ import {
   DEFAULT_QUALIFY_TOP_N,
   QUALIFYING_LANE_PATTERN,
 } from "../Services/qualificationService.js";
+import { buildEventLabel } from "../Services/eventLabelService.js";
 
 // Lane limits per discipline
 // Classic: 8 lanes (standard water lanes)
@@ -1850,8 +1851,8 @@ const resolveRankingSystemForCompetition = async (
 
 const fetchRacesForEventGroup = async (competitionId, eventGroupId) => {
   const allRaces = await CompetitionRace.find({ competition: competitionId })
-    .populate({ path: "category", select: "abbreviation titles" })
-    .populate({ path: "boatClass", select: "code names" })
+    .populate({ path: "category", select: "abbreviation titles gender" })
+    .populate({ path: "boatClass", select: "code names weightClass" })
     .populate({
       path: "lanes.athlete",
       select: "firstName lastName firstNameAr lastNameAr licenseNumber isForeign nationalityCode representingNation",
@@ -1911,8 +1912,8 @@ export const listOfficialResultGroups = asyncHandler(async (req, res) => {
     .select(
       "_id category boatClass journeyIndex name order startTime status eventGroupId",
     )
-    .populate({ path: "category", select: "abbreviation titles" })
-    .populate({ path: "boatClass", select: "code names" })
+    .populate({ path: "category", select: "abbreviation titles gender" })
+    .populate({ path: "boatClass", select: "code names weightClass" })
     .lean();
 
   const published = await OfficialResult.find({ competition: competition._id })
@@ -1929,9 +1930,7 @@ export const listOfficialResultGroups = asyncHandler(async (req, res) => {
     if (!groups.has(groupId)) {
       groups.set(groupId, {
         eventGroupId: groupId,
-        eventLabel: `${race.category?.abbreviation || ""} ${
-          race.boatClass?.code || ""
-        }`.trim(),
+        eventLabel: buildEventLabel(race.category, race.boatClass),
         category: race.category || null,
         boatClass: race.boatClass || null,
         raceCount: 0,
@@ -2016,9 +2015,7 @@ const publishOfficialEventGroupInternal = async ({
   const officialPayload = {
     competition: competition._id,
     eventGroupId: normalizedGroupId,
-    eventLabel: `${firstRace?.category?.abbreviation || ""} ${
-      firstRace?.boatClass?.code || ""
-    }`.trim(),
+    eventLabel: buildEventLabel(firstRace?.category, firstRace?.boatClass),
     category: firstRace?.category?._id || firstRace?.category,
     boatClass: firstRace?.boatClass?._id || firstRace?.boatClass,
     raceIds: completedRaces.map((race) => race._id),
@@ -2120,9 +2117,7 @@ export const getProvisionalEventResults = asyncHandler(async (req, res) => {
 
   return res.json({
     eventGroupId,
-    eventLabel: `${firstRace?.category?.abbreviation || ""} ${
-      firstRace?.boatClass?.code || ""
-    }`.trim(),
+    eventLabel: buildEventLabel(firstRace?.category, firstRace?.boatClass),
     category: firstRace?.category || null,
     boatClass: firstRace?.boatClass || null,
     raceIds: completedRaces.map((race) => race._id),
@@ -2802,8 +2797,8 @@ export const getQualifiedCrews = asyncHandler(async (req, res) => {
     competition: competition._id,
     status: "completed",
   })
-    .populate("category", "abbreviation titles")
-    .populate("boatClass", "code names")
+    .populate("category", "abbreviation titles gender")
+    .populate("boatClass", "code names weightClass")
     .populate("lanes.club", "name code")
     .populate("lanes.athlete", "firstName lastName firstNameAr lastNameAr")
     .populate("lanes.crew", "firstName lastName firstNameAr lastNameAr")
@@ -2878,8 +2873,8 @@ export const generateFinalJourneyRaces = asyncHandler(async (req, res) => {
     competition: competition._id,
     status: "completed",
   })
-    .populate("category", "abbreviation titles")
-    .populate("boatClass", "code names")
+    .populate("category", "abbreviation titles gender")
+    .populate("boatClass", "code names weightClass")
     .populate("lanes.club", "name code")
     .populate("lanes.athlete", "firstName lastName firstNameAr lastNameAr")
     .populate("lanes.crew", "firstName lastName firstNameAr lastNameAr")
