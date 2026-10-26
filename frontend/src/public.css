@@ -1079,9 +1079,12 @@ html {
   font-weight: 700;
   color: var(--pub-text-white);
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+/* Doubles/fours: each rower of the crew sits on his own line so the
+   full names stay readable instead of being ellipsis-truncated. */
+.pub-podium__name-line {
+  display: block;
 }
 
 .pub-podium__club {
@@ -2765,7 +2768,7 @@ html {
   margin-bottom: 14px;
 }
 
-button.pub-day-section__header {
+.pub-day-section__header {
   display: flex;
   width: 100%;
   align-items: center;
@@ -2780,15 +2783,21 @@ button.pub-day-section__header {
   border-left: 3px solid var(--pub-accent);
   border-radius: var(--pub-radius);
   cursor: pointer;
+  user-select: none;
   transition:
     border-color var(--pub-duration) var(--pub-ease),
     background var(--pub-duration) var(--pub-ease);
 }
 
-button.pub-day-section__header:hover {
+.pub-day-section__header:hover {
   border-color: var(--pub-accent-mid);
   border-left-color: var(--pub-accent);
   background: var(--pub-card-hover);
+}
+
+.pub-day-section__header:focus-visible {
+  outline: 2px solid var(--pub-accent);
+  outline-offset: 2px;
 }
 
 .pub-day-section__title {
@@ -2940,4 +2949,184 @@ button.pub-day-section__header:hover {
   .pub-result-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Events page (full federation calendar) ─────────────────── */
+
+.pub-events-hero {
+  max-width: 720px;
+}
+
+.pub-events-hero__title {
+  margin: 14px 0 12px;
+  font-size: clamp(30px, 4.5vw, 44px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: var(--pub-text-white);
+}
+
+.pub-events-hero__title span {
+  background: linear-gradient(120deg, var(--pub-accent), #7c8cff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.pub-events-hero__subtitle {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--pub-text-secondary);
+}
+
+.pub-events-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 26px;
+}
+
+.pub-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pub-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--pub-text-secondary);
+  background: transparent;
+  border: 1px solid var(--pub-border);
+  border-radius: var(--pub-radius-pill);
+  cursor: pointer;
+  transition:
+    background var(--pub-duration) var(--pub-ease),
+    border-color var(--pub-duration) var(--pub-ease),
+    color var(--pub-duration) var(--pub-ease);
+}
+
+.pub-chip:hover {
+  border-color: var(--pub-accent-mid);
+  color: var(--pub-text-white);
+}
+
+.pub-chip.is-active {
+  background: var(--pub-accent-soft);
+  border-color: var(--pub-accent-mid);
+  color: var(--pub-accent);
+}
+
+.pub-chip__count {
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: var(--pub-radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--pub-text-secondary);
+}
+
+.pub-chip.is-active .pub-chip__count {
+  background: var(--pub-accent-mid);
+  color: var(--pub-text-white);
+}
+
+.pub-season-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--pub-text-secondary);
+  background: var(--pub-bg);
+  border: 1px solid var(--pub-border);
+  border-radius: var(--pub-radius-pill);
+}
+
+.pub-season-select select {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--pub-text-white);
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+}
+
+.pub-season-select select option {
+  background: #10141f;
+  color: var(--pub-text-white);
+}
+
+/* Scope badges on competition cards */
+.pub-badge--scope-national {
+  background: rgba(100, 116, 139, 0.1);
+  color: var(--pub-text-secondary);
+  border-color: rgba(100, 116, 139, 0.18);
+}
+
+.pub-badge--scope-intl {
+  background: rgba(124, 140, 255, 0.12);
+  color: #a5b0ff;
+  border-color: rgba(124, 140, 255, 0.25);
+}
+
+.pub-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .pub-events-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Secondary (ghost) pill for the signed-in navbar — Logout next to Dashboard */
+.pub-nav__login--ghost {
+  background: transparent;
+  color: var(--pub-text-white, #fff);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: none;
+}
+
+.pub-nav__login--ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  filter: none;
+}
+
+/* Journey full-results button inside a day header: no auto-margin push */
+.pub-day-section__meta .pub-btn-pdf {
+  margin-left: 0;
+}
+
+/* Results status badges: unofficial (amber) / official (green) / revised (red) */
+.pub-badge--unofficial {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.pub-badge--official {
+  background: var(--pub-success-soft, rgba(16, 185, 129, 0.12));
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.pub-badge--revised {
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.32);
 }

@@ -56,6 +56,18 @@ export const INTERNATIONAL_EVENTS = [
 export const getEventBySlug = (slug) =>
   INTERNATIONAL_EVENTS.find((event) => event.slug === slug) || null;
 
+// competitionId → slug, so DB-driven cards can link a competition that has a
+// curated Event page to /events/:slug instead of the generic detail page.
+const slugByCompetitionId = new Map(
+  INTERNATIONAL_EVENTS.filter((event) => event.competitionId).map((event) => [
+    String(event.competitionId),
+    event.slug,
+  ]),
+);
+
+export const getEventSlugByCompetitionId = (competitionId) =>
+  slugByCompetitionId.get(String(competitionId || "")) || null;
+
 /**
  * Lifecycle state of an event, derived from its dates.
  * Returns "upcoming" | "ongoing" | "completed".

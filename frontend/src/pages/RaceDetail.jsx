@@ -568,6 +568,9 @@ const RaceDetail = () => {
   const [showResultsEntry, setShowResultsEntry] = useState(false);
   const [resultsForm, setResultsForm] = useState({});
   const [timeErrors, setTimeErrors] = useState({});
+  // Published state of this race's event group + the REVISED checkbox.
+  const [groupStatusInfo, setGroupStatusInfo] = useState(null);
+  const [revisedCheckbox, setRevisedCheckbox] = useState(false);
   const [registrationEntries, setRegistrationEntries] = useState([]);
   const [restoringEntryId, setRestoringEntryId] = useState("");
 
@@ -1040,6 +1043,35 @@ const RaceDetail = () => {
       );
 
       if (!res.ok) throw new Error("Failed to save results");
+
+      // Sync the REVISED flag on the published event group when the entry
+      // panel changed it.
+      if (groupStatusInfo?.published && race?.eventGroupId) {
+        const revisedRes = await fetch(
+          `${API_BASE_URL}/api/competitions/${competitionId}/races/official-results/${encodeURIComponent(
+            race.eventGroupId,
+          )}/revised`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ revised: revisedCheckbox }),
+          },
+        );
+        if (!revisedRes.ok) {
+          const payload = await revisedRes.json().catch(() => ({}));
+          toast.warning(
+            payload.message ||
+              "Results saved, but the revised flag could not be updated",
+          );
+        }
+        setGroupStatusInfo((info) =>
+          info ? { ...info, revised: revisedCheckbox } : info,
+        );
+      }
+
       toast.success("Results saved successfully");
       setShowResultsEntry(false);
       fetchData();
@@ -1049,6 +1081,48 @@ const RaceDetail = () => {
       setSaving(false);
     }
   };
+
+  // Published state of this race's event group — drives the REVISED checkbox
+  // and the UNOFFICIAL/OFFICIAL badge in the results entry panel.
+  useEffect(() => {
+    const loadGroupStatus = async () => {
+      if (!showResultsEntry || !token || !competitionId || !race?.eventGroupId) {
+        setGroupStatusInfo(null);
+        setRevisedCheckbox(false);
+        return;
+      }
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/competitions/${competitionId}/races/official-results/groups`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        if (!res.ok) {
+          setGroupStatusInfo(null);
+          return;
+        }
+        const groups = await res.json();
+        const match = Array.isArray(groups)
+          ? groups.find((group) => group.eventGroupId === race.eventGroupId)
+          : null;
+        setGroupStatusInfo(
+          match
+            ? {
+                published: Boolean(match.published),
+                status: match.status || "unofficial",
+                revised: Boolean(match.revised),
+              }
+            : null,
+        );
+        setRevisedCheckbox(Boolean(match?.revised));
+      } catch {
+        setGroupStatusInfo(null);
+      }
+    };
+
+    loadGroupStatus();
+  }, [showResultsEntry, race?.eventGroupId, competitionId, token]);
 
   // --- PDF Export Logic (Full implementation) ---
   const exportPDF = async (isResults = false) => {
@@ -2371,9 +2445,59 @@ const RaceDetail = () => {
                       disabled={saving}
                       className="bg-indigo-600 hover:bg-indigo-700"
                     >
-                      <Trophy className="mr-2 h-4 w-4" /> Official Publish
+                      <Trophy className="mr-2 h-4 w-4" /> Save &amp; Complete
                     </Button>
                   </div>
+
+                  {race?.eventGroupId && (
+                    <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                      {groupStatusInfo?.published ? (
+                        <span
+                          className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide ${
+                            (groupStatusInfo.status || "unofficial") ===
+                            "official"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {(groupStatusInfo.status || "unofficial") ===
+                          "official"
+                            ? "Official"
+                            : "Unofficial"}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-500">
+                          Not published yet — publish this event group from the
+                          race generator's official results workflow.
+                        </span>
+                      )}
+                      <label
+                        className={`flex items-center gap-2 text-xs font-medium text-slate-700 ${
+                          groupStatusInfo?.published ? "" : "opacity-50"
+                        }`}
+                        title={
+                          groupStatusInfo?.published
+                            ? "Tick when the published result of this event was revised"
+                            : "Available after the event group is published"
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={revisedCheckbox}
+                          disabled={!groupStatusInfo?.published || saving}
+                          onChange={(event) =>
+                            setRevisedCheckbox(event.target.checked)
+                          }
+                          className="h-4 w-4"
+                        />
+                        Mark as revised
+                      </label>
+                      <span className="text-[11px] text-slate-500">
+                        The exported PDF shows a red REVISED marker for revised
+                        events.
+                      </span>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ) : (

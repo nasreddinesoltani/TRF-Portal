@@ -58,8 +58,6 @@ export const Navbar = () => {
     : null;
 
   useEffect(() => {
-    if (isAuthenticated) return undefined;
-
     const updateScrollState = () => {
       setIsScrolled(window.scrollY > 12);
     };
@@ -68,7 +66,7 @@ export const Navbar = () => {
     window.addEventListener("scroll", updateScrollState, { passive: true });
 
     return () => window.removeEventListener("scroll", updateScrollState);
-  }, [isAuthenticated]);
+  }, []);
 
   const navigationSections = useMemo(() => {
     const sections = [
@@ -179,9 +177,11 @@ export const Navbar = () => {
       .filter((section) => section.links.length > 0);
   }, [role, clubId]);
 
-  // ─── Public Navbar (Dark, Glassmorphism) ───
-  if (!isAuthenticated) {
-    return (
+  // ─── Public navbar — always visible. Signed-in users keep the federation
+  // menu and logo (which always lead back to the home page); their admin
+  // shortcuts live in the ribbon below instead of replacing this header. ───
+  return (
+    <>
       <nav className={`pub-nav ${isScrolled ? "pub-nav--scrolled" : ""}`}>
         <div className="pub-nav__inner">
           <button
@@ -208,7 +208,7 @@ export const Navbar = () => {
             </button>
             <button
               className="pub-nav__link"
-              onClick={() => navigate("/#intl-events")}
+              onClick={() => navigate("/events")}
             >
               Events
             </button>
@@ -256,91 +256,85 @@ export const Navbar = () => {
             >
               Results
             </button>
-            <button
-              className="pub-nav__login"
-              onClick={() => navigate("/login")}
-            >
-              Admin Login
-            </button>
+            {isAuthenticated ? (
+              <>
+                <button
+                  className="pub-nav__login"
+                  onClick={() => navigate("/dashboard")}
+                >
+                  Dashboard
+                </button>
+                <button
+                  className="pub-nav__login pub-nav__login--ghost"
+                  onClick={handleLogout}
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <button
+                className="pub-nav__login"
+                onClick={() => navigate("/login")}
+              >
+                Admin Login
+              </button>
+            )}
           </div>
         </div>
       </nav>
-    );
-  }
 
-  // ─── Admin Navbar (Authenticated) ───
-  return (
-    <nav className="border-b border-white/10 bg-slate-950 text-white shadow-lg">
-      <div className="mx-auto w-full max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div
-              className="flex cursor-pointer items-center gap-2"
-              onClick={() => navigate("/dashboard")}
-            >
-              <div className="flex flex-col">
-                <span className="text-xs uppercase tracking-[0.28em] text-white/50">
-                  TRF Portal
-                </span>
-                <span className="text-2xl font-semibold leading-tight text-white">
-                  Federation Control Center
-                </span>
+      {isAuthenticated && (
+        <nav className="border-b border-white/10 bg-slate-950 text-white shadow-lg">
+          <div className="mx-auto w-full max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                {navigationSections.map((section) => (
+                  <div
+                    key={section.key}
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    <span className="text-[0.625rem] uppercase tracking-[0.32em] text-white/50">
+                      {section.label}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {section.links.map((link) => (
+                        <Button
+                          key={link.key}
+                          type="button"
+                          variant="ghost"
+                          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/90 transition hover:border-white/20 hover:bg-white/15 hover:text-white"
+                          onClick={() => navigate(link.to)}
+                        >
+                          {link.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex flex-col text-right">
-                <span className="text-xs uppercase tracking-wide text-white/60">
-                  Welcome
-                </span>
-                <span className="text-sm font-semibold text-white">
-                  {user?.firstName || "User"}
-                </span>
-              </div>
-              {roleChipLabel ? (
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${roleChipClass}`}
-                >
-                  {roleChipLabel}
-                </span>
-              ) : null}
-              <Button
-                onClick={handleLogout}
-                variant="outline"
-                className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-              >
-                Logout
-              </Button>
-            </div>
-          </div>
 
-          <div className="flex flex-col gap-3 rounded-xl bg-white/5 p-3 shadow-inner">
-            {navigationSections.map((section) => (
-              <div
-                key={section.key}
-                className="flex flex-wrap items-center gap-2"
-              >
-                <span className="text-[0.625rem] uppercase tracking-[0.32em] text-white/50">
-                  {section.label}
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {section.links.map((link) => (
-                    <Button
-                      key={link.key}
-                      type="button"
-                      variant="ghost"
-                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/90 transition hover:border-white/20 hover:bg-white/15 hover:text-white"
-                      onClick={() => navigate(link.to)}
-                    >
-                      {link.label}
-                    </Button>
-                  ))}
+              <div className="flex items-center gap-3">
+                <div className="flex flex-col text-right">
+                  <span className="text-xs uppercase tracking-wide text-white/60">
+                    Welcome
+                  </span>
+                  <span className="text-sm font-semibold text-white">
+                    {user?.firstName || "User"}
+                  </span>
                 </div>
+                {roleChipLabel ? (
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${roleChipClass}`}
+                  >
+                    {roleChipLabel}
+                  </span>
+                ) : null}
               </div>
-            ))}
+            </div>
           </div>
-        </div>
-      </div>
-    </nav>
+        </nav>
+      )}
+    </>
   );
 };
 

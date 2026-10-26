@@ -136,11 +136,17 @@ const buildAssignmentKey = ({
   crewIds,
 }) => {
   const normalizedCrewIds = toSortedUniqueIds(crewIds);
-  const participantKey = normalizedCrewIds.length
-    ? `crew:${normalizedCrewIds.join("|")}`
-    : athleteId
-      ? `athlete:${athleteId}`
-      : "";
+  // A one-member crew is the same participant as that member alone: races
+  // have stored singles both as `athlete`-only lanes and as `athlete` plus a
+  // one-member `crew`, so both shapes must key identically.
+  const participantKey =
+    normalizedCrewIds.length > 1
+      ? `crew:${normalizedCrewIds.join("|")}`
+      : normalizedCrewIds.length === 1
+        ? `athlete:${normalizedCrewIds[0]}`
+        : athleteId
+          ? `athlete:${athleteId}`
+          : "";
 
   if (!participantKey) {
     return null;
@@ -1022,6 +1028,8 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
       const crewIds = Array.isArray(entry.crew)
         ? entry.crew.map((c) => c?._id).filter(Boolean)
         : [];
+      const athleteId =
+        crewIds.length > 1 ? undefined : entry.athlete?._id || crewIds[0];
 
       return {
         lane: laneNumbers[laneIndex],
@@ -1029,9 +1037,12 @@ export const autoGenerateRaces = asyncHandler(async (req, res) => {
         // the PDF would render the single-athlete name instead of the crew.
         // A lone member of an incomplete crew still has to show up somewhere,
         // so fall back to that member rather than leaving the lane blank.
-        athlete:
-          crewIds.length > 1 ? undefined : entry.athlete?._id || crewIds[0],
-        crew: crewIds,
+        athlete: athleteId,
+        // A single rower lives in `athlete` alone — repeating him as a
+        // one-member crew made the public results print the name twice.
+        crew: athleteId
+          ? crewIds.filter((id) => String(id) !== String(athleteId))
+          : crewIds,
         club: entry.clubId || undefined,
         seed: entry.seed,
         notes: entry.notes,
@@ -1917,7 +1928,7 @@ export const listOfficialResultGroups = asyncHandler(async (req, res) => {
     .lean();
 
   const published = await OfficialResult.find({ competition: competition._id })
-    .select("eventGroupId publishedAt revision locked rankingSystem")
+    .select("eventGroupId publishedAt revision locked rankingSystem status revised")
     .lean();
   const publishedMap = new Map(
     published.map((item) => [item.eventGroupId, item]),
@@ -1957,6 +1968,8 @@ export const listOfficialResultGroups = asyncHandler(async (req, res) => {
         publishedAt: official?.publishedAt,
         revision: official?.revision,
         locked: official?.locked,
+        status: official?.status || "unofficial",
+        revised: Boolean(official?.revised),
         rankingSystem: official?.rankingSystem || null,
       };
     })
@@ -2033,6 +2046,12 @@ const publishOfficialEventGroupInternal = async ({
     publishedBy: userId,
     revision: existing ? Number(existing.revision || 1) + 1 : 1,
     locked: true,
+    // Publishing always (re)creates the group as UNOFFICIAL; a separate
+    // "mark official" step flips it after jury verification. A republish
+    // keeps the group's current official status and REVISED marker.
+    status: existing?.status || "unofficial",
+    revised: Boolean(existing?.revised),
+    revisedAt: existing?.revisedAt || undefined,
   };
 
   const official = await OfficialResult.findOneAndUpdate(
@@ -2043,6 +2062,21 @@ const publishOfficialEventGroupInternal = async ({
     { $set: officialPayload },
     { new: true, upsert: true },
   ).lean();
+
+  // Keep the competition-level status in sync with the group lifecycle.
+  const groupStatus = official?.status || "unofficial";
+  if (competition.resultsStatus !== groupStatus) {
+    const competitionUpdate = { resultsStatus: groupStatus };
+    if (groupStatus === "official") {
+      competitionUpdate.resultsPublishedAt =
+        competition.resultsPublishedAt || new Date();
+    }
+    await Competition.updateOne(
+      { _id: competition._id },
+      { $set: competitionUpdate },
+    );
+    competition.resultsStatus = groupStatus;
+  }
 
   return { official, existed: Boolean(existing) };
 };
@@ -2262,6 +2296,110 @@ export const unpublishOfficialEventResults = asyncHandler(async (req, res) => {
 
   return res.json({ success: true, eventGroupId });
 });
+
+// Jury verification step: flip a published group from UNOFFICIAL to OFFICIAL.
+export const markOfficialEventGroupResults = asyncHandler(async (req, res) => {
+  const { competitionId, eventGroupId } = req.params;
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const official = await OfficialResult.findOneAndUpdate(
+    {
+      competition: competition._id,
+      eventGroupId: eventGroupId.toString().trim(),
+    },
+    { $set: { status: "official" } },
+    { new: true },
+  ).lean();
+
+  if (!official) {
+    return res
+      .status(404)
+      .json({ message: "Official result not found — publish it first" });
+  }
+
+  const competitionUpdate = { resultsStatus: "official" };
+  competitionUpdate.resultsPublishedAt =
+    competition.resultsPublishedAt || new Date();
+  await Competition.updateOne(
+    { _id: competition._id },
+    { $set: competitionUpdate },
+  );
+
+  return res.json(official);
+});
+
+// Results-entry page flag: the published result was revised after publication.
+export const setEventGroupRevised = asyncHandler(async (req, res) => {
+  const { competitionId, eventGroupId } = req.params;
+  const { revised } = req.body || {};
+
+  if (typeof revised !== "boolean") {
+    return res
+      .status(400)
+      .json({ message: "revised (boolean) is required in the body" });
+  }
+
+  const competition = await resolveCompetitionOrRespond(competitionId, res);
+  if (!competition) {
+    return;
+  }
+
+  const official = await OfficialResult.findOneAndUpdate(
+    {
+      competition: competition._id,
+      eventGroupId: eventGroupId.toString().trim(),
+    },
+    {
+      $set: {
+        revised,
+        revisedAt: revised ? new Date() : null,
+      },
+    },
+    { new: true },
+  ).lean();
+
+  if (!official) {
+    return res
+      .status(404)
+      .json({ message: "Official result not found — publish it first" });
+  }
+
+  return res.json(official);
+});
+
+  // Bulk jury verification: flip every published UNOFFICIAL group of the
+  // competition to OFFICIAL in one go. Groups published before the
+  // status field existed (no `status`) are treated as unofficial.
+  export const markAllOfficialOfficialResults = asyncHandler(async (req, res) => {
+    const { competitionId } = req.params;
+    const competition = await resolveCompetitionOrRespond(competitionId, res);
+    if (!competition) {
+      return;
+    }
+
+    const { modifiedCount } = await OfficialResult.updateMany(
+      {
+        competition: competition._id,
+        $or: [{ status: "unofficial" }, { status: { $exists: false } }],
+      },
+      { $set: { status: "official" } },
+    );
+
+    await Competition.updateOne(
+      { _id: competition._id },
+      {
+        $set: {
+          resultsStatus: "official",
+          resultsPublishedAt: competition.resultsPublishedAt || new Date(),
+        },
+      },
+    );
+
+    return res.json({ success: true, officialised: modifiedCount });
+  });
 
 export const listCompetitionPenalties = asyncHandler(async (req, res) => {
   const { competitionId } = req.params;
@@ -3002,12 +3140,16 @@ export const generateFinalJourneyRaces = asyncHandler(async (req, res) => {
       const phase = getRacePhase("Final", chunkIndex + 1, "alphabetic");
       const lanes = chunk.map((crew, laneIndex) => {
         const crewIds = Array.isArray(crew.crew) ? crew.crew : [];
+        const athleteId = crewIds.length > 1 ? undefined : crewIds[0];
         return {
           lane: QUALIFYING_LANE_PATTERN[laneIndex],
           // Same convention as autoGenerateRaces: a multi-athlete crew lane
-          // carries no separate "athlete"; singles keep their rower visible.
-          athlete: crewIds.length > 1 ? undefined : crewIds[0],
-          crew: crewIds,
+          // carries no separate "athlete"; a single rower lives in `athlete`
+          // alone so his name is not joined twice.
+          athlete: athleteId,
+          crew: athleteId
+            ? crewIds.filter((id) => String(id) !== String(athleteId))
+            : crewIds,
           crewNumber: crewIds.length > 1 ? crew.crewNumber || undefined : undefined,
           club: crew.club || undefined,
           seed: crew.seed,

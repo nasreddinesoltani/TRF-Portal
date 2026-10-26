@@ -18,6 +18,9 @@ import {
   getOfficialEventResults,
   publishOfficialEventResults,
   unpublishOfficialEventResults,
+  markOfficialEventGroupResults,
+  setEventGroupRevised,
+  markAllOfficialOfficialResults,
   autoAssignEventGroups,
   publishAllReadyOfficialResults,
   listCompetitionPenalties,
@@ -107,6 +110,18 @@ router
 router
   .route("/official-results/auto-group")
   .post(allowRoles("admin", "jury_president"), autoAssignEventGroups);
+
+router
+  .route("/official-results/:eventGroupId/official")
+  .post(allowRoles("admin", "jury_president"), markOfficialEventGroupResults);
+
+router
+  .route("/official-results/:eventGroupId/revised")
+  .post(allowRoles("admin", "jury_president"), setEventGroupRevised);
+
+router
+  .route("/official-results/mark-all-official")
+  .post(allowRoles("admin", "jury_president"), markAllOfficialOfficialResults);
 
 router
   .route("/penalties")

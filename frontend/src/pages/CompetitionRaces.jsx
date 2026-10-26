@@ -1145,11 +1145,17 @@ const buildAssignmentKey = ({
   crewIds,
 }) => {
   const normalizedCrewIds = toSortedUniqueIds(crewIds);
-  const participantKey = normalizedCrewIds.length
-    ? `crew:${normalizedCrewIds.join("|")}`
-    : athleteId
-      ? `athlete:${athleteId}`
-      : "";
+  // Mirrors the backend: a one-member crew keys as that member alone, since
+  // singles appear both as `athlete`-only lanes and as athlete + one-member
+  // crew depending on when the race was generated.
+  const participantKey =
+    normalizedCrewIds.length > 1
+      ? `crew:${normalizedCrewIds.join("|")}`
+      : normalizedCrewIds.length === 1
+        ? `athlete:${normalizedCrewIds[0]}`
+        : athleteId
+          ? `athlete:${athleteId}`
+          : "";
 
   if (!participantKey) {
     return null;
@@ -2965,12 +2971,14 @@ const CompetitionRaces = () => {
   const [loadingOfficialPreview, setLoadingOfficialPreview] = useState(false);
   const [publishingOfficialResult, setPublishingOfficialResult] =
     useState(false);
+  const [markingOfficialResult, setMarkingOfficialResult] = useState(false);
   const [unpublishingOfficialResult, setUnpublishingOfficialResult] =
     useState(false);
   const [autoGroupingOfficialResults, setAutoGroupingOfficialResults] =
     useState(false);
   const [publishingAllOfficialResults, setPublishingAllOfficialResults] =
     useState(false);
+  const [markingAllOfficial, setMarkingAllOfficial] = useState(false);
   const [competitionPenalties, setCompetitionPenalties] = useState([]);
   const [loadingCompetitionPenalties, setLoadingCompetitionPenalties] =
     useState(false);
@@ -3014,7 +3022,11 @@ const CompetitionRaces = () => {
     const published = officialResultGroups.filter(
       (group) => group.published,
     ).length;
-    return { total, ready, published };
+    const unofficial = officialResultGroups.filter(
+      (group) =>
+        group.published && (group.status || "unofficial") !== "official",
+    ).length;
+    return { total, ready, published, unofficial };
   }, [officialResultGroups]);
 
   const requiredCrewSize = useMemo(() => {
@@ -4199,8 +4211,8 @@ const CompetitionRaces = () => {
     const isRepublish = Boolean(publishedOfficialResult);
     const proceed = window.confirm(
       isRepublish
-        ? "This will republish and create a new official revision. Continue?"
-        : "Publish official results for this event group now?",
+        ? "This will republish and create a new revision. Results stay in their current official/unofficial state. Continue?"
+        : "Publish results for this event group as UNOFFICIAL? A jury can mark them official afterwards.",
     );
     if (!proceed) {
       return;
@@ -4229,7 +4241,7 @@ const CompetitionRaces = () => {
         throw new Error(payload.message || "Failed to publish official result");
       }
 
-      toast.success("Official results published");
+      toast.success("Results published (UNOFFICIAL)");
       await loadOfficialResultGroups();
       await loadOfficialPreview();
     } catch (error) {
@@ -4245,6 +4257,55 @@ const CompetitionRaces = () => {
     loadOfficialResultGroups,
     publishedOfficialResult,
     selectedOfficialGroup,
+    selectedOfficialGroupId,
+    token,
+  ]);
+
+  const markOfficialResult = useCallback(async () => {
+    if (!token || !competitionDocumentId || !selectedOfficialGroupId) {
+      return;
+    }
+
+    const proceed = window.confirm(
+      "After jury verification, mark these results OFFICIAL?",
+    );
+    if (!proceed) {
+      return;
+    }
+
+    setMarkingOfficialResult(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/${encodeURIComponent(
+          selectedOfficialGroupId,
+        )}/official`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Failed to mark results official");
+      }
+
+      toast.success("Results marked OFFICIAL");
+      await loadOfficialResultGroups();
+      await loadOfficialPreview();
+    } catch (error) {
+      console.error("Failed to mark results official", error);
+      toast.error(error.message || "Failed to mark results official");
+    } finally {
+      setMarkingOfficialResult(false);
+    }
+  }, [
+    competitionDocumentId,
+    loadOfficialPreview,
+    loadOfficialResultGroups,
     selectedOfficialGroupId,
     token,
   ]);
@@ -4407,6 +4468,59 @@ const CompetitionRaces = () => {
     loadOfficialPreview,
     loadOfficialResultGroups,
     officialWorkflowStats.ready,
+    token,
+  ]);
+
+  const markAllOfficial = useCallback(async () => {
+    if (!token || !competitionDocumentId) {
+      return;
+    }
+    if (officialWorkflowStats.unofficial === 0) {
+      toast.error("No unofficial published groups to mark official.");
+      return;
+    }
+
+    const proceed = window.confirm(
+      `After jury verification, mark ALL ${officialWorkflowStats.unofficial} unofficial published groups OFFICIAL?`,
+    );
+    if (!proceed) {
+      return;
+    }
+
+    setMarkingAllOfficial(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/competitions/${competitionDocumentId}/races/official-results/mark-all-official`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Failed to mark all groups official");
+      }
+
+      toast.success(
+        `Marked ${payload.officialised || 0} group${(payload.officialised || 0) === 1 ? "" : "s"} OFFICIAL`,
+      );
+      await loadOfficialResultGroups();
+      await loadOfficialPreview();
+    } catch (error) {
+      console.error("Failed to mark all groups official", error);
+      toast.error(error.message || "Failed to mark all groups official");
+    } finally {
+      setMarkingAllOfficial(false);
+    }
+  }, [
+    competitionDocumentId,
+    loadOfficialPreview,
+    loadOfficialResultGroups,
+    officialWorkflowStats.unofficial,
     token,
   ]);
 
@@ -14157,7 +14271,8 @@ const CompetitionRaces = () => {
                       </h3>
                       <p className="mt-1 text-xs text-slate-600">
                         Step 1: group races. Step 2: review provisional. Step 3:
-                        publish locked official results.
+                        publish (unofficial). Step 4: after jury verification,
+                        mark official.
                       </p>
 
                       <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
@@ -14196,7 +14311,12 @@ const CompetitionRaces = () => {
                                 {group.eventLabel || group.eventGroupId} (
                                 {group.completedRaceCount}/{group.raceCount}{" "}
                                 done)
-                                {group.published ? " - published" : ""}
+                                {group.published
+                                  ? ` - published (${
+                                      group.status || "unofficial"
+                                    })`
+                                  : ""}
+                                {group.revised ? " - REVISED" : ""}
                               </option>
                             ))}
                           </Select>
@@ -14269,7 +14389,27 @@ const CompetitionRaces = () => {
                         >
                           {publishingOfficialResult
                             ? "Publishing..."
-                            : "Publish official"}
+                            : "Publish (Unofficial)"}
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={markOfficialResult}
+                          disabled={
+                            !selectedOfficialGroupId ||
+                            !publishedOfficialResult ||
+                            (selectedOfficialGroup?.status || "unofficial") ===
+                              "official" ||
+                            markingOfficialResult
+                          }
+                          variant="outline"
+                          title="After jury verification: mark these results OFFICIAL"
+                        >
+                          {markingOfficialResult
+                            ? "Marking..."
+                            : (selectedOfficialGroup?.status ||
+                                "unofficial") === "official"
+                              ? "Official ✓"
+                              : "Mark official"}
                         </Button>
                         <Button
                           type="button"
@@ -14286,6 +14426,20 @@ const CompetitionRaces = () => {
                         </Button>
                         <Button
                           type="button"
+                          onClick={markAllOfficial}
+                          disabled={
+                            markingAllOfficial ||
+                            officialWorkflowStats.unofficial === 0
+                          }
+                          variant="outline"
+                          title="After jury verification: mark every published unofficial group OFFICIAL"
+                        >
+                          {markingAllOfficial
+                            ? "Marking all..."
+                            : `Mark all official (${officialWorkflowStats.unofficial})`}
+                        </Button>
+                        <Button
+                          type="button"
                           variant="outline"
                           onClick={unpublishOfficialResult}
                           disabled={
@@ -14299,9 +14453,29 @@ const CompetitionRaces = () => {
                             : "Unpublish"}
                         </Button>
                         {publishedOfficialResult ? (
-                          <span className="text-xs text-emerald-700 font-medium md:justify-self-end">
-                            Published revision{" "}
-                            {publishedOfficialResult.revision}
+                          <span className="text-xs font-medium md:justify-self-end">
+                            <span
+                              className={
+                                (publishedOfficialResult.status ||
+                                  "unofficial") === "official"
+                                  ? "text-emerald-700"
+                                  : "text-amber-700"
+                              }
+                            >
+                              {(publishedOfficialResult.status ||
+                                "unofficial") === "official"
+                                ? "OFFICIAL"
+                                : "UNOFFICIAL"}
+                            </span>
+                            {publishedOfficialResult.revised ? (
+                              <span className="ml-2 text-rose-600 font-semibold">
+                                REVISED
+                              </span>
+                            ) : null}
+                            <span className="text-slate-600">
+                              {" "}
+                              · revision {publishedOfficialResult.revision}
+                            </span>
                           </span>
                         ) : (
                           <span className="hidden md:block" />

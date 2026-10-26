@@ -183,6 +183,10 @@ const CompetitionDetail = () => {
   // Collapsed-by-default day accordions (programme & results tabs)
   const [openProgrammeDay, setOpenProgrammeDay] = useState(null);
   const [openResultDay, setOpenResultDay] = useState(null);
+  // Open day state for the results-tab fallback (shows the programme when no
+  // results are published yet), kept separate from the programme tab so the
+  // two sections don't clobber each other's expanded day.
+  const [openResultFallbackDay, setOpenResultFallbackDay] = useState(null);
 
   useEffect(() => {
     const hash = location.hash.replace("#", "");
@@ -263,6 +267,7 @@ const CompetitionDetail = () => {
   }, [id]);
 
   // Races grouped by day, each day sorted by time from first to last.
+  // The day tabs read newest first; a day's races stay chronological.
   const programmeDays = useMemo(() => {
     const days = new Map();
     [...(programme || [])]
@@ -277,7 +282,9 @@ const CompetitionDetail = () => {
         if (!days.has(key)) days.set(key, []);
         days.get(key).push(race);
       });
-    return [...days.entries()].map(([day, races]) => ({ day, races }));
+    return [...days.entries()]
+      .map(([day, races]) => ({ day, races }))
+      .reverse();
   }, [programme]);
 
   const isWomenRace = (race) => {
@@ -341,18 +348,17 @@ const CompetitionDetail = () => {
     }
   };
 
-  const exportFullPdf = () => {
-    try {
-      generateFullResultsPdf({
-        competition,
-        groups: results,
-        programme,
-        mode: affiliationMode,
-        hostCountry,
-      });
-    } catch (err) {
-      console.error("Failed to generate the full results PDF:", err);
-    }
+  // Full results of ONE journey (a result day), not of the whole
+  // championship — a single all-journeys PDF ran to ~120 pages.
+  const exportDayPdf = (dayGroups, dayTime) => {
+    generateFullResultsPdf({
+      competition,
+      groups: dayGroups,
+      programme,
+      mode: affiliationMode,
+      hostCountry,
+      journeyDate: dayTime,
+    });
   };
 
   // Final phase available for each category+boat group, so heat races can
@@ -375,8 +381,8 @@ const CompetitionDetail = () => {
     [programme],
   );
 
-  // Results grouped by the day their decisive race took place, each day
-  // sorted by time from first to last.
+  // Results grouped by the day their decisive race took place. Days read
+  // newest first; the events of a day stay in time order.
   const resultDays = useMemo(() => {
     const days = new Map();
     (results || []).forEach((group) => {
@@ -398,7 +404,7 @@ const CompetitionDetail = () => {
         dayTime,
         groups: items.sort((a, b) => a.time - b.time).map((item) => item.group),
       }))
-      .sort((a, b) => a.dayTime - b.dayTime);
+      .sort((a, b) => b.dayTime - a.dayTime);
   }, [results, raceGroupsByEventId]);
 
   const competitionTitle = getCompetitionTitle(competition);
@@ -733,36 +739,187 @@ const CompetitionDetail = () => {
               </h2>
             </div>
 
-            {results.length > 0 && (
-              <div className="pub-results-toolbar">
-                <button
-                  className="pub-event__more-link"
-                  onClick={exportFullPdf}
-                  type="button"
-                >
-                  <Download size={14} />
-                  Download full results (PDF)
-                </button>
-              </div>
-            )}
             {results.length === 0 ? (
-              <div className="pub-empty">
-                <Award className="pub-empty__icon" />
-                <h4 className="pub-empty__title">Results not published yet</h4>
-                <p className="pub-empty__text">
-                  Official standings will appear here when the federation
-                  publishes them.
-                </p>
-              </div>
+              programmeDays.length === 0 ? (
+                <div className="pub-empty">
+                  <Award className="pub-empty__icon" />
+                  <h4 className="pub-empty__title">Results not published yet</h4>
+                  <p className="pub-empty__text">
+                    Official standings will appear here when the federation
+                    publishes them.
+                  </p>
+                </div>
+              ) : (
+                // No published results yet: fall back to showing the race
+                // programme in the results tab so the event still surfaces its
+                // races/fields (without results) instead of a blank page.
+                programmeDays.map(({ day, races }) => {
+                  const isOpen = openResultFallbackDay === day;
+                  const dayColumns = [
+                    {
+                      key: "men",
+                      label: "Men's Events",
+                      races: races.filter((race) => !isWomenRace(race)),
+                    },
+                    {
+                      key: "women",
+                      label: "Women's Events",
+                      races: races.filter((race) => isWomenRace(race)),
+                    },
+                  ].filter((column) => column.races.length > 0);
+
+                  return (
+                    <div className="pub-day-section" key={day}>
+                      <button
+                        type="button"
+                        className="pub-day-section__header"
+                        onClick={() =>
+                          setOpenResultFallbackDay(isOpen ? null : day)
+                        }
+                        aria-expanded={isOpen}
+                      >
+                        <span className="pub-day-section__title">{day}</span>
+                        <span className="pub-day-section__meta">
+                          <span className="pub-day-section__count">
+                            {races.length} race{races.length === 1 ? "" : "s"}
+                          </span>
+                          <ChevronDown
+                            size={16}
+                            className={`pub-day-section__chevron ${isOpen ? "is-open" : ""}`}
+                          />
+                        </span>
+                      </button>
+                      {isOpen && (
+                        <div className="pub-programme-columns">
+                          {dayColumns.map((column) => (
+                            <section
+                              className="pub-programme-column"
+                              key={column.key}
+                            >
+                              <div className="pub-programme-column__header">
+                                <div>
+                                  <h3 className="pub-programme-column__title">
+                                    {column.label}
+                                  </h3>
+                                  <p className="pub-programme-column__subtitle">
+                                    {column.races.length} race
+                                    {column.races.length === 1 ? "" : "s"}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="pub-grid" style={{ gap: 16 }}>
+                                {column.races.map((race) => (
+                                  <article
+                                    className="pub-race-card"
+                                    key={race._id}
+                                  >
+                                    <div className="pub-race-card__header">
+                                      <div>
+                                        <h3 className="pub-race-card__name">
+                                          {getCategoryLabel(race.category) ||
+                                            getRaceEventLabel(race) ||
+                                            race.name ||
+                                            "Race"}
+                                          {getRaceBoatDescriptor(race) && (
+                                            <span className="pub-race-card__boat-name">
+                                              {" "}
+                                              —{" "}
+                                              {getRaceBoatDescriptor(race)}
+                                            </span>
+                                          )}
+                                        </h3>
+                                        <div className="pub-race-card__badges">
+                                          {getRaceEventCode(race) ? (
+                                            <span className="pub-badge pub-badge--season pub-badge--code">
+                                              {getRaceEventCode(race)}
+                                            </span>
+                                          ) : null}
+                                          {race.phase ? (
+                                            <span
+                                              className={`pub-badge ${isHeatPhase(race.phase) ? "pub-badge--heat" : "pub-badge--final"}`}
+                                            >
+                                              {race.phase}
+                                            </span>
+                                          ) : null}
+                                          <span
+                                            className={`pub-race-card__status pub-race-card__status--${String(race.status || "scheduled")}`}
+                                          >
+                                            {String(
+                                              race.status || "scheduled",
+                                            ).replace(/_/g, " ")}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="pub-race-card__time">
+                                        <Calendar size={14} />
+                                        {race.startTime
+                                          ? formatTimeOfDay(race.startTime)
+                                          : "To be announced"}
+                                      </div>
+                                    </div>
+
+                                    {race.notes ? (
+                                      <p className="pub-race-card__notes">
+                                        {race.notes}
+                                      </p>
+                                    ) : null}
+
+                                    {Array.isArray(race.lanes) &&
+                                    race.lanes.length > 0 ? (
+                                      <div className="pub-race-card__lanes">
+                                        <div className="pub-race-card__lanes-title">
+                                          Entries
+                                        </div>
+                                        <div className="pub-race-card__lane-grid">
+                                          {race.lanes
+                                            .slice()
+                                            .sort((a, b) => a.lane - b.lane)
+                                            .map((lane) => (
+                                              <div
+                                                className="pub-race-card__lane"
+                                                key={`${race._id}-${lane.lane}`}
+                                              >
+                                                <div className="pub-race-card__lane-num">
+                                                  {lane.lane}
+                                                </div>
+                                                <div className="pub-race-card__lane-name">
+                                                  {getEntryName(lane)}
+                                                </div>
+                                                <div className="pub-race-card__lane-club">
+                                                  {getLaneAffiliation(lane)}
+                                                </div>
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </article>
+                                ))}
+                              </div>
+                            </section>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )
             ) : (
-              resultDays.map(({ day, groups: dayGroups }) => {
+              resultDays.map(({ day, dayTime, groups: dayGroups }) => {
                 const isOpen = openResultDay === day;
                 return (
                 <div className="pub-day-section" key={day}>
-                  <button
-                    type="button"
+                  <div
                     className="pub-day-section__header"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setOpenResultDay(isOpen ? null : day)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setOpenResultDay(isOpen ? null : day);
+                      }
+                    }}
                     aria-expanded={isOpen}
                   >
                     <span className="pub-day-section__title">{day}</span>
@@ -771,12 +928,25 @@ const CompetitionDetail = () => {
                         {dayGroups.length} event
                         {dayGroups.length === 1 ? "" : "s"}
                       </span>
+                      {/* Full results of THIS journey only */}
+                      <button
+                        type="button"
+                        className="pub-btn-pdf"
+                        title="Download this journey's full results (PDF)"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          exportDayPdf(dayGroups, dayTime);
+                        }}
+                      >
+                        <Download size={12} />
+                        Full results (PDF)
+                      </button>
                       <ChevronDown
                         size={16}
                         className={`pub-day-section__chevron ${isOpen ? "is-open" : ""}`}
                       />
                     </span>
-                  </button>
+                  </div>
                   {isOpen && (
                   <div className="pub-grid" style={{ gap: 18 }}>
                     {dayGroups.map((group) => {
@@ -934,6 +1104,22 @@ const CompetitionDetail = () => {
                       <div className="pub-info-card__title">
                         <Trophy size={16} />
                         {labelKey}
+                        <span
+                          className={`pub-badge ${
+                            (group.status || "unofficial") === "official"
+                              ? "pub-badge--official"
+                              : "pub-badge--unofficial"
+                          }`}
+                        >
+                          {(group.status || "unofficial") === "official"
+                            ? "Official"
+                            : "Unofficial"}
+                        </span>
+                        {group.revised ? (
+                          <span className="pub-badge pub-badge--revised">
+                            Revised
+                          </span>
+                        ) : null}
                         {hasHeats && (
                           <span className="pub-phase-summary">
                             {formatPhaseSummary(group.entries)}
@@ -956,7 +1142,16 @@ const CompetitionDetail = () => {
                       >
                         <span className="pub-meta__item">
                           <ShieldCheck size={14} />
-                          {rankingLabel(group.rankingSystem?.nameEn)}
+                          {group.category
+                            ? [
+                                getCategoryLabel(group.category),
+                                group.boatClass
+                                  ? getBoatClassLabel(group.boatClass)
+                                  : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : rankingLabel(group.rankingSystem?.nameEn)}
                         </span>
                         <span className="pub-meta__item">
                           <Users size={14} />
@@ -990,7 +1185,20 @@ const CompetitionDetail = () => {
                                       : "Third"}
                               </div>
                               <div className="pub-podium__name">
-                                {getEntryName(entry)}
+                                {/* Doubles/fours carry both rowers joined by
+                                    ", " — show each athlete on his own line
+                                    so no name is truncated. */}
+                                {getEntryName(entry)
+                                  .split(", ")
+                                  .filter(Boolean)
+                                  .map((athleteName, lineIndex) => (
+                                    <span
+                                      className="pub-podium__name-line"
+                                      key={lineIndex}
+                                    >
+                                      {athleteName}
+                                    </span>
+                                  ))}
                               </div>
                               <div className="pub-podium__club">
                                 {getAffiliation(entry)}
@@ -1129,7 +1337,19 @@ const CompetitionDetail = () => {
                 <div className="pub-info-row">
                   <span className="pub-info-row__label">Results</span>
                   <span className="pub-info-row__value">
-                    {competition.resultsStatus}
+                    <span
+                      className={`pub-badge ${
+                        competition.resultsStatus === "official"
+                          ? "pub-badge--official"
+                          : "pub-badge--unofficial"
+                      }`}
+                    >
+                      {competition.resultsStatus === "official"
+                        ? "Official"
+                        : competition.resultsStatus === "unofficial"
+                          ? "Unofficial"
+                          : "Pending"}
+                    </span>
                   </span>
                 </div>
               </div>

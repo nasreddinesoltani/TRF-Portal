@@ -2,20 +2,17 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
-  Anchor,
   ArrowRight,
   Calendar,
   ChevronRight,
-  Compass,
   Loader2,
   MapPin,
   Radio,
   RefreshCw,
   Sparkles,
   Trophy,
-  Waves,
 } from "lucide-react";
-import { INTERNATIONAL_EVENTS, getEventStatus } from "../lib/events";
+import { INTERNATIONAL_EVENTS } from "../lib/events";
 import {
   formatEntryAffiliation,
   formatEntryName,
@@ -24,21 +21,18 @@ import {
   getAffiliationMode,
   getPodiumEntries,
 } from "../lib/format";
-import EventCountdown from "../components/EventCountdown";
+import CompetitionCard, {
+  DisciplineBadge,
+  RegistrationBadge,
+  StatusBadge,
+  formatRange,
+  getCompetitionTitle,
+  getVenueLabel,
+} from "../components/CompetitionCard";
 import "../public.css";
 
-const DISCIPLINES = {
-  classic: { label: "Classic Rowing", css: "pub-badge--classic", Icon: Waves },
-  coastal: { label: "Coastal Rowing", css: "pub-badge--coastal", Icon: Anchor },
-  beach: { label: "Beach Sprint", css: "pub-badge--beach", Icon: Compass },
-  indoor: { label: "Indoor Rowing", css: "pub-badge--indoor", Icon: Activity },
-};
-
-const FALLBACK_DISCIPLINE = {
-  label: "Rowing",
-  css: "pub-badge--classic",
-  Icon: Waves,
-};
+// Home previews the calendar; the /events page lists every competition.
+const FEDERATION_EVENTS_PREVIEW = 6;
 
 const formatTime = (ms) => {
   if (!Number.isFinite(ms)) return "-";
@@ -48,27 +42,6 @@ const formatTime = (ms) => {
   const hundredths = Math.floor((ms % 1000) / 10);
   return `${minutes}:${seconds.toString().padStart(2, "0")}.${hundredths.toString().padStart(2, "0")}`;
 };
-
-const formatDate = (value) =>
-  new Date(value).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-
-const formatRange = (start, end) => `${formatDate(start)} - ${formatDate(end)}`;
-
-const getCompetitionTitle = (competition) =>
-  competition?.names?.en || competition?.code || "Competition";
-
-const getVenueLabel = (competition) => {
-  const venue = competition?.venue || {};
-  const parts = [venue.name, venue.city, venue.country].filter(Boolean);
-  return parts.length ? parts.join(", ") : "Venue to be confirmed";
-};
-
-const getDiscipline = (discipline) =>
-  DISCIPLINES[discipline] || FALLBACK_DISCIPLINE;
 
 const getResultEntryTitle = (entry) => formatEntryName(entry);
 
@@ -115,54 +88,6 @@ const buildPodiumPreview = (groups) => {
       return timeA - timeB;
     })
     .slice(0, 3);
-};
-
-const DisciplineBadge = ({ discipline }) => {
-  const conf = getDiscipline(discipline);
-  const { Icon } = conf;
-
-  return (
-    <span className={`pub-badge ${conf.css}`}>
-      <Icon size={14} />
-      {conf.label}
-    </span>
-  );
-};
-
-const RegistrationBadge = ({ status }) => {
-  if (status === "open") {
-    return (
-      <span className="pub-badge pub-badge--reg-open">
-        <span className="pub-live-dot" />
-        Registration Open
-      </span>
-    );
-  }
-
-  if (status === "closed") {
-    return (
-      <span className="pub-badge pub-badge--reg-closed">
-        Registration Closed
-      </span>
-    );
-  }
-
-  return <span className="pub-badge pub-badge--reg-notyet">Not Open Yet</span>;
-};
-
-const StatusBadge = ({ type, children }) => (
-  <span className={`pub-badge pub-badge--${type}`}>{children}</span>
-);
-
-const INTL_STATUS_BADGES = {
-  upcoming: { type: "upcoming", label: "Upcoming" },
-  ongoing: { type: "ongoing", label: "In Progress" },
-  completed: { type: "completed", label: "Completed" },
-};
-
-const IntlEventStatusBadge = ({ event }) => {
-  const conf = INTL_STATUS_BADGES[getEventStatus(event)] || INTL_STATUS_BADGES.upcoming;
-  return <StatusBadge type={conf.type}>{conf.label}</StatusBadge>;
 };
 
 const PublicHome = () => {
@@ -257,7 +182,7 @@ const PublicHome = () => {
               (competition.status === "published" && endDate < now)
             );
           })
-          .slice(0, 3);
+          .slice(0, 6);
 
         const previews = await Promise.all(
           recentCompleted.map(async (competition) => {
@@ -408,10 +333,10 @@ const PublicHome = () => {
                   <div className="pub-hero__actions">
                     <button
                       className="pub-hero__cta"
-                      onClick={() => scrollToSection("intl-events")}
+                      onClick={() => scrollToSection("federation-events")}
                       type="button"
                     >
-                      International Events
+                      Federation Events
                       <ArrowRight size={15} />
                     </button>
                     <button
@@ -473,7 +398,7 @@ const PublicHome = () => {
           <section
             className="pub-section pub-section--border pub-reveal"
             data-reveal
-            id="intl-events"
+            id="federation-events"
           >
             <div className="pub-container">
               <div className="pub-section__header">
@@ -481,59 +406,30 @@ const PublicHome = () => {
                   <span className="pub-section__title-icon accent">
                     <Trophy size={16} />
                   </span>
-                  International Events in Tunisia
+                  Federation Events
                 </h2>
+
+                {competitions.length > FEDERATION_EVENTS_PREVIEW && (
+                  <button
+                    className="pub-event__more-link"
+                    onClick={() => navigate("/events")}
+                    type="button"
+                  >
+                    View all events <ArrowRight size={14} />
+                  </button>
+                )}
               </div>
 
               <div className="pub-grid pub-grid--3">
-                {INTERNATIONAL_EVENTS.map((event, index) => (
-                  <div
-                    key={event.slug}
-                    className="pub-card pub-card--clickable pub-fade-in"
-                    style={{ animationDelay: `${index * 60}ms` }}
-                    onClick={() => navigate(`/events/${event.slug}`)}
-                  >
-                    <div className="pub-card__body">
-                      <div className="pub-card__header-row">
-                        <span className="pub-badge pub-badge--classic">
-                          <Waves size={14} />
-                          {event.discipline}
-                        </span>
-                        <IntlEventStatusBadge event={event} />
-                      </div>
-
-                      <h3 className="pub-card__headline">{event.name}</h3>
-
-                      <div className="pub-meta" style={{ marginBottom: 12 }}>
-                        <span className="pub-meta__item">
-                          <Calendar size={14} />
-                          {event.dateLabel}
-                        </span>
-                        <span className="pub-meta__item pub-meta__item--venue">
-                          <MapPin size={14} />
-                          {event.venue}
-                        </span>
-                      </div>
-
-                      <p className="pub-card__text">{event.summary}</p>
-
-                      <EventCountdown
-                        targetDate={event.startDate}
-                        endDate={event.endDate}
-                      />
-                    </div>
-
-                    <div className="pub-card__footer">
-                      <span className="pub-cta">
-                        View event <ArrowRight size={12} />
-                      </span>
-
-                      <div className="pub-arrow">
-                        <ChevronRight size={16} />
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                {competitions
+                  .slice(0, FEDERATION_EVENTS_PREVIEW)
+                  .map((competition, index) => (
+                    <CompetitionCard
+                      key={competition._id}
+                      competition={competition}
+                      index={index}
+                    />
+                  ))}
               </div>
             </div>
           </section>

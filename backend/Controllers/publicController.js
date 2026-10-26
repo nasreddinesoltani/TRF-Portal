@@ -1,6 +1,30 @@
 import Competition from "../Models/competitionModel.js";
 import OfficialResult from "../Models/officialResultModel.js";
 import CompetitionRace from "../Models/competitionRaceModel.js";
+import RankingSystem from "../Models/rankingSystemModel.js";
+
+/**
+ * @desc    Point table of the active ranking system (for public exports)
+ * @route   GET /api/public/ranking-systems/active?discipline=classic
+ * @access  Public
+ */
+export const getPublicActivePointTable = async (req, res) => {
+  try {
+    const discipline = String(req.query.discipline || "").trim();
+    const filter = { isActive: true };
+    if (discipline) {
+      filter.$or = [{ discipline }, { discipline: null }];
+    }
+    const system = await RankingSystem.findOne(filter)
+      .sort({ sortOrder: 1 })
+      .select("customPointTable")
+      .lean();
+    res.json({ customPointTable: system?.customPointTable || [] });
+  } catch (error) {
+    console.error("Error in getPublicActivePointTable:", error);
+    res.status(500).json({ message: "Server error retrieving point table" });
+  }
+};
 
 /**
  * @desc    Get a single public competition by id
@@ -95,10 +119,17 @@ export const getPublicCompetitionResults = async (req, res) => {
       return res.status(404).json({ message: "Competition not found" });
     }
 
-    // Only allow public viewing if competition status is published/completed
+    // Allow public viewing when the competition is published/completed, or
+    // once results have been published (at least unofficially) so the
+    // UNOFFICIAL → OFFICIAL workflow can surface results before the
+    // competition is formally marked completed.
+    const resultsPublished =
+      competition.resultsStatus === "unofficial" ||
+      competition.resultsStatus === "official";
     if (
       competition.status !== "published" &&
-      competition.status !== "completed"
+      competition.status !== "completed" &&
+      !resultsPublished
     ) {
       return res
         .status(403)
@@ -113,7 +144,7 @@ export const getPublicCompetitionResults = async (req, res) => {
         "entries.athlete",
         "firstName lastName firstNameAr lastNameAr nationalityCode nationality",
       )
-      .populate("entries.club", "name nameAr code")
+      .populate("entries.club", "name nameAr code country")
       .lean();
 
     // Annotate each entry with the phase (Heat 1, Final A, ...) of the race
@@ -145,17 +176,28 @@ export const getPublicCompetitionResults = async (req, res) => {
       racePhaseById.set(String(race._id), race.phase || "");
       const byAthlete = new Map();
       for (const lane of race.lanes || []) {
-        const members = [];
-        if (lane.athlete) members.push(lane.athlete);
-        if (Array.isArray(lane.crew)) members.push(...lane.crew);
-        const label = members
+        // Single-athlete lanes may carry the rower twice — once in `athlete`
+        // and once as the lone member of `crew` (older generator output).
+        // Dedupe by id so the joined label never repeats a name.
+        const members = [
+          ...(lane.athlete ? [lane.athlete] : []),
+          ...(Array.isArray(lane.crew) ? lane.crew : []),
+        ].filter(Boolean);
+        const seenMemberIds = new Set();
+        const uniqueMembers = members.filter((member) => {
+          const id = String(member?._id ?? member);
+          if (seenMemberIds.has(id)) return false;
+          seenMemberIds.add(id);
+          return true;
+        });
+        const label = uniqueMembers
           .map(
             (member) =>
               `${member.firstName || ""} ${member.lastName || ""}`.trim(),
           )
           .filter(Boolean)
           .join(", ");
-        for (const member of members) {
+        for (const member of uniqueMembers) {
           if (member?._id) byAthlete.set(String(member._id), label);
         }
       }
@@ -200,10 +242,10 @@ export const getPublicCompetitionProgramme = async (req, res) => {
       return res.status(404).json({ message: "Competition not found" });
     }
 
-    if (
-      competition.status !== "published" &&
-      competition.status !== "completed"
-    ) {
+    // The race programme (schedule) is public information: it should be
+    // viewable before the competition starts, even when the competition is
+    // still in draft and no results have been published yet.
+    if (competition.status === "archived") {
       return res
         .status(403)
         .json({ message: "Programme not available for public access" });
@@ -221,7 +263,7 @@ export const getPublicCompetitionProgramme = async (req, res) => {
         "lanes.crew",
         "firstName lastName firstNameAr lastNameAr nationalityCode nationality",
       )
-      .populate("lanes.club", "name nameAr code")
+      .populate("lanes.club", "name nameAr code country")
       .sort({ startTime: 1, order: 1 })
       .lean();
 
@@ -286,9 +328,29 @@ export const getPublicCompetitionProgramme = async (req, res) => {
         return {
           lane: lane.lane,
           clubName: cName,
+          clubNameAr: (lane.club && lane.club.nameAr) || "",
           clubCode: cCode,
           athleteName: athName,
           athleteNameAr: athNameAr,
+          // Structured names so exports can render "First LAST" and
+          // bow/stroke markers exactly like the admin sheets.
+          athletes: [
+            ...(lane.athlete
+              ? [
+                  {
+                    firstName: lane.athlete.firstName || "",
+                    lastName: lane.athlete.lastName || "",
+                  },
+                ]
+              : []),
+            ...(Array.isArray(lane.crew)
+              ? lane.crew.map((m) => ({
+                  firstName: m.firstName || "",
+                  lastName: m.lastName || "",
+                }))
+              : []),
+          ],
+          crewNumber: lane.crewNumber,
           representingNation: representing.toUpperCase(),
           seed: lane.seed,
           result: lane.result
@@ -312,6 +374,7 @@ export const getPublicCompetitionProgramme = async (req, res) => {
         name: race.name,
         phase: race.phase || "",
         order: race.order,
+        eventNumber: race.eventNumber,
         startTime: race.startTime,
         distanceOverride: race.distanceOverride,
         status: race.status,

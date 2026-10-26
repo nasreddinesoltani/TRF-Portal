@@ -44,6 +44,7 @@ const RaceDetail = lazy(() => import("./pages/RaceDetail"));
 
 // Public event & team information pages
 const EventPage = lazy(() => import("./pages/EventPage"));
+const EventsPage = lazy(() => import("./pages/EventsPage"));
 const VisaPage = lazy(() => import("./pages/teams/VisaPage"));
 const AccommodationPage = lazy(() => import("./pages/teams/AccommodationPage"));
 const TransportationPage = lazy(
@@ -90,6 +91,7 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<PublicHome />} />
             <Route path="/competition/:id" element={<CompetitionDetail />} />
+            <Route path="/events" element={<EventsPage />} />
             <Route path="/events/:slug" element={<EventPage />} />
             <Route path="/teams/visa" element={<VisaPage />} />
             <Route

@@ -147,6 +147,21 @@ const officialResultSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Results lifecycle: published groups start UNOFFICIAL and become
+    // OFFICIAL after jury verification (markOfficial endpoint).
+    status: {
+      type: String,
+      enum: ["unofficial", "official"],
+      default: "unofficial",
+    },
+    // Set from the results entry page when a published result was revised.
+    revised: {
+      type: Boolean,
+      default: false,
+    },
+    revisedAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,

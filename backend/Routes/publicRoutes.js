@@ -5,6 +5,7 @@ import {
   getPublicCompetitionResults,
   getPublicCompetitionProgramme,
   getPublicLive,
+  getPublicActivePointTable,
 } from "../Controllers/publicController.js";
 
 const router = express.Router();
@@ -16,6 +17,7 @@ router.get(
   "/competitions/:competitionId/programme",
   getPublicCompetitionProgramme,
 );
+router.get("/ranking-systems/active", getPublicActivePointTable);
 router.get("/live", getPublicLive);
 
 export default router;

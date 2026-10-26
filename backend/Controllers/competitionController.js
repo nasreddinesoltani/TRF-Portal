@@ -11,6 +11,7 @@ import Competition, {
   RESULTS_STATUSES,
   STAGE_TYPES,
 } from "../Models/competitionModel.js";
+import OfficialResult from "../Models/officialResultModel.js";
 import {
   computeCompetitionRegistrationStatus,
   syncCompetitionRegistrationStatus,
@@ -686,6 +687,15 @@ export const updateCompetitionStatus = asyncHandler(async (req, res) => {
     syncCompetitionRegistrationStatus(competition);
     competition.updatedBy = req.user?.id || competition.updatedBy;
     await competition.save();
+
+    // The competition-wide "Mark Official" switch also flips every published
+    // result group, so group badges agree with the competition-level status.
+    if (req.body?.resultsStatus === "official") {
+      await OfficialResult.updateMany(
+        { competition: competition._id },
+        { $set: { status: "official" } },
+      );
+    }
 
     res.json({
       message: "Competition status updated",
